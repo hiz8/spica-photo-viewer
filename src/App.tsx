@@ -3,6 +3,7 @@ import ImageViewer from './components/ImageViewer';
 import DropZone from './components/DropZone';
 import FileOpenButton from './components/FileOpenButton';
 import { useKeyboard } from './hooks/useKeyboard';
+import { useFileDrop } from './hooks/useFileDrop';
 import { useAppStore } from './store';
 import './App.css';
 
@@ -10,6 +11,7 @@ const App: React.FC = () => {
   const { ui, currentImage } = useAppStore();
 
   useKeyboard();
+  useFileDrop();
 
   return (
     <div className="photo-viewer-app">
