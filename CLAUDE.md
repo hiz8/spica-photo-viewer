@@ -24,6 +24,7 @@
 4. **Zoom & Pan**: Smooth zoom (10%-2000%) with drag-to-pan capability
 5. **Fullscreen Mode**: F11 toggle for immersive viewing
 6. **File Association**: Double-click image files to open directly
+7. **Drag & Drop**: Drop image files onto the window to open them
 
 ## Technical Architecture
 
@@ -35,7 +36,6 @@
   - Window management
   - OS integration (file association)
 - **Frontend**: React + TypeScript
-
   - UI components and interactions
   - Image rendering and transformations
   - Keyboard/mouse event handling
@@ -54,12 +54,14 @@ spica-photo-viewer/
 │   ├── components/
 │   │   ├── ImageViewer.tsx   # Main image display component
 │   │   ├── ThumbnailBar.tsx  # Thumbnail navigation bar
+│   │   ├── DropZone.tsx      # Drag & drop overlay component
 │   │   ├── ErrorDisplay.tsx  # Error state component
 │   │   └── AboutDialog.tsx   # App info dialog
 │   ├── hooks/
 │   │   ├── useImageLoader.ts # Image loading and caching
 │   │   ├── useKeyboard.ts    # Keyboard shortcuts
-│   │   └── useZoomPan.ts     # Zoom and pan logic
+│   │   ├── useZoomPan.ts     # Zoom and pan logic
+│   │   └── useDragDrop.ts    # Drag & drop handling
 │   ├── services/
 │   │   ├── imageService.ts   # Image processing utilities
 │   │   └── cacheService.ts   # Thumbnail cache management
@@ -90,19 +92,16 @@ spica-photo-viewer/
 #### Layout
 
 - **Main Window**:
-
   - Default: Fullscreen when opened via file
   - Minimal size when opened standalone
   - No minimum size restrictions
 
 - **Image Display Area** (90% of window):
-
   - Centered image with automatic fit-to-window
   - Black background
   - Maintains aspect ratio
 
 - **Thumbnail Bar** (10% of window, bottom):
-
   - Height: ~40px (30px thumbnails + padding)
   - 50% opacity when not hovered (mouse not over image or thumbnails)
   - 100% opacity on hover
@@ -113,6 +112,11 @@ spica-photo-viewer/
   - Format: `{filename} ({width} × {height})`
   - Small, unobtrusive font
   - Same opacity behavior as thumbnail bar
+
+- **Drag & Drop Overlay** (when no image is loaded):
+  - Visible only in standalone startup mode
+  - Dashed border with "Drop image here" message
+  - Semi-transparent overlay effect on drag-over
 
 ### Controls
 
@@ -131,6 +135,7 @@ spica-photo-viewer/
 - **Mouse wheel on image**: Zoom (cursor-based)
 - **Drag on zoomed image**: Pan
 - **Double-click image**: Reset zoom/fit to window
+- **Drag & Drop image file**: Open dropped image and switch to its folder
 
 ### Image Loading Strategy
 
@@ -175,6 +180,13 @@ spica-photo-viewer/
 - Remove from thumbnail bar
 - Auto-navigate to next available image
 
+#### Drag & Drop Errors
+
+- **Folder drop**: Show brief toast notification "Please drop image files only"
+- **Non-image files**: Ignore silently
+- **Multiple files**: Process first valid image, ignore others
+- **No valid images**: Show brief error message
+
 ### Performance Optimization
 
 #### Memory Management
@@ -200,6 +212,7 @@ spica-photo-viewer/
 - [ ] Folder scanning and image listing
 - [ ] Previous/next navigation (keyboard)
 - [ ] Basic zoom (center-based)
+- [ ] Drag & drop support (basic file handling)
 
 ### Phase 2: Thumbnail System
 
@@ -236,6 +249,9 @@ async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String>
 #[tauri::command]
 async fn load_image(path: String) -> Result<ImageData, String>
 
+#[tauri::command]
+async fn handle_dropped_file(path: String) -> Result<ImageInfo, String>
+
 // Thumbnail operations
 #[tauri::command]
 async fn generate_thumbnail(path: String) -> Result<String, String>
@@ -250,6 +266,9 @@ async fn clear_old_cache() -> Result<(), String>
 // System operations
 #[tauri::command]
 fn get_initial_file() -> Option<String>  // For file association
+
+#[tauri::command]
+fn validate_image_file(path: String) -> Result<bool, String>
 
 #[tauri::command]
 fn show_about_dialog() -> Result<(), String>
@@ -293,6 +312,7 @@ interface AppState {
   ui: {
     isLoading: boolean;
     showAbout: boolean;
+    isDragOver: boolean; // For drag & drop feedback
     error: Error | null;
   };
 }
@@ -389,8 +409,9 @@ When implementing this project:
 3. **Keep Rust code minimal** - Only what can't be done in frontend
 4. **Optimize later** - Get it working, then make it fast
 5. **Test file associations early** - This can be tricky on Windows
-6. **Handle edge cases** - Empty folders, single image, corrupt files
-7. **Use native OS dialogs** - For file operations when needed
-8. **Keep UI responsive** - Use async/await, don't block the main thread
+6. **Handle edge cases** - Empty folders, single image, corrupt files, drag & drop errors
+7. **Implement drag & drop early** - Test with various file types and multiple files
+8. **Use native OS dialogs** - For file operations when needed
+9. **Keep UI responsive** - Use async/await, don't block the main thread
 
 The goal is a fast, lightweight, reliable image viewer that "just works" when users double-click an image file.
