@@ -30,7 +30,7 @@
 
 ### Technology Stack
 
-- **Backend**: Tauri (Rust)
+- **Backend**: Tauri v2 (Rust)
   - File system operations
   - Image processing and caching
   - Window management
@@ -207,7 +207,7 @@ spica-photo-viewer/
 
 ### Phase 1: Core Viewer (MVP)
 
-- [ ] Basic Tauri + React setup
+- [ ] Basic Tauri (v2) + React (v19) setup
 - [ ] Single image display
 - [ ] Folder scanning and image listing
 - [ ] Previous/next navigation (keyboard)
