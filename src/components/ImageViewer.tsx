@@ -64,18 +64,16 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (view.zoom > 100) {
-      setIsDragging(true);
-      setDragStart({
-        x: e.clientX,
-        y: e.clientY,
-      });
-      e.preventDefault();
-    }
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX,
+      y: e.clientY,
+    });
+    e.preventDefault();
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging && view.zoom > 100) {
+    if (isDragging) {
       // Calculate pan delta relative to zoom level
       const deltaX = (e.clientX - dragStart.x) / (view.zoom / 100);
       const deltaY = (e.clientY - dragStart.y) / (view.zoom / 100);
@@ -141,7 +139,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
 
   const imageStyle: React.CSSProperties = {
     transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
-    cursor: view.zoom > 100 ? (isDragging ? 'grabbing' : 'grab') : 'default',
+    cursor: isDragging ? 'grabbing' : 'grab',
     transition: isDragging ? 'none' : 'transform 0.1s ease-out',
   };
 
