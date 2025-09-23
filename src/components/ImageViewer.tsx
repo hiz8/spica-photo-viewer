@@ -98,13 +98,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
 
     if (!containerRef.current) return;
 
-    // Get cursor position relative to the container
+    // Get cursor position relative to the container center
     const rect = containerRef.current.getBoundingClientRect();
-    const pointX = e.clientX - rect.left - rect.width / 2;
-    const pointY = e.clientY - rect.top - rect.height / 2;
+    const containerCenterX = rect.left + rect.width / 2;
+    const containerCenterY = rect.top + rect.height / 2;
+
+    // Mouse position relative to container center
+    const mouseX = e.clientX - containerCenterX;
+    const mouseY = e.clientY - containerCenterY;
 
     const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
-    zoomAtPoint(zoomFactor, pointX, pointY);
+    zoomAtPoint(zoomFactor, mouseX, mouseY);
   };
 
   if (!currentImage.path) {

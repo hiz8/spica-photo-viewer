@@ -260,10 +260,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const newZoom = Math.max(10, Math.min(2000, currentZoom * zoomFactor));
 
     if (newZoom !== currentZoom) {
-      // Calculate new pan to keep the zoom point stable
-      const zoomChange = newZoom / currentZoom;
-      const newPanX = pointX - (pointX - state.view.panX) * zoomChange;
-      const newPanY = pointY - (pointY - state.view.panY) * zoomChange;
+      // Convert screen coordinates to image coordinates before zoom
+      const currentScale = currentZoom / 100;
+      const imageX = (pointX / currentScale) - state.view.panX;
+      const imageY = (pointY / currentScale) - state.view.panY;
+
+      // Calculate new pan so that the same image point stays under the mouse
+      const newScale = newZoom / 100;
+      const newPanX = (pointX / newScale) - imageX;
+      const newPanY = (pointY / newScale) - imageY;
 
       set((state) => ({
         view: {
