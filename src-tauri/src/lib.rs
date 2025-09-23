@@ -1,7 +1,7 @@
 mod commands;
 mod utils;
 
-use commands::file::{get_folder_images, load_image, handle_dropped_file, validate_image_file};
+use commands::file::{get_folder_images, load_image, handle_dropped_file, validate_image_file, generate_image_thumbnail};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,7 +12,8 @@ pub fn run() {
             get_folder_images,
             load_image,
             handle_dropped_file,
-            validate_image_file
+            validate_image_file,
+            generate_image_thumbnail
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

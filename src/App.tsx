@@ -2,8 +2,9 @@ import React from 'react';
 import ImageViewer from './components/ImageViewer';
 import DropZone from './components/DropZone';
 import FileOpenButton from './components/FileOpenButton';
+import ThumbnailBar from './components/ThumbnailBar';
 import { useKeyboard } from './hooks/useKeyboard';
-import { useFileDrop } from './hooks/useFileDrop';
+// import { useFileDrop } from './hooks/useFileDrop';
 import { useAppStore } from './store';
 import './App.css';
 
@@ -11,7 +12,7 @@ const App: React.FC = () => {
   const { ui, currentImage } = useAppStore();
 
   useKeyboard();
-  useFileDrop();
+  // useFileDrop(); // Temporarily disabled to test thumbnails
 
   return (
     <div className="photo-viewer-app">
@@ -34,6 +35,8 @@ const App: React.FC = () => {
           {ui.error.message}
         </div>
       )}
+
+      <ThumbnailBar />
     </div>
   );
 };

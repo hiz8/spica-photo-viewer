@@ -41,3 +41,14 @@ pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
     let dimensions = reader.into_dimensions()?;
     Ok(dimensions)
 }
+
+pub fn generate_thumbnail(path: &Path, size: u32) -> Result<String, ImageError> {
+    let img = image::open(path)?;
+
+    let thumbnail = img.thumbnail(size, size);
+
+    let mut buffer = Vec::new();
+    thumbnail.write_to(&mut std::io::Cursor::new(&mut buffer), ImageFormat::Jpeg)?;
+
+    Ok(general_purpose::STANDARD.encode(&buffer))
+}

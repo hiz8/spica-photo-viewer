@@ -1,4 +1,4 @@
-use crate::utils::image::{is_supported_image, get_image_dimensions, load_image_as_base64};
+use crate::utils::image::{is_supported_image, get_image_dimensions, load_image_as_base64, generate_thumbnail};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -105,6 +105,24 @@ pub async fn handle_dropped_file(path: String) -> Result<ImageInfo, String> {
 pub fn validate_image_file(path: String) -> Result<bool, String> {
     let file_path = Path::new(&path);
     Ok(file_path.exists() && file_path.is_file() && is_supported_image(file_path))
+}
+
+#[tauri::command]
+pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result<String, String> {
+    let image_path = Path::new(&path);
+
+    if !image_path.exists() || !image_path.is_file() {
+        return Err("File not found".to_string());
+    }
+
+    if !is_supported_image(image_path) {
+        return Err("Unsupported file format".to_string());
+    }
+
+    let thumbnail_size = size.unwrap_or(30);
+
+    generate_thumbnail(image_path, thumbnail_size)
+        .map_err(|e| format!("Failed to generate thumbnail: {}", e))
 }
 
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
