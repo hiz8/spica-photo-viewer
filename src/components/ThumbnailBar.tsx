@@ -15,20 +15,51 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({ image, index, isActive, o
   const [error, setError] = useState<boolean>(false);
 
   useEffect(() => {
-    const generateThumbnail = async () => {
+    const loadThumbnail = async () => {
       try {
+        // First, try to get from cache
+        const cachedThumbnail = await invoke<string | null>('get_cached_thumbnail', {
+          path: image.path,
+          size: 30
+        });
+
+        if (cachedThumbnail) {
+          setThumbnailData(cachedThumbnail);
+          return;
+        }
+
+        // If not cached, generate new thumbnail
         const thumbnail = await invoke<string>('generate_image_thumbnail', {
           path: image.path,
           size: 30
         });
+
+        // Cache the generated thumbnail
+        await invoke('set_cached_thumbnail', {
+          path: image.path,
+          thumbnail,
+          size: 30
+        });
+
         setThumbnailData(thumbnail);
       } catch (err) {
-        console.error('Failed to generate thumbnail:', err);
+        console.warn(`Failed to load thumbnail for ${image.filename}:`, err);
         setError(true);
+
+        // Cache the error to avoid retrying
+        try {
+          await invoke('set_cached_thumbnail', {
+            path: image.path,
+            thumbnail: 'error',
+            size: 30
+          });
+        } catch (cacheErr) {
+          console.warn('Failed to cache thumbnail error:', cacheErr);
+        }
       }
     };
 
-    generateThumbnail();
+    loadThumbnail();
   }, [image.path]);
 
   return (

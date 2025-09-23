@@ -5,6 +5,7 @@ import FileOpenButton from './components/FileOpenButton';
 import ThumbnailBar from './components/ThumbnailBar';
 import { useKeyboard } from './hooks/useKeyboard';
 // import { useFileDrop } from './hooks/useFileDrop';
+import { useCacheManager } from './hooks/useCacheManager';
 import { useAppStore } from './store';
 import './App.css';
 
@@ -13,6 +14,7 @@ const App: React.FC = () => {
 
   useKeyboard();
   // useFileDrop(); // Temporarily disabled to test thumbnails
+  useCacheManager();
 
   return (
     <div className="photo-viewer-app">

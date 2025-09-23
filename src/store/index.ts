@@ -21,6 +21,7 @@ interface AppActions {
   resetZoom: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
 }
 
 type AppStore = AppState & AppActions;
@@ -192,17 +193,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   navigateNext: () => {
     const state = get();
-    const nextIndex = state.currentImage.index + 1;
-    if (nextIndex < state.folder.images.length) {
-      state.navigateToImage(nextIndex);
+    let nextIndex = state.currentImage.index + 1;
+
+    // Try to find next valid image (skip corrupted ones)
+    while (nextIndex < state.folder.images.length) {
+      const cachedImage = state.cache.preloaded.get(state.folder.images[nextIndex].path);
+      if (!cachedImage || cachedImage.format !== 'error') {
+        state.navigateToImage(nextIndex);
+        return;
+      }
+      nextIndex++;
+    }
+
+    // If no valid image found, try the regular navigation
+    if (state.currentImage.index + 1 < state.folder.images.length) {
+      state.navigateToImage(state.currentImage.index + 1);
     }
   },
 
   navigatePrevious: () => {
     const state = get();
-    const prevIndex = state.currentImage.index - 1;
-    if (prevIndex >= 0) {
-      state.navigateToImage(prevIndex);
+    let prevIndex = state.currentImage.index - 1;
+
+    // Try to find previous valid image (skip corrupted ones)
+    while (prevIndex >= 0) {
+      const cachedImage = state.cache.preloaded.get(state.folder.images[prevIndex].path);
+      if (!cachedImage || cachedImage.format !== 'error') {
+        state.navigateToImage(prevIndex);
+        return;
+      }
+      prevIndex--;
+    }
+
+    // If no valid image found, try the regular navigation
+    if (state.currentImage.index - 1 >= 0) {
+      state.navigateToImage(state.currentImage.index - 1);
     }
   },
 
@@ -227,5 +252,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const newZoom = Math.max(10, state.view.zoom / 1.2);
     state.setZoom(newZoom);
+  },
+
+  zoomAtPoint: (zoomFactor, pointX, pointY) => {
+    const state = get();
+    const currentZoom = state.view.zoom;
+    const newZoom = Math.max(10, Math.min(2000, currentZoom * zoomFactor));
+
+    if (newZoom !== currentZoom) {
+      // Calculate new pan to keep the zoom point stable
+      const zoomChange = newZoom / currentZoom;
+      const newPanX = pointX - (pointX - state.view.panX) * zoomChange;
+      const newPanY = pointY - (pointY - state.view.panY) * zoomChange;
+
+      set((state) => ({
+        view: {
+          ...state.view,
+          zoom: newZoom,
+          panX: newPanX,
+          panY: newPanY,
+        },
+      }));
+    }
   },
 }));

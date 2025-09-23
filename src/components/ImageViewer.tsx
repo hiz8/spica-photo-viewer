@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
+import { useImagePreloader } from '../hooks/useImagePreloader';
 import { ImageData } from '../types';
 
 interface ImageViewerProps {
@@ -11,11 +12,15 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
   const {
     currentImage,
     view,
+    cache,
     setImageData,
     setImageError,
     setLoading,
     setPan,
+    zoomAtPoint,
   } = useAppStore();
+
+  useImagePreloader();
 
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -33,8 +38,23 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       setLoading(true);
       setImageError(null);
 
+      // Check if image is already preloaded
+      const preloadedImage = cache.preloaded.get(path);
+      if (preloadedImage) {
+        if (preloadedImage.format === 'error') {
+          throw new Error('Image failed to load previously');
+        }
+        console.log(`Using preloaded image: ${path.split('\\').pop()}`);
+        setImageData(preloadedImage);
+        return;
+      }
+
+      // Load image if not preloaded
       const imageData = await invoke<ImageData>('load_image', { path });
       setImageData(imageData);
+
+      // Add to preload cache
+      cache.preloaded.set(path, imageData);
     } catch (error) {
       console.error('Failed to load image:', error);
       setImageError(error as Error);
@@ -47,8 +67,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     if (view.zoom > 100) {
       setIsDragging(true);
       setDragStart({
-        x: e.clientX - view.panX,
-        y: e.clientY - view.panY,
+        x: e.clientX,
+        y: e.clientY,
       });
       e.preventDefault();
     }
@@ -56,9 +76,14 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isDragging && view.zoom > 100) {
-      const newPanX = e.clientX - dragStart.x;
-      const newPanY = e.clientY - dragStart.y;
-      setPan(newPanX, newPanY);
+      // Calculate pan delta relative to zoom level
+      const deltaX = (e.clientX - dragStart.x) / (view.zoom / 100);
+      const deltaY = (e.clientY - dragStart.y) / (view.zoom / 100);
+
+      setPan(view.panX + deltaX, view.panY + deltaY);
+
+      // Update drag start for next move
+      setDragStart({ x: e.clientX, y: e.clientY });
     }
   };
 
@@ -73,11 +98,15 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
 
-    if (e.deltaY < 0) {
-      useAppStore.getState().zoomIn();
-    } else {
-      useAppStore.getState().zoomOut();
-    }
+    if (!containerRef.current) return;
+
+    // Get cursor position relative to the container
+    const rect = containerRef.current.getBoundingClientRect();
+    const pointX = e.clientX - rect.left - rect.width / 2;
+    const pointY = e.clientY - rect.top - rect.height / 2;
+
+    const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+    zoomAtPoint(zoomFactor, pointX, pointY);
   };
 
   if (!currentImage.path) {
