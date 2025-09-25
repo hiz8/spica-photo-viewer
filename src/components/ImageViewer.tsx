@@ -18,6 +18,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     setLoading,
     setPan,
     zoomAtPoint,
+    fitToWindow,
   } = useAppStore();
 
   useImagePreloader();
@@ -33,6 +34,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     }
   }, [currentImage.path]);
 
+  // Handle window resize to re-fit image
+  useEffect(() => {
+    const handleResize = () => {
+      if (currentImage.data) {
+        fitToWindow(currentImage.data.width, currentImage.data.height);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [currentImage.data, fitToWindow]);
+
   const loadImage = async (path: string) => {
     try {
       setLoading(true);
@@ -46,12 +59,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
         }
         console.log(`Using preloaded image: ${path.split('\\').pop()}`);
         setImageData(preloadedImage);
+
+        // Auto-fit image to window
+        fitToWindow(preloadedImage.width, preloadedImage.height);
         return;
       }
 
       // Load image if not preloaded
       const imageData = await invoke<ImageData>('load_image', { path });
       setImageData(imageData);
+
+      // Auto-fit image to window
+      fitToWindow(imageData.width, imageData.height);
 
       // Add to preload cache
       cache.preloaded.set(path, imageData);

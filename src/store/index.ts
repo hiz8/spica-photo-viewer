@@ -22,6 +22,7 @@ interface AppActions {
   zoomIn: () => void;
   zoomOut: () => void;
   zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
+  fitToWindow: (imageWidth: number, imageHeight: number) => void;
 }
 
 type AppStore = AppState & AppActions;
@@ -279,5 +280,33 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       }));
     }
+  },
+
+  fitToWindow: (imageWidth, imageHeight) => {
+    const THUMBNAIL_BAR_HEIGHT = 80;
+    const MARGIN = 20;
+
+    // Calculate available display area
+    const availableWidth = window.innerWidth - (MARGIN * 2);
+    const availableHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT - (MARGIN * 2);
+
+    // Calculate scale factors for both dimensions
+    const scaleX = availableWidth / imageWidth;
+    const scaleY = availableHeight / imageHeight;
+
+    // Use the smaller scale to ensure both dimensions fit
+    const fitScale = Math.min(scaleX, scaleY);
+
+    // Don't zoom in beyond 100% (only zoom out if necessary)
+    const fitZoom = Math.min(100, fitScale * 100);
+
+    set((state) => ({
+      view: {
+        ...state.view,
+        zoom: fitZoom,
+        panX: 0,
+        panY: 0,
+      },
+    }));
   },
 }));
