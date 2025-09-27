@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { AppState, ImageInfo, ImageData, ViewState } from '../types';
 
 interface AppActions {
@@ -23,6 +24,7 @@ interface AppActions {
   zoomOut: () => void;
   zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
   fitToWindow: (imageWidth: number, imageHeight: number) => void;
+  openImageFromPath: (imagePath: string) => Promise<void>;
 }
 
 type AppStore = AppState & AppActions;
@@ -308,5 +310,52 @@ export const useAppStore = create<AppStore>((set, get) => ({
         panY: 0,
       },
     }));
+  },
+
+  openImageFromPath: async (imagePath: string) => {
+    try {
+      // Get the folder containing the image (handle both \ and / separators)
+      const lastSlashIndex = Math.max(imagePath.lastIndexOf('\\'), imagePath.lastIndexOf('/'));
+      const folderPath = imagePath.substring(0, lastSlashIndex);
+
+      // Load all images in the folder
+      const images = await invoke<ImageInfo[]>('get_folder_images', { path: folderPath });
+
+      // Find the index of the specific image
+      const imageIndex = images.findIndex((img: ImageInfo) => img.path === imagePath);
+
+      if (imageIndex !== -1) {
+        set((state) => ({
+          folder: {
+            ...state.folder,
+            path: folderPath,
+            images,
+          },
+          currentImage: {
+            ...state.currentImage,
+            path: imagePath,
+            index: imageIndex,
+            data: null,
+            error: null,
+          },
+          view: {
+            ...state.view,
+            zoom: 100,
+            panX: 0,
+            panY: 0,
+          },
+        }));
+      } else {
+        console.error('Image not found in folder:', imagePath);
+      }
+    } catch (error) {
+      console.error('Failed to open image from path:', error);
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          error: new Error(`Failed to open image: ${error}`),
+        },
+      }));
+    }
   },
 }));

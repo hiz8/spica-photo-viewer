@@ -1,7 +1,7 @@
 mod commands;
 mod utils;
 
-use commands::file::{get_folder_images, load_image, handle_dropped_file, validate_image_file, generate_image_thumbnail};
+use commands::file::{get_folder_images, load_image, handle_dropped_file, validate_image_file, generate_image_thumbnail, get_startup_file};
 use commands::cache::{get_cached_thumbnail, set_cached_thumbnail, clear_old_cache, get_cache_stats};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -15,6 +15,7 @@ pub fn run() {
             handle_dropped_file,
             validate_image_file,
             generate_image_thumbnail,
+            get_startup_file,
             get_cached_thumbnail,
             set_cached_thumbnail,
             clear_old_cache,

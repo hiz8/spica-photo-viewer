@@ -108,6 +108,21 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn get_startup_file() -> Result<Option<String>, String> {
+    let args: Vec<String> = std::env::args().collect();
+
+    // Look for image file in command line arguments (usually args[1])
+    for arg in &args[1..] {
+        let path = Path::new(arg);
+        if path.exists() && path.is_file() && is_supported_image(path) {
+            return Ok(Some(arg.clone()));
+        }
+    }
+
+    Ok(None)
+}
+
+#[tauri::command]
 pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result<String, String> {
     let image_path = Path::new(&path);
 

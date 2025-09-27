@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import ImageViewer from './components/ImageViewer';
 import DropZone from './components/DropZone';
 import FileOpenButton from './components/FileOpenButton';
@@ -11,11 +12,28 @@ import { useAppStore } from './store';
 import './App.css';
 
 const App: React.FC = () => {
-  const { ui, currentImage, view } = useAppStore();
+  const { ui, currentImage, view, openImageFromPath } = useAppStore();
 
   useKeyboard();
   // useFileDrop(); // Temporarily disabled to test thumbnails
   useCacheManager();
+
+  // Check for startup file (from file association)
+  useEffect(() => {
+    const checkStartupFile = async () => {
+      try {
+        const startupFile = await invoke<string | null>('get_startup_file');
+        if (startupFile) {
+          console.log('Opening startup file:', startupFile);
+          await openImageFromPath(startupFile);
+        }
+      } catch (error) {
+        console.error('Failed to check startup file:', error);
+      }
+    };
+
+    checkStartupFile();
+  }, [openImageFromPath]);
 
   return (
     <div className={`photo-viewer-app ${view.isFullscreen ? 'fullscreen' : ''}`}>
