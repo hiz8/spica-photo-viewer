@@ -210,7 +210,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     // If no valid image found, try the regular navigation
     if (state.currentImage.index + 1 < state.folder.images.length) {
-      state.navigateToImage(state.currentImage.index + 1);
+      get().navigateToImage(state.currentImage.index + 1);
     }
   },
 
@@ -230,7 +230,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     // If no valid image found, try the regular navigation
     if (state.currentImage.index - 1 >= 0) {
-      state.navigateToImage(state.currentImage.index - 1);
+      get().navigateToImage(state.currentImage.index - 1);
     }
   },
 
