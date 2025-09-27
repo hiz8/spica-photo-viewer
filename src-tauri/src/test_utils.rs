@@ -1,4 +1,5 @@
-#[cfg(test)]
+#![cfg(test)]
+
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use std::fs;
