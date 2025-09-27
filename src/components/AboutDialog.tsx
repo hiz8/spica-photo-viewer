@@ -1,8 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { useAppStore } from '../store';
 
 const AboutDialog: React.FC = () => {
   const { ui, setShowAbout } = useAppStore();
+  const [version, setVersion] = useState<string>('');
+
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        const appVersion = await getVersion();
+        setVersion(appVersion);
+      } catch (error) {
+        console.error('Failed to get app version:', error);
+        setVersion('Unknown');
+      }
+    };
+
+    loadVersion();
+  }, []);
 
   if (!ui.showAbout) {
     return null;
@@ -31,7 +47,7 @@ const AboutDialog: React.FC = () => {
         <div className="about-dialog-content">
           <div className="about-logo">
             <div className="logo-icon">📸</div>
-            <p className="version">Version 1.0.0</p>
+            <p className="version">Version {version}</p>
           </div>
 
           <div className="about-info">
