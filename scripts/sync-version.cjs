@@ -23,8 +23,8 @@ function syncVersions() {
     const cargoTomlPath = path.join(__dirname, '..', 'src-tauri', 'Cargo.toml');
     let cargoContent = fs.readFileSync(cargoTomlPath, 'utf8');
     cargoContent = cargoContent.replace(
-      /^version = ".*"$/m,
-      `version = "${version}"`
+      /(\[package\][^\[]*?)^version = ".*"$/m,
+      (_, prefix) => `${prefix}version = "${version}"`
     );
     fs.writeFileSync(cargoTomlPath, cargoContent);
     console.log(`✓ Updated Cargo.toml to version ${version}`);
