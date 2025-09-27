@@ -223,7 +223,6 @@ mod tests {
         assert!(result.is_ok());
         let base64_data = result.unwrap();
         assert!(!base64_data.is_empty());
-        assert!(base64_data.len() > 0);
     }
 
     #[test]
