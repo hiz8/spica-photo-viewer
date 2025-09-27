@@ -1,0 +1,104 @@
+export interface ImageInfo {
+  path: string;
+  filename: string;
+  width: number;
+  height: number;
+  size: number;
+  modified: number;
+  format: 'jpeg' | 'png' | 'webp' | 'gif';
+}
+
+export interface ImageData {
+  path: string;
+  base64: string;
+  width: number;
+  height: number;
+  format: string;
+}
+
+export interface AppState {
+  currentImage: {
+    path: string;
+    index: number;
+    data: ImageData | null;
+    error: Error | null;
+  };
+
+  folder: {
+    path: string;
+    images: ImageInfo[];
+    sortOrder: "name" | "date";
+  };
+
+  view: {
+    zoom: number;
+    panX: number;
+    panY: number;
+    isFullscreen: boolean;
+    thumbnailOpacity: number;
+  };
+
+  cache: {
+    thumbnails: Map<string, string>;
+    preloaded: Map<string, ImageData>;
+  };
+
+  ui: {
+    isLoading: boolean;
+    showAbout: boolean;
+    isDragOver: boolean;
+    error: Error | null;
+  };
+}
+
+export interface ViewState {
+  zoom: number;
+  panX: number;
+  panY: number;
+  isFullscreen: boolean;
+  thumbnailOpacity: number;
+}
+
+export interface FolderState {
+  path: string;
+  images: ImageInfo[];
+  sortOrder: "name" | "date";
+}
+
+export interface CurrentImageState {
+  path: string;
+  index: number;
+  data: ImageData | null;
+  error: Error | null;
+}
+
+export interface UIState {
+  isLoading: boolean;
+  showAbout: boolean;
+  isDragOver: boolean;
+  error: Error | null;
+}
+
+export interface CacheState {
+  thumbnails: Map<string, string>;
+  preloaded: Map<string, ImageData>;
+}
+
+export interface KeyboardShortcuts {
+  ArrowLeft: () => void;
+  ArrowRight: () => void;
+  ArrowUp: () => void;
+  ArrowDown: () => void;
+  F11: () => void;
+  Escape: () => void;
+  'Ctrl+0': () => void;
+}
+
+export interface ZoomPanState {
+  zoom: number;
+  panX: number;
+  panY: number;
+  isDragging: boolean;
+  lastMouseX: number;
+  lastMouseY: number;
+}
