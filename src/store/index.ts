@@ -296,7 +296,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const THUMBNAIL_BAR_HEIGHT = 80;
     const MARGIN = 20;
 
-    // Calculate available display area
+    // Calculate available display area with proper margins
     const availableWidth = window.innerWidth - (MARGIN * 2);
     const availableHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT - (MARGIN * 2);
 
@@ -304,23 +304,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const scaleX = availableWidth / imageWidth;
     const scaleY = availableHeight / imageHeight;
 
-    // Use the smaller scale to ensure both dimensions fit
+    // Use the smaller scale to ensure both dimensions fit within available space
     const fitScale = Math.min(scaleX, scaleY);
 
-    // Don't zoom in beyond 100% (only zoom out if necessary)
-    const fitZoom = Math.min(100, fitScale * 100);
+    // Allow scaling both up and down to fit the window properly
+    // Clamp between minimum (10%) and maximum (2000%) zoom levels
+    const fitZoom = Math.max(10, Math.min(2000, fitScale * 100));
 
-    // Calculate the actual displayed image dimensions after scaling
-    const displayedWidth = imageWidth * (fitZoom / 100);
-    const displayedHeight = imageHeight * (fitZoom / 100);
+    // Calculate the final displayed dimensions (after CSS scaling)
+    const finalWidth = imageWidth * (fitZoom / 100);
+    const finalHeight = imageHeight * (fitZoom / 100);
 
-    // Calculate center position within the container
+    // Calculate center position for the scaled image
     const containerWidth = window.innerWidth;
     const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
 
-    // Position image at center of available space
-    const centerX = (containerWidth - displayedWidth) / 2;
-    const centerY = (containerHeight - displayedHeight) / 2;
+    // Position the image at center of available space
+    const centerX = (containerWidth - finalWidth) / 2;
+    const centerY = (containerHeight - finalHeight) / 2;
 
     set((state) => ({
       view: {
@@ -328,11 +329,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         zoom: fitZoom,
         panX: 0,
         panY: 0,
-        // Store positioning data for the ImageViewer component
+        // Store original image dimensions and calculated position
         imageLeft: centerX,
         imageTop: centerY,
-        imageWidth: displayedWidth,
-        imageHeight: displayedHeight,
+        imageWidth: imageWidth,  // Original image width
+        imageHeight: imageHeight, // Original image height
       },
     }));
   },
