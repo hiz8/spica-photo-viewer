@@ -7,7 +7,7 @@ const PRELOAD_RANGE = 20; // ±20 images
 const MAX_CONCURRENT_LOADS = 3;
 
 export const useImagePreloader = () => {
-  const { folder, currentImage, cache } = useAppStore();
+  const { folder, currentImage, cache, setPreloadedImage, removePreloadedImage } = useAppStore();
 
   const preloadImage = useCallback(async (imagePath: string): Promise<void> => {
     // Check if already preloaded or currently loading
@@ -18,8 +18,8 @@ export const useImagePreloader = () => {
     try {
       const imageData = await invoke<ImageData>('load_image', { path: imagePath });
 
-      // Update cache in store
-      useAppStore.getState().cache.preloaded.set(imagePath, imageData);
+      // Update cache in store using proper action
+      setPreloadedImage(imagePath, imageData);
 
       console.log(`Preloaded: ${imagePath.split(/[\\/]/).pop()}`);
     } catch (error) {
@@ -33,9 +33,9 @@ export const useImagePreloader = () => {
         height: 0,
         format: 'error'
       };
-      useAppStore.getState().cache.preloaded.set(imagePath, errorPlaceholder);
+      setPreloadedImage(imagePath, errorPlaceholder);
     }
-  }, [cache.preloaded]);
+  }, [cache.preloaded, setPreloadedImage]);
 
   const getPreloadQueue = useCallback(() => {
     if (currentImage.index === -1 || !folder.images.length) {
@@ -97,10 +97,10 @@ export const useImagePreloader = () => {
     });
 
     keysToRemove.forEach(path => {
-      cache.preloaded.delete(path);
+      removePreloadedImage(path);
       console.log(`Cleaned from cache: ${path.split(/[\\/]/).pop()}`);
     });
-  }, [currentImage.index, folder.images, cache.preloaded]);
+  }, [currentImage.index, folder.images, cache.preloaded, removePreloadedImage]);
 
   const startPreloading = useCallback(async () => {
     const queue = getPreloadQueue();

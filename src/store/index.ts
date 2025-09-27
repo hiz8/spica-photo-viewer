@@ -25,6 +25,8 @@ interface AppActions {
   zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
   fitToWindow: (imageWidth: number, imageHeight: number) => void;
   openImageFromPath: (imagePath: string) => Promise<void>;
+  setPreloadedImage: (path: string, data: ImageData) => void;
+  removePreloadedImage: (path: string) => void;
 }
 
 type AppStore = AppState & AppActions;
@@ -358,4 +360,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }));
     }
   },
+
+  setPreloadedImage: (path, data) =>
+    set((state) => {
+      const newPreloaded = new Map(state.cache.preloaded);
+      newPreloaded.set(path, data);
+      return {
+        cache: {
+          ...state.cache,
+          preloaded: newPreloaded,
+        },
+      };
+    }),
+
+  removePreloadedImage: (path) =>
+    set((state) => {
+      const newPreloaded = new Map(state.cache.preloaded);
+      newPreloaded.delete(path);
+      return {
+        cache: {
+          ...state.cache,
+          preloaded: newPreloaded,
+        },
+      };
+    }),
 }));
