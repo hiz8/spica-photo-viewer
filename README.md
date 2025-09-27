@@ -82,11 +82,12 @@ The MSI installer will be generated in `src-tauri/target/release/bundle/msi/`.
 The project uses a centralized version management system:
 
 ```bash
-# Update version in package.json, then sync to all config files
+# Sync current version from package.json to all config files
 npm run sync-version
 
-# Manual version update (updates package.json and syncs automatically)
+# Update version in package.json, then sync manually if needed
 npm version patch|minor|major
+npm run sync-version
 ```
 
 **Version Files:**
