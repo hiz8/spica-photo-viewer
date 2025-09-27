@@ -237,14 +237,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   resetZoom: () => {
-    set((state) => ({
-      view: {
-        ...state.view,
-        zoom: 100,
-        panX: 0,
-        panY: 0,
-      },
-    }));
+    const state = get();
+    if (state.currentImage.data) {
+      // Reset to fit-to-window when resetting zoom
+      state.fitToWindow(state.currentImage.data.width, state.currentImage.data.height);
+    } else {
+      set((state) => ({
+        view: {
+          ...state.view,
+          zoom: 100,
+          panX: 0,
+          panY: 0,
+        },
+      }));
+    }
   },
 
   zoomIn: () => {
@@ -304,12 +310,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Don't zoom in beyond 100% (only zoom out if necessary)
     const fitZoom = Math.min(100, fitScale * 100);
 
+    // Calculate the actual displayed image dimensions after scaling
+    const displayedWidth = imageWidth * (fitZoom / 100);
+    const displayedHeight = imageHeight * (fitZoom / 100);
+
+    // Calculate center position within the container
+    const containerWidth = window.innerWidth;
+    const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
+
+    // Position image at center of available space
+    const centerX = (containerWidth - displayedWidth) / 2;
+    const centerY = (containerHeight - displayedHeight) / 2;
+
     set((state) => ({
       view: {
         ...state.view,
         zoom: fitZoom,
         panX: 0,
         panY: 0,
+        // Store positioning data for the ImageViewer component
+        imageLeft: centerX,
+        imageTop: centerY,
+        imageWidth: displayedWidth,
+        imageHeight: displayedHeight,
       },
     }));
   },

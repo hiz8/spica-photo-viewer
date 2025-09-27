@@ -130,11 +130,23 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     zoomAtPoint(zoomFactor, mouseX, mouseY);
   }, [zoomAtPoint]);
 
-  const imageStyle: React.CSSProperties = useMemo(() => ({
-    transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
-    cursor: isDragging ? 'grabbing' : 'grab',
-    transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-  }), [view.zoom, view.panX, view.panY, isDragging]);
+  const imageStyle: React.CSSProperties = useMemo(() => {
+    // Use stored position from fitToWindow if available, otherwise use defaults
+    const baseLeft = view.imageLeft ?? 0;
+    const baseTop = view.imageTop ?? 0;
+    const baseWidth = view.imageWidth ?? (currentImage.data?.width || 0);
+    const baseHeight = view.imageHeight ?? (currentImage.data?.height || 0);
+
+    return {
+      left: baseLeft,
+      top: baseTop,
+      width: baseWidth,
+      height: baseHeight,
+      transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
+      cursor: isDragging ? 'grabbing' : 'grab',
+      transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+    };
+  }, [view.zoom, view.panX, view.panY, view.imageLeft, view.imageTop, view.imageWidth, view.imageHeight, currentImage.data, isDragging]);
 
   if (!currentImage.path) {
     return (
