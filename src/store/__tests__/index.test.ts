@@ -1,0 +1,502 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { mockImageData, mockImageList } from '../../utils/testUtils';
+
+// Mock the invoke function before importing the store
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}));
+
+import { useAppStore } from '../index';
+import { invoke } from '@tauri-apps/api/core';
+
+const mockInvoke = vi.mocked(invoke);
+
+describe('AppStore', () => {
+  beforeEach(() => {
+    // Reset store to initial state before each test
+    useAppStore.setState({
+      currentImage: {
+        path: '',
+        index: -1,
+        data: null,
+        error: null,
+      },
+      folder: {
+        path: '',
+        images: [],
+        sortOrder: 'name',
+      },
+      view: {
+        zoom: 100,
+        panX: 0,
+        panY: 0,
+        isFullscreen: false,
+        thumbnailOpacity: 0.5,
+      },
+      cache: {
+        thumbnails: new Map(),
+        preloaded: new Map(),
+      },
+      ui: {
+        isLoading: false,
+        showAbout: false,
+        isDragOver: false,
+        error: null,
+      },
+    });
+    vi.clearAllMocks();
+  });
+
+  describe('Initial State', () => {
+    it('should have correct initial state', () => {
+      const state = useAppStore.getState();
+
+      expect(state.currentImage.path).toBe('');
+      expect(state.currentImage.index).toBe(-1);
+      expect(state.currentImage.data).toBeNull();
+      expect(state.currentImage.error).toBeNull();
+
+      expect(state.folder.path).toBe('');
+      expect(state.folder.images).toEqual([]);
+      expect(state.folder.sortOrder).toBe('name');
+
+      expect(state.view.zoom).toBe(100);
+      expect(state.view.panX).toBe(0);
+      expect(state.view.panY).toBe(0);
+      expect(state.view.isFullscreen).toBe(false);
+      expect(state.view.thumbnailOpacity).toBe(0.5);
+    });
+  });
+
+  describe('setCurrentImage', () => {
+    it('should set current image path and index', () => {
+      const { setCurrentImage } = useAppStore.getState();
+
+      setCurrentImage('/test/image.jpg', 5);
+
+      const state = useAppStore.getState();
+      expect(state.currentImage.path).toBe('/test/image.jpg');
+      expect(state.currentImage.index).toBe(5);
+      expect(state.currentImage.error).toBeNull();
+    });
+
+    it('should reset error when setting new image', () => {
+      const { setCurrentImage, setImageError } = useAppStore.getState();
+
+      // Set an error first
+      setImageError(new Error('Test error'));
+      expect(useAppStore.getState().currentImage.error).not.toBeNull();
+
+      // Setting new image should clear error
+      setCurrentImage('/test/new-image.jpg', 0);
+      expect(useAppStore.getState().currentImage.error).toBeNull();
+    });
+  });
+
+  describe('setZoom', () => {
+    it('should set zoom within valid range (10-2000)', () => {
+      const { setZoom } = useAppStore.getState();
+
+      setZoom(150);
+      expect(useAppStore.getState().view.zoom).toBe(150);
+    });
+
+    it('should clamp zoom to minimum 10', () => {
+      const { setZoom } = useAppStore.getState();
+
+      setZoom(5);
+      expect(useAppStore.getState().view.zoom).toBe(10);
+    });
+
+    it('should clamp zoom to maximum 2000', () => {
+      const { setZoom } = useAppStore.getState();
+
+      setZoom(3000);
+      expect(useAppStore.getState().view.zoom).toBe(2000);
+    });
+
+    it('should reset pan when setting zoom', () => {
+      const { setPan, setZoom } = useAppStore.getState();
+
+      // Set some pan values
+      setPan(100, 50);
+      expect(useAppStore.getState().view.panX).toBe(100);
+      expect(useAppStore.getState().view.panY).toBe(50);
+
+      // Setting zoom should reset pan
+      setZoom(200);
+      expect(useAppStore.getState().view.panX).toBe(0);
+      expect(useAppStore.getState().view.panY).toBe(0);
+    });
+  });
+
+  describe('navigateToImage', () => {
+    beforeEach(() => {
+      const { setFolderImages } = useAppStore.getState();
+      setFolderImages('/test', mockImageList);
+    });
+
+    it('should navigate to valid image index', () => {
+      const { navigateToImage } = useAppStore.getState();
+
+      navigateToImage(1);
+
+      const state = useAppStore.getState();
+      expect(state.currentImage.path).toBe(mockImageList[1].path);
+      expect(state.currentImage.index).toBe(1);
+      expect(state.currentImage.data).toBeNull();
+      expect(state.currentImage.error).toBeNull();
+    });
+
+    it('should reset view when navigating', () => {
+      const { navigateToImage, setZoom, setPan } = useAppStore.getState();
+
+      // Set some view state
+      setZoom(200);
+      setPan(50, 25);
+
+      navigateToImage(0);
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBe(100);
+      expect(state.view.panX).toBe(0);
+      expect(state.view.panY).toBe(0);
+    });
+
+    it('should not navigate to invalid index', () => {
+      const { navigateToImage } = useAppStore.getState();
+      const initialState = useAppStore.getState().currentImage;
+
+      navigateToImage(-1);
+      expect(useAppStore.getState().currentImage).toEqual(initialState);
+
+      navigateToImage(999);
+      expect(useAppStore.getState().currentImage).toEqual(initialState);
+    });
+  });
+
+  describe('navigateNext', () => {
+    beforeEach(() => {
+      const { setFolderImages, setCurrentImage } = useAppStore.getState();
+      setFolderImages('/test', mockImageList);
+      setCurrentImage(mockImageList[0].path, 0);
+    });
+
+    it('should navigate to next image', () => {
+      const { navigateNext } = useAppStore.getState();
+
+      navigateNext();
+
+      const state = useAppStore.getState();
+      expect(state.currentImage.index).toBe(1);
+      expect(state.currentImage.path).toBe(mockImageList[1].path);
+    });
+
+    it('should not navigate beyond last image', () => {
+      const { navigateNext, setCurrentImage } = useAppStore.getState();
+
+      // Go to last image
+      setCurrentImage(mockImageList[2].path, 2);
+
+      navigateNext();
+
+      // Should stay at last image
+      expect(useAppStore.getState().currentImage.index).toBe(2);
+    });
+
+    it('should skip corrupted images', () => {
+      const { navigateNext, setPreloadedImage } = useAppStore.getState();
+
+      // Mark second image as corrupted
+      setPreloadedImage(mockImageList[1].path, {
+        ...mockImageData,
+        path: mockImageList[1].path,
+        format: 'error',
+      });
+
+      navigateNext();
+
+      // Should skip to third image
+      const state = useAppStore.getState();
+      expect(state.currentImage.index).toBe(2);
+      expect(state.currentImage.path).toBe(mockImageList[2].path);
+    });
+  });
+
+  describe('navigatePrevious', () => {
+    beforeEach(() => {
+      const { setFolderImages, setCurrentImage } = useAppStore.getState();
+      setFolderImages('/test', mockImageList);
+      setCurrentImage(mockImageList[2].path, 2);
+    });
+
+    it('should navigate to previous image', () => {
+      const { navigatePrevious } = useAppStore.getState();
+
+      navigatePrevious();
+
+      const state = useAppStore.getState();
+      expect(state.currentImage.index).toBe(1);
+      expect(state.currentImage.path).toBe(mockImageList[1].path);
+    });
+
+    it('should not navigate before first image', () => {
+      const { navigatePrevious, setCurrentImage } = useAppStore.getState();
+
+      // Go to first image
+      setCurrentImage(mockImageList[0].path, 0);
+
+      navigatePrevious();
+
+      // Should stay at first image
+      expect(useAppStore.getState().currentImage.index).toBe(0);
+    });
+
+    it('should skip corrupted images', () => {
+      const { navigatePrevious, setPreloadedImage } = useAppStore.getState();
+
+      // Mark second image as corrupted
+      setPreloadedImage(mockImageList[1].path, {
+        ...mockImageData,
+        path: mockImageList[1].path,
+        format: 'error',
+      });
+
+      navigatePrevious();
+
+      // Should skip to first image
+      const state = useAppStore.getState();
+      expect(state.currentImage.index).toBe(0);
+      expect(state.currentImage.path).toBe(mockImageList[0].path);
+    });
+  });
+
+  describe('zoom operations', () => {
+    it('should zoom in correctly', () => {
+      const { zoomIn } = useAppStore.getState();
+
+      zoomIn();
+
+      expect(useAppStore.getState().view.zoom).toBe(120); // 100 * 1.2
+    });
+
+    it('should zoom out correctly', () => {
+      const { zoomOut, setZoom } = useAppStore.getState();
+
+      setZoom(120);
+      zoomOut();
+
+      expect(useAppStore.getState().view.zoom).toBe(100); // 120 / 1.2
+    });
+
+    it('should respect zoom limits when zooming in', () => {
+      const { zoomIn, setZoom } = useAppStore.getState();
+
+      setZoom(1900);
+      zoomIn();
+
+      expect(useAppStore.getState().view.zoom).toBe(2000); // Clamped to max
+    });
+
+    it('should respect zoom limits when zooming out', () => {
+      const { zoomOut, setZoom } = useAppStore.getState();
+
+      setZoom(12);
+      zoomOut();
+
+      expect(useAppStore.getState().view.zoom).toBe(10); // Clamped to min
+    });
+
+    it('should reset zoom correctly', () => {
+      const { resetZoom, setZoom, setPan } = useAppStore.getState();
+
+      setZoom(200);
+      setPan(50, 25);
+
+      resetZoom();
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBe(100);
+      expect(state.view.panX).toBe(0);
+      expect(state.view.panY).toBe(0);
+    });
+  });
+
+  describe('zoomAtPoint', () => {
+    it('should zoom at specific point correctly', () => {
+      const { zoomAtPoint } = useAppStore.getState();
+
+      zoomAtPoint(1.5, 100, 50);
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBe(150); // 100 * 1.5
+      // Pan values should be calculated to keep point under cursor
+      expect(typeof state.view.panX).toBe('number');
+      expect(typeof state.view.panY).toBe('number');
+    });
+
+    it('should not change zoom if factor results in same zoom', () => {
+      const { zoomAtPoint } = useAppStore.getState();
+      const initialState = useAppStore.getState().view;
+
+      zoomAtPoint(1.0, 100, 50);
+
+      const state = useAppStore.getState().view;
+      expect(state.zoom).toBe(initialState.zoom);
+      expect(state.panX).toBe(initialState.panX);
+      expect(state.panY).toBe(initialState.panY);
+    });
+
+    it('should respect zoom limits', () => {
+      const { zoomAtPoint, setZoom } = useAppStore.getState();
+
+      setZoom(1800);
+      zoomAtPoint(2.0, 100, 50); // Would be 3600, but clamped to 2000
+
+      expect(useAppStore.getState().view.zoom).toBe(2000);
+    });
+  });
+
+  describe('fitToWindow', () => {
+    it('should calculate correct zoom for image smaller than window', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      // Mock window size
+      Object.defineProperty(window, 'innerWidth', { value: 1920, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 1080, configurable: true });
+
+      fitToWindow(800, 600);
+
+      // Should stay at 100% for smaller images
+      expect(useAppStore.getState().view.zoom).toBe(100);
+    });
+
+    it('should calculate correct zoom for image larger than window', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      // Mock smaller window
+      Object.defineProperty(window, 'innerWidth', { value: 800, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+
+      fitToWindow(1600, 1200);
+
+      // Should zoom out to fit
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBeLessThan(100);
+      expect(state.view.panX).toBe(0);
+      expect(state.view.panY).toBe(0);
+    });
+  });
+
+  describe('openImageFromPath', () => {
+    it('should open image and load folder', async () => {
+      mockInvoke.mockResolvedValue(mockImageList);
+
+      const { openImageFromPath } = useAppStore.getState();
+
+      await openImageFromPath('/test/image2.png');
+
+      const state = useAppStore.getState();
+      expect(state.folder.path).toBe('/test');
+      expect(state.folder.images).toEqual(mockImageList);
+      expect(state.currentImage.path).toBe('/test/image2.png');
+      expect(state.currentImage.index).toBe(1); // Second image in the list
+    });
+
+    it('should handle error when image not found in folder', async () => {
+      mockInvoke.mockResolvedValue(mockImageList);
+
+      const { openImageFromPath } = useAppStore.getState();
+
+      await openImageFromPath('/test/nonexistent.jpg');
+
+      // Should not change current image if not found
+      expect(useAppStore.getState().currentImage.path).toBe('');
+    });
+
+    it('should handle invoke error', async () => {
+      mockInvoke.mockRejectedValue(new Error('Failed to load folder'));
+
+      const { openImageFromPath } = useAppStore.getState();
+
+      await openImageFromPath('/test/image.jpg');
+
+      const state = useAppStore.getState();
+      expect(state.ui.error).not.toBeNull();
+      expect(state.ui.error?.message).toContain('Failed to open image');
+    });
+  });
+
+  describe('cache management', () => {
+    it('should set preloaded image', () => {
+      const { setPreloadedImage } = useAppStore.getState();
+
+      setPreloadedImage('/test/image.jpg', mockImageData);
+
+      const state = useAppStore.getState();
+      expect(state.cache.preloaded.get('/test/image.jpg')).toEqual(mockImageData);
+    });
+
+    it('should remove preloaded image', () => {
+      const { setPreloadedImage, removePreloadedImage } = useAppStore.getState();
+
+      setPreloadedImage('/test/image.jpg', mockImageData);
+      expect(useAppStore.getState().cache.preloaded.has('/test/image.jpg')).toBe(true);
+
+      removePreloadedImage('/test/image.jpg');
+      expect(useAppStore.getState().cache.preloaded.has('/test/image.jpg')).toBe(false);
+    });
+  });
+
+  describe('UI state management', () => {
+    it('should set loading state', () => {
+      const { setLoading } = useAppStore.getState();
+
+      setLoading(true);
+      expect(useAppStore.getState().ui.isLoading).toBe(true);
+
+      setLoading(false);
+      expect(useAppStore.getState().ui.isLoading).toBe(false);
+    });
+
+    it('should set fullscreen state', () => {
+      const { setFullscreen } = useAppStore.getState();
+
+      setFullscreen(true);
+      expect(useAppStore.getState().view.isFullscreen).toBe(true);
+
+      setFullscreen(false);
+      expect(useAppStore.getState().view.isFullscreen).toBe(false);
+    });
+
+    it('should set About dialog state', () => {
+      const { setShowAbout } = useAppStore.getState();
+
+      setShowAbout(true);
+      expect(useAppStore.getState().ui.showAbout).toBe(true);
+
+      setShowAbout(false);
+      expect(useAppStore.getState().ui.showAbout).toBe(false);
+    });
+
+    it('should set drag over state', () => {
+      const { setDragOver } = useAppStore.getState();
+
+      setDragOver(true);
+      expect(useAppStore.getState().ui.isDragOver).toBe(true);
+
+      setDragOver(false);
+      expect(useAppStore.getState().ui.isDragOver).toBe(false);
+    });
+
+    it('should set thumbnail opacity', () => {
+      const { setThumbnailOpacity } = useAppStore.getState();
+
+      setThumbnailOpacity(1.0);
+      expect(useAppStore.getState().view.thumbnailOpacity).toBe(1.0);
+
+      setThumbnailOpacity(0.3);
+      expect(useAppStore.getState().view.thumbnailOpacity).toBe(0.3);
+    });
+  });
+});
