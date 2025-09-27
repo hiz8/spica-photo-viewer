@@ -33,7 +33,8 @@ const FileOpenButton: React.FC<FileOpenButtonProps> = ({ className = '' }) => {
 
       if (selected && typeof selected === 'string') {
         // Get folder images
-        const folderPath = selected.substring(0, selected.lastIndexOf('\\'));
+        const lastSep = Math.max(selected.lastIndexOf('\\'), selected.lastIndexOf('/'));
+        const folderPath = selected.substring(0, lastSep);
         const folderImages = await invoke<ImageInfo[]>('get_folder_images', {
           path: folderPath
         });
