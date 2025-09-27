@@ -77,6 +77,27 @@ npm run tauri build
 
 The MSI installer will be generated in `src-tauri/target/release/bundle/msi/`.
 
+### Version Management
+
+The project uses a centralized version management system:
+
+```bash
+# Sync current version from package.json to all config files
+npm run sync-version
+
+# Update version in package.json, then sync manually if needed
+npm version patch|minor|major
+npm run sync-version
+```
+
+**Version Files:**
+- `package.json` - Master source of truth
+- `src-tauri/tauri.conf.json` - Auto-synced from package.json
+- `src-tauri/Cargo.toml` - Auto-synced from package.json
+- `src/components/AboutDialog.tsx` - Displays version dynamically via Tauri API
+
+**Note:** The build process automatically syncs versions, so you only need to update `package.json`.
+
 ### Project Structure
 
 ```
