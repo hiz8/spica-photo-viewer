@@ -21,9 +21,9 @@ export const useImagePreloader = () => {
       // Update cache in store
       useAppStore.getState().cache.preloaded.set(imagePath, imageData);
 
-      console.log(`Preloaded: ${imagePath.split('\\').pop()}`);
+      console.log(`Preloaded: ${imagePath.split(/[\\/]/).pop()}`);
     } catch (error) {
-      console.warn(`Failed to preload image: ${imagePath.split('\\').pop()}`, error);
+      console.warn(`Failed to preload image: ${imagePath.split(/[\\/]/).pop()}`, error);
 
       // Mark as failed in cache to avoid retry
       const errorPlaceholder: ImageData = {
