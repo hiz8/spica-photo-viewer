@@ -93,15 +93,15 @@ export const useFileDrop = () => {
         });
 
         // Try alternative event names for Tauri v2
-        const alternativeUnlisten1 = await listen('file-drop', async (event) => {
+        await listen('file-drop', async (event) => {
           console.log('File drop detected (file-drop):', event.payload);
         });
 
-        const alternativeUnlisten2 = await listen('drop', async (event) => {
+        await listen('drop', async (event) => {
           console.log('File drop detected (drop):', event.payload);
         });
 
-        const alternativeUnlisten3 = await listen('tauri://drop', async (event) => {
+        await listen('tauri://drop', async (event) => {
           console.log('File drop detected (tauri://drop):', event.payload);
         });
 
