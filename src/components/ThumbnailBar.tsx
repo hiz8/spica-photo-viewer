@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import { ImageInfo } from '../types';
@@ -10,7 +10,7 @@ interface ThumbnailItemProps {
   onClick: (index: number) => void;
 }
 
-const ThumbnailItem: React.FC<ThumbnailItemProps> = ({ image, index, isActive, onClick }) => {
+const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(({ image, index, isActive, onClick }) => {
   const [thumbnailData, setThumbnailData] = useState<string | null>(null);
   const [error, setError] = useState<boolean>(false);
 
@@ -81,20 +81,20 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({ image, index, isActive, o
       )}
     </div>
   );
-};
+});
 
 const ThumbnailBar: React.FC = () => {
   const { folder, currentImage, navigateToImage } = useAppStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
-  const handleThumbnailClick = (index: number) => {
+  const handleThumbnailClick = useCallback((index: number) => {
     if (folder.images[index]) {
       navigateToImage(index);
     }
-  };
+  }, [folder.images, navigateToImage]);
 
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     if (e.deltaY > 0) {
       // Scroll down = next image
@@ -109,7 +109,7 @@ const ThumbnailBar: React.FC = () => {
         navigateToImage(prevIndex);
       }
     }
-  };
+  }, [currentImage.index, folder.images.length, navigateToImage]);
 
   useEffect(() => {
     if (containerRef.current && currentImage.index !== -1) {
@@ -129,6 +129,14 @@ const ThumbnailBar: React.FC = () => {
       }
     }
   }, [currentImage.index]);
+
+  const imageInfo = useMemo(() => {
+    if (!currentImage.path || !folder.images[currentImage.index]) {
+      return null;
+    }
+    const image = folder.images[currentImage.index];
+    return `${image.filename} (${image.width} × ${image.height})`;
+  }, [currentImage.path, currentImage.index, folder.images]);
 
   if (!folder.images.length) {
     return null;
@@ -153,12 +161,9 @@ const ThumbnailBar: React.FC = () => {
         ))}
       </div>
 
-      {currentImage.path && (
+      {imageInfo && (
         <div className="image-info">
-          {folder.images[currentImage.index]?.filename}
-          {folder.images[currentImage.index] && (
-            ` (${folder.images[currentImage.index].width} × ${folder.images[currentImage.index].height})`
-          )}
+          {imageInfo}
         </div>
       )}
     </div>

@@ -26,6 +26,16 @@ pub fn get_image_format(path: &Path) -> Option<ImageFormat> {
 }
 
 pub fn load_image_as_base64(path: &Path) -> Result<String, ImageError> {
+    // For GIF files, read the original file to preserve animation
+    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+        if ext.to_lowercase() == "gif" {
+            let file_data = std::fs::read(path)
+                .map_err(|e| ImageError::IoError(e))?;
+            return Ok(general_purpose::STANDARD.encode(&file_data));
+        }
+    }
+
+    // For other formats, use image processing
     let img = image::open(path)?;
     let mut buffer = Vec::new();
 

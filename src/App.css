@@ -86,6 +86,23 @@ html, body {
   overflow: hidden;
 }
 
+.zoom-indicator {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 10;
+}
+
+
+
 .image-viewer img {
   max-width: 100%;
   max-height: 100%;
@@ -343,6 +360,170 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* About Dialog */
+.about-dialog-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.about-dialog {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.about-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #333;
+}
+
+.about-dialog-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.about-dialog-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.about-dialog-close:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+.about-dialog-content {
+  padding: 24px;
+  color: #ccc;
+  overflow-y: auto;
+  max-height: calc(80vh - 80px);
+}
+
+.about-logo {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.logo-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+
+.version {
+  color: #888;
+  margin: 0;
+  font-size: 14px;
+}
+
+.description {
+  text-align: center;
+  margin-bottom: 24px;
+  line-height: 1.6;
+  color: #ddd;
+}
+
+.features, .shortcuts {
+  margin-bottom: 24px;
+}
+
+.features h3, .shortcuts h3 {
+  color: #fff;
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.features ul {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.8;
+}
+
+.shortcut-list {
+  display: grid;
+  gap: 8px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shortcut-item kbd {
+  background: #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  min-width: 60px;
+  text-align: center;
+  border: 1px solid #555;
+}
+
+.shortcut-item span {
+  color: #ccc;
+}
+
+.tech-info {
+  text-align: center;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}
+
+.built-with {
+  margin: 0;
+  color: #888;
+  font-size: 14px;
+}
+
+/* Fullscreen mode */
+.photo-viewer-app.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: #000;
+}
+
+.photo-viewer-app.fullscreen .image-viewer {
+  height: 100vh;
+}
+
+/* Keep thumbnail bar visible in fullscreen - commented out the hide rule */
+/* .photo-viewer-app.fullscreen .thumbnail-bar {
+  display: none;
+} */
 
 /* Utility classes */
 .sr-only {

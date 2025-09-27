@@ -1,7 +1,13 @@
 import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useAppStore } from '../store';
+
+const MAX_PRELOADED_IMAGES = 20; // Maximum number of preloaded images
+const MAX_THUMBNAIL_CACHE = 100; // Maximum number of cached thumbnails
 
 export const useCacheManager = () => {
+  const { cache } = useAppStore();
+
   useEffect(() => {
     const initializeCache = async () => {
       try {
@@ -19,6 +25,31 @@ export const useCacheManager = () => {
 
     initializeCache();
   }, []);
+
+  // Clean up memory cache when it gets too large
+  useEffect(() => {
+    const cleanupMemoryCache = () => {
+      // Clean up preloaded images if too many
+      if (cache.preloaded.size > MAX_PRELOADED_IMAGES) {
+        const entries = Array.from(cache.preloaded.entries());
+        const entriesToRemove = entries.slice(0, cache.preloaded.size - MAX_PRELOADED_IMAGES);
+        entriesToRemove.forEach(([path]) => cache.preloaded.delete(path));
+        console.log(`Cleaned up ${entriesToRemove.length} preloaded images from memory`);
+      }
+
+      // Clean up thumbnail cache if too many
+      if (cache.thumbnails.size > MAX_THUMBNAIL_CACHE) {
+        const entries = Array.from(cache.thumbnails.entries());
+        const entriesToRemove = entries.slice(0, cache.thumbnails.size - MAX_THUMBNAIL_CACHE);
+        entriesToRemove.forEach(([path]) => cache.thumbnails.delete(path));
+        console.log(`Cleaned up ${entriesToRemove.length} thumbnails from memory`);
+      }
+    };
+
+    // Run cleanup every 30 seconds
+    const interval = setInterval(cleanupMemoryCache, 30000);
+    return () => clearInterval(interval);
+  }, [cache]);
 
   const clearCache = async () => {
     try {

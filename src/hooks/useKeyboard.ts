@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAppStore } from '../store';
 
 export const useKeyboard = () => {
@@ -9,8 +10,46 @@ export const useKeyboard = () => {
     zoomOut,
     resetZoom,
     setFullscreen,
+    setShowAbout,
     view,
+    ui,
   } = useAppStore();
+
+  const toggleFullscreen = async () => {
+    try {
+      const window = getCurrentWindow();
+      const isCurrentlyFullscreen = await window.isFullscreen();
+
+      if (isCurrentlyFullscreen) {
+        await window.setFullscreen(false);
+        setFullscreen(false);
+      } else {
+        await window.setFullscreen(true);
+        setFullscreen(true);
+      }
+    } catch (error) {
+      console.error('Failed to toggle fullscreen:', error);
+    }
+  };
+
+  const exitFullscreen = async () => {
+    try {
+      const window = getCurrentWindow();
+      await window.setFullscreen(false);
+      setFullscreen(false);
+    } catch (error) {
+      console.error('Failed to exit fullscreen:', error);
+    }
+  };
+
+  const closeApplication = async () => {
+    try {
+      const window = getCurrentWindow();
+      await window.close();
+    } catch (error) {
+      console.error('Failed to close application:', error);
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -37,16 +76,23 @@ export const useKeyboard = () => {
 
         case 'F11':
           event.preventDefault();
-          setFullscreen(!view.isFullscreen);
+          toggleFullscreen();
           break;
 
         case 'Escape':
           event.preventDefault();
-          if (view.isFullscreen) {
-            setFullscreen(false);
+          if (ui.showAbout) {
+            setShowAbout(false);
+          } else if (view.isFullscreen) {
+            exitFullscreen();
           } else {
-            window.close();
+            closeApplication();
           }
+          break;
+
+        case 'F1':
+          event.preventDefault();
+          setShowAbout(true);
           break;
 
         case '0':
@@ -73,6 +119,8 @@ export const useKeyboard = () => {
     zoomOut,
     resetZoom,
     setFullscreen,
+    setShowAbout,
     view.isFullscreen,
+    ui.showAbout,
   ]);
 };

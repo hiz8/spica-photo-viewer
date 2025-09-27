@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import { useImagePreloader } from '../hooks/useImagePreloader';
@@ -82,16 +82,16 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     }
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsDragging(true);
     setDragStart({
       x: e.clientX,
       y: e.clientY,
     });
     e.preventDefault();
-  };
+  }, []);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (isDragging) {
       // Calculate pan delta relative to zoom level
       const deltaX = (e.clientX - dragStart.x) / (view.zoom / 100);
@@ -102,17 +102,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       // Update drag start for next move
       setDragStart({ x: e.clientX, y: e.clientY });
     }
-  };
+  }, [isDragging, dragStart, view.zoom, view.panX, view.panY, setPan]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setIsDragging(false);
-  };
+  }, []);
 
-  const handleDoubleClick = () => {
+  const handleDoubleClick = useCallback(() => {
     useAppStore.getState().resetZoom();
-  };
+  }, []);
 
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
 
     if (!containerRef.current) return;
@@ -128,7 +128,13 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
 
     const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
     zoomAtPoint(zoomFactor, mouseX, mouseY);
-  };
+  }, [zoomAtPoint]);
+
+  const imageStyle: React.CSSProperties = useMemo(() => ({
+    transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
+    cursor: isDragging ? 'grabbing' : 'grab',
+    transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+  }), [view.zoom, view.panX, view.panY, isDragging]);
 
   if (!currentImage.path) {
     return (
@@ -160,12 +166,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     );
   }
 
-  const imageStyle: React.CSSProperties = {
-    transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
-    cursor: isDragging ? 'grabbing' : 'grab',
-    transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-  };
-
   return (
     <div
       ref={containerRef}
@@ -190,6 +190,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
           {Math.round(view.zoom)}%
         </div>
       )}
+
     </div>
   );
 };
