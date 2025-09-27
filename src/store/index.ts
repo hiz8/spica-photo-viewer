@@ -311,17 +311,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Clamp between minimum (10%) and maximum (2000%) zoom levels
     const fitZoom = Math.max(10, Math.min(2000, fitScale * 100));
 
-    // Calculate the final displayed dimensions (after CSS scaling)
-    const finalWidth = imageWidth * (fitZoom / 100);
-    const finalHeight = imageHeight * (fitZoom / 100);
-
-    // Calculate center position for the scaled image
+    // Calculate center position for the original image (before CSS scaling)
+    // CSS transform will scale from the center (transform-origin: center)
     const containerWidth = window.innerWidth;
     const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
 
-    // Position the image at center of available space
-    const centerX = (containerWidth - finalWidth) / 2;
-    const centerY = (containerHeight - finalHeight) / 2;
+    // Position the original image so its center aligns with container center
+    const centerX = (containerWidth - imageWidth) / 2;
+    const centerY = (containerHeight - imageHeight) / 2;
 
     set((state) => ({
       view: {
