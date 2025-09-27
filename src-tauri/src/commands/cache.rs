@@ -188,3 +188,105 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u32>, String> {
 
     Ok(stats)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn test_get_cached_thumbnail_returns_ok() {
+        // Test that the function doesn't panic and returns Ok result
+        let result = get_cached_thumbnail("/test/nonexistent.jpg".to_string(), Some(30)).await;
+        assert!(result.is_ok());
+        // Result can be None (no cache) or Some(data) depending on environment
+    }
+
+    #[tokio::test]
+    async fn test_set_cached_thumbnail_returns_ok() {
+        // Test that setting cache doesn't panic and returns Ok result
+        let result = set_cached_thumbnail("/test/unique_001.jpg".to_string(), "test_data".to_string(), Some(30)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_cached_thumbnail_with_default_size() {
+        // Test with None size (default)
+        let result = get_cached_thumbnail("/test/default_size.jpg".to_string(), None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_set_cached_thumbnail_with_default_size() {
+        // Test setting with None size (default)
+        let result = set_cached_thumbnail("/test/default_size.jpg".to_string(), "default_data".to_string(), None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_clear_old_cache_returns_ok() {
+        // Test that cache clearing doesn't panic and returns Ok result
+        let result = clear_old_cache().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_cache_stats_returns_ok() {
+        // Test that cache stats retrieval doesn't panic and returns Ok result
+        let result = get_cache_stats().await;
+        assert!(result.is_ok());
+
+        let stats = result.unwrap();
+        // Should contain the expected keys
+        assert!(stats.contains_key("total_files"));
+        assert!(stats.contains_key("valid_files"));
+    }
+
+    #[test]
+    fn test_get_cache_key_consistency() {
+        // Test that cache key generation is consistent
+        let path = "/test/image.jpg";
+        let size = 30;
+
+        let key1 = get_cache_key(path, size);
+        let key2 = get_cache_key(path, size);
+
+        assert_eq!(key1, key2); // Same inputs should produce same key
+
+        let key3 = get_cache_key(path, 50);
+        assert_ne!(key1, key3); // Different size should produce different key
+
+        let key4 = get_cache_key("/test/other.jpg", size);
+        assert_ne!(key1, key4); // Different path should produce different key
+    }
+
+    #[test]
+    fn test_get_cache_dir_returns_ok() {
+        // Test that cache directory creation doesn't panic
+        let result = get_cache_dir();
+        assert!(result.is_ok());
+
+        let cache_dir = result.unwrap();
+        assert!(cache_dir.to_string_lossy().contains("SpicaPhotoViewer"));
+        assert!(cache_dir.to_string_lossy().contains("cache"));
+    }
+
+    #[test]
+    fn test_cache_entry_serialization() {
+        // Test that CacheEntry can be serialized and deserialized
+        let entry = CacheEntry {
+            thumbnail: "test_thumbnail_data".to_string(),
+            created: 1234567890,
+        };
+
+        let serialized = serde_json::to_string(&entry);
+        assert!(serialized.is_ok());
+
+        let deserialized: Result<CacheEntry, _> = serde_json::from_str(&serialized.unwrap());
+        assert!(deserialized.is_ok());
+
+        let deserialized_entry = deserialized.unwrap();
+        assert_eq!(entry.thumbnail, deserialized_entry.thumbnail);
+        assert_eq!(entry.created, deserialized_entry.created);
+    }
+}
