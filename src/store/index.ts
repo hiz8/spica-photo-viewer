@@ -222,7 +222,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     while (prevIndex >= 0) {
       const cachedImage = state.cache.preloaded.get(state.folder.images[prevIndex].path);
       if (!cachedImage || cachedImage.format !== 'error') {
-        state.navigateToImage(prevIndex);
+        get().navigateToImage(prevIndex);
         return;
       }
       prevIndex--;
