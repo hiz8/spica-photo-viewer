@@ -68,6 +68,30 @@ npm install
 npm run tauri dev
 ```
 
+### Testing
+
+The project includes comprehensive unit tests for both frontend and backend code:
+
+```bash
+# Run frontend tests (React/TypeScript)
+npm test
+
+# Run frontend tests in watch mode
+npm run test:watch
+
+# Run frontend tests with coverage
+npm run test:coverage
+
+# Run backend tests (Rust)
+cd src-tauri
+cargo test --lib
+
+# Run specific test modules
+cargo test commands::file::tests
+cargo test utils::image::tests
+cargo test commands::cache::tests
+```
+
 ### Building
 
 ```bash
@@ -91,6 +115,7 @@ npm run sync-version
 ```
 
 **Version Files:**
+
 - `package.json` - Master source of truth
 - `src-tauri/tauri.conf.json` - Auto-synced from package.json
 - `src-tauri/Cargo.toml` - Auto-synced from package.json

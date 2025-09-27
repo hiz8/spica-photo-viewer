@@ -348,6 +348,73 @@ interface AppState {
 - Keyboard shortcuts
 - File association launch
 
+## Testing Implementation
+
+The project includes comprehensive unit tests for both frontend and backend code, implementing a Specification-based testing approach to prevent regressions during future development.
+
+### Test Execution Commands
+
+#### Frontend Tests (React/TypeScript)
+
+```bash
+# Run all frontend tests
+npm test
+
+# Run tests in watch mode for development
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+```
+
+#### Backend Tests (Rust)
+
+```bash
+# Run all backend tests
+cd src-tauri
+cargo test --lib
+
+# Run specific test modules
+cargo test utils::image::tests
+cargo test commands::file::tests
+cargo test commands::cache::tests
+
+# Run tests with output (including println! statements)
+cargo test -- --nocapture
+```
+
+### Backend Test Infrastructure
+
+#### Test Utilities (src-tauri/src/test_utils.rs)
+
+Comprehensive test helper functions for creating authentic test scenarios:
+
+- `create_temp_dir()` - Creates isolated temporary directories
+- `create_test_jpeg()` - Generates valid JPEG test images
+- `create_test_png()` - Generates valid PNG test images
+- `create_test_webp()` - Generates WebP test files
+- `create_test_gif()` - Generates minimal valid GIF files
+- `create_invalid_image()` - Creates invalid image files for error testing
+
+### Test Execution in CI/CD
+
+Tests are designed to run in automated environments:
+
+```bash
+# Frontend CI command
+npm ci && npm test
+
+# Backend CI command
+cd src-tauri && cargo test --lib --release
+```
+
+### Development Workflow
+
+1. **Before Making Changes**: Run existing tests to establish baseline
+2. **During Development**: Use watch mode for immediate feedback
+3. **After Changes**: Ensure all tests pass before committing
+4. **New Features**: Add corresponding tests using specification testing approach
+
 ## Build & Deployment
 
 ### Development
