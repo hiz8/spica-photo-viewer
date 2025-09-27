@@ -98,7 +98,7 @@ export const useImagePreloader = () => {
 
     keysToRemove.forEach(path => {
       cache.preloaded.delete(path);
-      console.log(`Cleaned from cache: ${path.split('\\').pop()}`);
+      console.log(`Cleaned from cache: ${path.split(/[\\/]/).pop()}`);
     });
   }, [currentImage.index, folder.images, cache.preloaded]);
 
