@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, RenderOptions } from '@testing-library/react';
+import { render, RenderOptions, act } from '@testing-library/react';
+import { vi } from 'vitest';
 import { ImageData, ImageInfo } from '../types';
 
 // Test utilities for common test scenarios
@@ -47,6 +48,121 @@ export const renderWithProviders = (
   options?: Omit<RenderOptions, 'wrapper'>
 ) => {
   return render(ui, options);
+};
+
+// Async render helper that wraps components in act()
+export const renderAsync = async (ui: React.ReactElement, options?: Omit<RenderOptions, 'wrapper'>) => {
+  let result: any;
+  await act(async () => {
+    result = render(ui, options);
+  });
+  return result;
+};
+
+// Store mock factory
+export const createMockStore = (overrides: any = {}) => ({
+  currentImage: {
+    path: '',
+    index: -1,
+    data: null,
+    error: null,
+  },
+  folder: {
+    path: '',
+    images: [],
+    sortOrder: 'name' as const,
+  },
+  view: {
+    zoom: 100,
+    panX: 0,
+    panY: 0,
+    isFullscreen: false,
+    thumbnailOpacity: 0.5,
+  },
+  cache: {
+    thumbnails: new Map(),
+    preloaded: new Map(),
+  },
+  ui: {
+    isLoading: false,
+    showAbout: false,
+    isDragOver: false,
+    error: null,
+  },
+  // Mock functions
+  setCurrentImage: vi.fn(),
+  setImageData: vi.fn(),
+  setImageError: vi.fn(),
+  setFolderImages: vi.fn(),
+  setView: vi.fn(),
+  setZoom: vi.fn(),
+  setPan: vi.fn(),
+  setFullscreen: vi.fn(),
+  setThumbnailOpacity: vi.fn(),
+  setLoading: vi.fn(),
+  setDragOver: vi.fn(),
+  setShowAbout: vi.fn(),
+  setError: vi.fn(),
+  navigateToImage: vi.fn(),
+  navigateNext: vi.fn(),
+  navigatePrevious: vi.fn(),
+  resetZoom: vi.fn(),
+  zoomIn: vi.fn(),
+  zoomOut: vi.fn(),
+  zoomAtPoint: vi.fn(),
+  fitToWindow: vi.fn(),
+  openImageFromPath: vi.fn(),
+  setPreloadedImage: vi.fn(),
+  removePreloadedImage: vi.fn(),
+  ...overrides,
+});
+
+// Wait for async operations with act wrapper
+export const waitForAsync = async (callback: () => void | Promise<void>) => {
+  await act(async () => {
+    if (typeof callback === 'function') {
+      await callback();
+    }
+  });
+};
+
+// Standardized async test patterns
+export const asyncTestPatterns = {
+  // Render component with async operations
+  renderWithAsyncOps: async (ui: React.ReactElement, options?: Omit<RenderOptions, 'wrapper'>) => {
+    let result: any;
+    await act(async () => {
+      result = render(ui, options);
+    });
+    return result;
+  },
+
+  // Wait for component to settle after async operations
+  waitForComponentToSettle: async (callback?: () => void | Promise<void>) => {
+    await act(async () => {
+      if (callback) {
+        await callback();
+      }
+      // Give React time to process all updates
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+  },
+
+  // Execute async action and wait for completion
+  executeAsyncAction: async (action: () => void | Promise<void>) => {
+    await act(async () => {
+      await action();
+    });
+  },
+
+  // Wait for expectations with act wrapper
+  waitForExpectations: async (expectations: () => void | Promise<void>) => {
+    await act(async () => {
+      await vi.waitFor(async () => {
+        await expectations();
+      });
+    });
+  },
 };
 
 // Mock window resize helper

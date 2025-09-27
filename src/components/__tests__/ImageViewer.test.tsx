@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { mockImageData, createMouseEvent, createWheelEvent } from '../../utils/testUtils';
 
 // Mock the invoke function
@@ -156,17 +156,21 @@ describe('ImageViewer', () => {
       mockStore.currentImage.path = '/test/image.jpg';
       mockStore.currentImage.data = null;
 
-      render(<ImageViewer />);
+      await act(async () => {
+        render(<ImageViewer />);
+      });
 
       expect(mockStore.setLoading).toHaveBeenCalledWith(true);
       expect(mockStore.setImageError).toHaveBeenCalledWith(null);
 
       // Wait for async operation
-      await vi.waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('load_image', { path: '/test/image.jpg' });
-        expect(mockStore.setImageData).toHaveBeenCalledWith(mockImageData);
-        expect(mockStore.fitToWindow).toHaveBeenCalledWith(mockImageData.width, mockImageData.height);
-        expect(mockStore.setLoading).toHaveBeenCalledWith(false);
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockInvoke).toHaveBeenCalledWith('load_image', { path: '/test/image.jpg' });
+          expect(mockStore.setImageData).toHaveBeenCalledWith(mockImageData);
+          expect(mockStore.fitToWindow).toHaveBeenCalledWith(mockImageData.width, mockImageData.height);
+          expect(mockStore.setLoading).toHaveBeenCalledWith(false);
+        });
       });
     });
 
@@ -182,13 +186,15 @@ describe('ImageViewer', () => {
       expect(mockInvoke).not.toHaveBeenCalled();
     });
 
-    it('should handle preloaded error images', () => {
+    it('should handle preloaded error images', async () => {
       const errorImage = { ...mockImageData, format: 'error' as const };
       mockStore.currentImage.path = '/test/image.jpg';
       mockStore.currentImage.data = null;
       mockStore.cache.preloaded.set('/test/image.jpg', errorImage);
 
-      render(<ImageViewer />);
+      await act(async () => {
+        render(<ImageViewer />);
+      });
 
       expect(mockStore.setLoading).toHaveBeenCalledWith(true);
       expect(mockStore.setImageError).toHaveBeenCalledWith(expect.any(Error));
@@ -201,11 +207,15 @@ describe('ImageViewer', () => {
       mockStore.currentImage.path = '/test/image.jpg';
       mockStore.currentImage.data = null;
 
-      render(<ImageViewer />);
+      await act(async () => {
+        render(<ImageViewer />);
+      });
 
-      await vi.waitFor(() => {
-        expect(mockStore.setImageError).toHaveBeenCalledWith(expect.any(Error));
-        expect(mockStore.setLoading).toHaveBeenCalledWith(false);
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockStore.setImageError).toHaveBeenCalledWith(expect.any(Error));
+          expect(mockStore.setLoading).toHaveBeenCalledWith(false);
+        });
       });
 
       consoleErrorSpy.mockRestore();

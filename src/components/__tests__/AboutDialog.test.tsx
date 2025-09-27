@@ -26,10 +26,12 @@ describe('AboutDialog', () => {
     mockStore.ui.showAbout = false;
   });
 
-  it('should not render when showAbout is false', () => {
+  it('should not render when showAbout is false', async () => {
     mockStore.ui.showAbout = false;
 
-    render(<AboutDialog />);
+    await act(async () => {
+      render(<AboutDialog />);
+    });
 
     expect(screen.queryByText('Spica Photo Viewer')).not.toBeInTheDocument();
   });
