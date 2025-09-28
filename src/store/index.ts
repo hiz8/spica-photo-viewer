@@ -307,9 +307,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Use the smaller scale to ensure both dimensions fit within available space
     const fitScale = Math.min(scaleX, scaleY);
 
-    // Allow scaling both up and down to fit the window properly
-    // Clamp between minimum (10%) and maximum (2000%) zoom levels
-    const fitZoom = Math.max(10, Math.min(2000, fitScale * 100));
+    // Only scale down if the image is larger than available space (fitScale < 1)
+    // Keep images at 100% if they fit within the window (fitScale >= 1)
+    const fitZoom = fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
 
     // Calculate center position for the original image (before CSS scaling)
     // CSS transform will scale from the center (transform-origin: center)
