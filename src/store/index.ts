@@ -429,11 +429,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const { width, height } = state.currentImage.data;
       const currentZoom = state.view.zoom;
 
-      // Calculate displayed image size
-      const zoomScale = currentZoom / 100;
-      const scaledImageWidth = width * zoomScale;
-      const scaledImageHeight = height * zoomScale;
-
       // Get image element to calculate its actual screen position
       const imageElement = document.querySelector('.image-viewer img') as HTMLImageElement;
       if (imageElement) {
