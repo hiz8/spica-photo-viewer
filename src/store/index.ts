@@ -240,7 +240,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     if (state.currentImage.data) {
       // Reset to fit-to-window when resetting zoom
-      state.fitToWindow(state.currentImage.data.width, state.currentImage.data.height);
+      get().fitToWindow(state.currentImage.data.width, state.currentImage.data.height);
     } else {
       set((state) => ({
         view: {
@@ -329,8 +329,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         // Store original image dimensions and calculated position
         imageLeft: centerX,
         imageTop: centerY,
-        imageWidth: imageWidth,  // Original image width
-        imageHeight: imageHeight, // Original image height
+        imageWidth,  // Original image width
+        imageHeight, // Original image height
       },
     }));
   },
