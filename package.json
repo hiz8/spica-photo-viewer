@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/sync-version.cjs && tsc && vite build",
+    "build": "node scripts/sync-version.cjs && tsc --project tsconfig.json && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "sync-version": "node scripts/sync-version.cjs",
     "test": "vitest --run",
     "test:watch": "vitest --watch",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "type-check": "tsc --noEmit",
+    "type-check:test": "tsc --project tsconfig.test.json --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
