@@ -1,11 +1,13 @@
-use tauri::{AppHandle, Manager, PhysicalSize, PhysicalPosition};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 
 #[tauri::command]
 pub async fn get_window_position(app_handle: AppHandle) -> Result<WindowPosition, String> {
-    let window = app_handle.get_webview_window("main")
+    let window = app_handle
+        .get_webview_window("main")
         .ok_or("Failed to get main window")?;
 
-    let position = window.outer_position()
+    let position = window
+        .outer_position()
         .map_err(|e| format!("Failed to get window position: {}", e))?;
 
     Ok(WindowPosition {
@@ -16,13 +18,16 @@ pub async fn get_window_position(app_handle: AppHandle) -> Result<WindowPosition
 
 #[tauri::command]
 pub async fn get_window_state(app_handle: AppHandle) -> Result<WindowState, String> {
-    let window = app_handle.get_webview_window("main")
+    let window = app_handle
+        .get_webview_window("main")
         .ok_or("Failed to get main window")?;
 
-    let is_maximized = window.is_maximized()
+    let is_maximized = window
+        .is_maximized()
         .map_err(|e| format!("Failed to check if window is maximized: {}", e))?;
 
-    let is_fullscreen = window.is_fullscreen()
+    let is_fullscreen = window
+        .is_fullscreen()
         .map_err(|e| format!("Failed to check if window is fullscreen: {}", e))?;
 
     Ok(WindowState {
@@ -41,11 +46,13 @@ pub async fn resize_window_to_image(
     image_screen_center_y: f64,
     disable_animation: Option<bool>,
 ) -> Result<(), String> {
-    let window = app_handle.get_webview_window("main")
+    let window = app_handle
+        .get_webview_window("main")
         .ok_or("Failed to get main window")?;
 
     // Check if window is maximized before resizing
-    let is_maximized = window.is_maximized()
+    let is_maximized = window
+        .is_maximized()
         .map_err(|e| format!("Failed to check if window is maximized: {}", e))?;
 
     if !is_maximized {
@@ -67,12 +74,14 @@ pub async fn resize_window_to_image(
     // For smooth operation without animation, unmaximize and resize quickly
     if disable_animation.unwrap_or(true) {
         // Unmaximize first
-        window.unmaximize()
+        window
+            .unmaximize()
             .map_err(|e| format!("Failed to unmaximize window: {}", e))?;
 
         // Set the new size immediately
         let new_size = PhysicalSize::new(new_width, new_height);
-        window.set_size(new_size)
+        window
+            .set_size(new_size)
             .map_err(|e| format!("Failed to resize window: {}", e))?;
 
         // Position window around the image location
@@ -80,25 +89,33 @@ pub async fn resize_window_to_image(
         let new_window_y = image_screen_center_y - (new_height as f64 / 2.0);
 
         // Get screen size for boundary checking
-        let monitor = window.primary_monitor()
+        let monitor = window
+            .primary_monitor()
             .map_err(|e| format!("Failed to get primary monitor: {}", e))?
             .ok_or("No primary monitor found")?;
         let screen_size = monitor.size();
 
         // Apply boundary constraints
-        let constrained_x = new_window_x.max(0.0).min((screen_size.width as f64 - new_width as f64).max(0.0));
-        let constrained_y = new_window_y.max(0.0).min((screen_size.height as f64 - new_height as f64).max(0.0));
+        let constrained_x = new_window_x
+            .max(0.0)
+            .min((screen_size.width as f64 - new_width as f64).max(0.0));
+        let constrained_y = new_window_y
+            .max(0.0)
+            .min((screen_size.height as f64 - new_height as f64).max(0.0));
 
         let new_position = PhysicalPosition::new(constrained_x as i32, constrained_y as i32);
-        window.set_position(new_position)
+        window
+            .set_position(new_position)
             .map_err(|e| format!("Failed to set window position: {}", e))?;
     } else {
         // Standard resize with system animations
-        window.unmaximize()
+        window
+            .unmaximize()
             .map_err(|e| format!("Failed to unmaximize window: {}", e))?;
 
         let new_size = PhysicalSize::new(new_width, new_height);
-        window.set_size(new_size)
+        window
+            .set_size(new_size)
             .map_err(|e| format!("Failed to resize window: {}", e))?;
 
         // Position window around the image location
@@ -106,17 +123,23 @@ pub async fn resize_window_to_image(
         let new_window_y = image_screen_center_y - (new_height as f64 / 2.0);
 
         // Get screen size for boundary checking
-        let monitor = window.primary_monitor()
+        let monitor = window
+            .primary_monitor()
             .map_err(|e| format!("Failed to get primary monitor: {}", e))?
             .ok_or("No primary monitor found")?;
         let screen_size = monitor.size();
 
         // Apply boundary constraints
-        let constrained_x = new_window_x.max(0.0).min((screen_size.width as f64 - new_width as f64).max(0.0));
-        let constrained_y = new_window_y.max(0.0).min((screen_size.height as f64 - new_height as f64).max(0.0));
+        let constrained_x = new_window_x
+            .max(0.0)
+            .min((screen_size.width as f64 - new_width as f64).max(0.0));
+        let constrained_y = new_window_y
+            .max(0.0)
+            .min((screen_size.height as f64 - new_height as f64).max(0.0));
 
         let new_position = PhysicalPosition::new(constrained_x as i32, constrained_y as i32);
-        window.set_position(new_position)
+        window
+            .set_position(new_position)
             .map_err(|e| format!("Failed to set window position: {}", e))?;
     }
 
