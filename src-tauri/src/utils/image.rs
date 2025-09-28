@@ -46,7 +46,7 @@ pub fn load_image_as_base64(path: &Path) -> Result<String, ImageError> {
 }
 
 pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
-    let reader = image::io::Reader::open(path)?;
+    let reader = image::ImageReader::open(path)?;
     let dimensions = reader.into_dimensions()?;
     Ok(dimensions)
 }
