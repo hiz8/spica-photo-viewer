@@ -11,6 +11,7 @@ interface AppActions {
   setZoom: (zoom: number) => void;
   setPan: (panX: number, panY: number) => void;
   setFullscreen: (isFullscreen: boolean) => void;
+  setMaximized: (isMaximized: boolean) => void;
   setThumbnailOpacity: (opacity: number) => void;
   setLoading: (isLoading: boolean) => void;
   setDragOver: (isDragOver: boolean) => void;
@@ -23,10 +24,11 @@ interface AppActions {
   zoomIn: () => void;
   zoomOut: () => void;
   zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
-  fitToWindow: (imageWidth: number, imageHeight: number) => void;
+  fitToWindow: (imageWidth: number, imageHeight: number, preserveZoom?: boolean) => void;
   openImageFromPath: (imagePath: string) => Promise<void>;
   setPreloadedImage: (path: string, data: ImageData) => void;
   removePreloadedImage: (path: string) => void;
+  resizeToImage: () => Promise<void>;
 }
 
 type AppStore = AppState & AppActions;
@@ -49,6 +51,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     panX: 0,
     panY: 0,
     isFullscreen: false,
+    isMaximized: false,
     thumbnailOpacity: 0.5,
   },
   cache: {
@@ -130,6 +133,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       view: {
         ...state.view,
         isFullscreen,
+      },
+    })),
+
+  setMaximized: (isMaximized) =>
+    set((state) => ({
+      view: {
+        ...state.view,
+        isMaximized,
       },
     })),
 
@@ -292,7 +303,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  fitToWindow: (imageWidth, imageHeight) => {
+  fitToWindow: (imageWidth, imageHeight, preserveZoom = false) => {
     const THUMBNAIL_BAR_HEIGHT = 80;
     const MARGIN = 20;
 
@@ -323,9 +334,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       view: {
         ...state.view,
-        zoom: fitZoom,
-        panX: 0,
-        panY: 0,
+        zoom: preserveZoom ? state.view.zoom : fitZoom,
+        panX: preserveZoom ? state.view.panX : 0,
+        panY: preserveZoom ? state.view.panY : 0,
         // Store original image dimensions and calculated position
         imageLeft: centerX,
         imageTop: centerY,
@@ -337,7 +348,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   openImageFromPath: async (imagePath: string) => {
     try {
-      // Get the folder containing the image (handle both \ and / separators)
+      // Get the folder containing the image (handle both \\ and / separators)
       const lastSlashIndex = Math.max(imagePath.lastIndexOf('\\'), imagePath.lastIndexOf('/'));
       const folderPath = imagePath.substring(0, lastSlashIndex);
 
@@ -405,4 +416,60 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       };
     }),
+
+  resizeToImage: async () => {
+    try {
+      const state = get();
+
+      // Check if conditions are met for resizing
+      if (!state.view.isMaximized || state.view.isFullscreen || !state.currentImage.data) {
+        return;
+      }
+
+      const { width, height } = state.currentImage.data;
+      const currentZoom = state.view.zoom;
+
+      // Calculate displayed image size
+      const zoomScale = currentZoom / 100;
+      const scaledImageWidth = width * zoomScale;
+      const scaledImageHeight = height * zoomScale;
+
+      // Get image element to calculate its actual screen position
+      const imageElement = document.querySelector('.image-viewer img') as HTMLImageElement;
+      if (imageElement) {
+        const rect = imageElement.getBoundingClientRect();
+
+        // Calculate center of the image on screen
+        const imageScreenCenterX = rect.left + rect.width / 2;
+        const imageScreenCenterY = rect.top + rect.height / 2;
+
+        console.log('Image screen center:', imageScreenCenterX, imageScreenCenterY);
+        console.log('Image rect:', rect);
+
+        await invoke('resize_window_to_image', {
+          imageWidth: width,
+          imageHeight: height,
+          zoomPercent: currentZoom,
+          imageScreenCenterX: imageScreenCenterX,
+          imageScreenCenterY: imageScreenCenterY,
+          disableAnimation: true,
+        });
+
+        // Update maximized state and reset pan values to center the image in new window
+        set((state) => ({
+          view: {
+            ...state.view,
+            isMaximized: false,
+            panX: 0,
+            panY: 0,
+          },
+        }));
+      } else {
+        console.error('Could not find image element for positioning');
+      }
+
+    } catch (error) {
+      console.error('Failed to resize window to image size:', error);
+    }
+  },
 }));
