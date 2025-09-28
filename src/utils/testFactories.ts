@@ -13,16 +13,19 @@ export const createImageData = (overrides: Partial<ImageData> = {}): ImageData =
 
 export const createImageInfo = (overrides: Partial<ImageInfo> = {}): ImageInfo => ({
   path: '/test/image.jpg',
-  name: 'image.jpg',
+  filename: 'image.jpg',
+  width: 800,
+  height: 600,
   size: 1024,
   modified: Date.now(),
+  format: 'jpeg',
   ...overrides,
 });
 
 export const createImageList = (count: number = 3, baseName: string = 'image'): ImageInfo[] => {
   return Array.from({ length: count }, (_, index) => createImageInfo({
     path: `/test/${baseName}${index + 1}.jpg`,
-    name: `${baseName}${index + 1}.jpg`,
+    filename: `${baseName}${index + 1}.jpg`,
     modified: Date.now() - (count - index) * 1000,
   }));
 };
