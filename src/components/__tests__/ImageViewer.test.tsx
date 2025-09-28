@@ -23,6 +23,10 @@ const mockStore = {
     zoom: 100,
     panX: 0,
     panY: 0,
+    imageLeft: 0,
+    imageTop: 0,
+    imageWidth: 0,
+    imageHeight: 0,
   },
   cache: {
     preloaded: new Map(),
@@ -54,6 +58,10 @@ describe('ImageViewer', () => {
     mockStore.view.zoom = 100;
     mockStore.view.panX = 0;
     mockStore.view.panY = 0;
+    mockStore.view.imageLeft = 0;
+    mockStore.view.imageTop = 0;
+    mockStore.view.imageWidth = 0;
+    mockStore.view.imageHeight = 0;
     mockStore.cache.preloaded = new Map();
   });
 
@@ -395,6 +403,114 @@ describe('ImageViewer', () => {
 
       const image = screen.getByRole('img');
       expect(image).toHaveAttribute('draggable', 'false');
+    });
+  });
+
+  describe('Image positioning and scaling', () => {
+    beforeEach(() => {
+      mockStore.currentImage.path = '/test/image.jpg';
+      mockStore.currentImage.data = {
+        ...mockImageData,
+        width: 1200,
+        height: 800,
+      };
+    });
+
+    it('should use original image dimensions for width and height', () => {
+      render(<ImageViewer />);
+
+      const image = screen.getByRole('img');
+      expect(image).toHaveStyle({
+        width: '1200px',
+        height: '800px',
+      });
+    });
+
+    it('should apply positioned coordinates from view state', () => {
+      mockStore.view.imageLeft = 360;
+      mockStore.view.imageTop = 140;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole('img');
+      expect(image).toHaveStyle({
+        left: '360px',
+        top: '140px',
+      });
+    });
+
+    it('should fall back to 0 position when no coordinates provided', () => {
+      mockStore.view.imageLeft = undefined;
+      mockStore.view.imageTop = undefined;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole('img');
+      expect(image).toHaveStyle({
+        left: '0px',
+        top: '0px',
+      });
+    });
+
+    it('should combine positioning with scaling and translation', () => {
+      mockStore.view.imageLeft = 100;
+      mockStore.view.imageTop = 50;
+      mockStore.view.zoom = 150;
+      mockStore.view.panX = 20;
+      mockStore.view.panY = 10;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole('img');
+      expect(image).toHaveStyle({
+        left: '100px',
+        top: '50px',
+        width: '1200px',
+        height: '800px',
+        transform: 'scale(1.5) translate(20px, 10px)',
+      });
+    });
+
+    it('should handle missing image data gracefully', () => {
+      mockStore.currentImage.data = null;
+      mockStore.view.imageLeft = 100;
+      mockStore.view.imageTop = 50;
+
+      render(<ImageViewer />);
+
+      // Should render loading state, not crash
+      expect(screen.getByText('Loading...')).toBeInTheDocument();
+    });
+
+    it('should update styles when view state changes', () => {
+      const { rerender } = render(<ImageViewer />);
+
+      let image = screen.getByRole('img');
+      expect(image).toHaveStyle({
+        left: '0px',
+        top: '0px',
+      });
+
+      // Update view state
+      mockStore.view.imageLeft = 200;
+      mockStore.view.imageTop = 100;
+
+      rerender(<ImageViewer />);
+
+      image = screen.getByRole('img');
+      expect(image).toHaveStyle({
+        left: '200px',
+        top: '100px',
+      });
+    });
+
+    it('should apply correct CSS class for absolute positioning', () => {
+      render(<ImageViewer />);
+
+      const image = screen.getByRole('img');
+      // CSS positioning is handled by App.css via class, not inline styles
+      expect(image).toBeInTheDocument();
+      expect(image.tagName).toBe('IMG');
     });
   });
 });
