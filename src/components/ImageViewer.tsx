@@ -58,7 +58,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
         if (preloadedImage.format === 'error') {
           throw new Error('Image failed to load previously');
         }
-        console.log(`Using preloaded image: ${path.split(/[\\\\/]/).pop()}`);
         setImageData(preloadedImage);
 
         // Auto-fit image to window
@@ -201,7 +200,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
         <img
           ref={imageRef}
           src={`data:${currentImage.data.format};base64,${currentImage.data.base64}`}
-          alt={currentImage.path.split(/[\\\\/]/).pop() || 'Current image'}
+          alt={currentImage.path.split(/[\\/]/).pop() || 'Current image'}
           style={imageStyle}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}

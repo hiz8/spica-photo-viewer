@@ -438,9 +438,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const imageScreenCenterX = rect.left + rect.width / 2;
         const imageScreenCenterY = rect.top + rect.height / 2;
 
-        console.log('Image screen center:', imageScreenCenterX, imageScreenCenterY);
-        console.log('Image rect:', rect);
-
         await invoke('resize_window_to_image', {
           imageWidth: width,
           imageHeight: height,
