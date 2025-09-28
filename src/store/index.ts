@@ -359,6 +359,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const imageIndex = images.findIndex((img: ImageInfo) => img.path === imagePath);
 
       if (imageIndex !== -1) {
+        // Maximize window when opening an image
+        try {
+          await invoke('maximize_window');
+        } catch (error) {
+          console.error('Failed to maximize window when opening image:', error);
+        }
+
         set((state) => ({
           folder: {
             ...state.folder,

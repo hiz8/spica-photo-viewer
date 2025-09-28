@@ -157,3 +157,16 @@ pub struct WindowState {
     pub is_maximized: bool,
     pub is_fullscreen: bool,
 }
+
+#[tauri::command]
+pub async fn maximize_window(app_handle: AppHandle) -> Result<(), String> {
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or("Failed to get main window")?;
+
+    window
+        .maximize()
+        .map_err(|e| format!("Failed to maximize window: {}", e))?;
+
+    Ok(())
+}
