@@ -158,7 +158,6 @@ spica-photo-viewer/
 ## Known Issues
 
 - Large images (2000px+) may have slower load times due to base64 encoding
-- Images larger than window size may not auto-fit perfectly in some cases
 
 ## License
 
