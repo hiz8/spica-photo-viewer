@@ -8,6 +8,7 @@ import AboutDialog from './components/AboutDialog';
 import { useKeyboard } from './hooks/useKeyboard';
 // import { useFileDrop } from './hooks/useFileDrop';
 import { useCacheManager } from './hooks/useCacheManager';
+import { useWindowState } from './hooks/useWindowState';
 import { useAppStore } from './store';
 import './App.css';
 
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   useKeyboard();
   // useFileDrop(); // Temporarily disabled to test thumbnails
   useCacheManager();
+  useWindowState();
 
   // Check for startup file (from file association)
   useEffect(() => {
