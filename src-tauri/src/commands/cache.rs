@@ -1,8 +1,8 @@
-use std::path::Path;
-use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -13,8 +13,8 @@ pub struct CacheEntry {
 const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 fn get_cache_dir() -> Result<std::path::PathBuf, String> {
-    let app_data = std::env::var("APPDATA")
-        .map_err(|_| "Failed to get APPDATA directory".to_string())?;
+    let app_data =
+        std::env::var("APPDATA").map_err(|_| "Failed to get APPDATA directory".to_string())?;
 
     let cache_dir = Path::new(&app_data).join("SpicaPhotoViewer").join("cache");
 
@@ -37,7 +37,10 @@ fn get_cache_key(path: &str, size: u32) -> String {
 }
 
 #[tauri::command]
-pub async fn get_cached_thumbnail(path: String, size: Option<u32>) -> Result<Option<String>, String> {
+pub async fn get_cached_thumbnail(
+    path: String,
+    size: Option<u32>,
+) -> Result<Option<String>, String> {
     let cache_dir = get_cache_dir()?;
     let thumbnail_size = size.unwrap_or(30);
     let cache_key = get_cache_key(&path, thumbnail_size);
@@ -47,8 +50,8 @@ pub async fn get_cached_thumbnail(path: String, size: Option<u32>) -> Result<Opt
         return Ok(None);
     }
 
-    let cache_content = fs::read_to_string(&cache_file)
-        .map_err(|e| format!("Failed to read cache file: {}", e))?;
+    let cache_content =
+        fs::read_to_string(&cache_file).map_err(|e| format!("Failed to read cache file: {}", e))?;
 
     let cache_entry: CacheEntry = serde_json::from_str(&cache_content)
         .map_err(|e| format!("Failed to parse cache entry: {}", e))?;
@@ -69,7 +72,11 @@ pub async fn get_cached_thumbnail(path: String, size: Option<u32>) -> Result<Opt
 }
 
 #[tauri::command]
-pub async fn set_cached_thumbnail(path: String, thumbnail: String, size: Option<u32>) -> Result<(), String> {
+pub async fn set_cached_thumbnail(
+    path: String,
+    thumbnail: String,
+    size: Option<u32>,
+) -> Result<(), String> {
     let cache_dir = get_cache_dir()?;
     let thumbnail_size = size.unwrap_or(30);
     let cache_key = get_cache_key(&path, thumbnail_size);
@@ -110,8 +117,8 @@ pub async fn clear_old_cache() -> Result<(), String> {
         .unwrap()
         .as_secs();
 
-    let entries = fs::read_dir(&cache_dir)
-        .map_err(|e| format!("Failed to read cache directory: {}", e))?;
+    let entries =
+        fs::read_dir(&cache_dir).map_err(|e| format!("Failed to read cache directory: {}", e))?;
 
     let mut removed_count = 0;
 
@@ -129,7 +136,7 @@ pub async fn clear_old_cache() -> Result<(), String> {
                             }
                         }
                     }
-                },
+                }
                 Err(_) => {
                     // Remove corrupted cache files
                     let _ = fs::remove_file(&path);
@@ -154,8 +161,8 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u32>, String> {
         return Ok(HashMap::new());
     }
 
-    let entries = fs::read_dir(&cache_dir)
-        .map_err(|e| format!("Failed to read cache directory: {}", e))?;
+    let entries =
+        fs::read_dir(&cache_dir).map_err(|e| format!("Failed to read cache directory: {}", e))?;
 
     let mut stats = HashMap::new();
     let mut total_files = 0;
@@ -205,7 +212,12 @@ mod tests {
     #[tokio::test]
     async fn test_set_cached_thumbnail_returns_ok() {
         // Test that setting cache doesn't panic and returns Ok result
-        let result = set_cached_thumbnail("/test/unique_001.jpg".to_string(), "test_data".to_string(), Some(30)).await;
+        let result = set_cached_thumbnail(
+            "/test/unique_001.jpg".to_string(),
+            "test_data".to_string(),
+            Some(30),
+        )
+        .await;
         assert!(result.is_ok());
     }
 
@@ -219,7 +231,12 @@ mod tests {
     #[tokio::test]
     async fn test_set_cached_thumbnail_with_default_size() {
         // Test setting with None size (default)
-        let result = set_cached_thumbnail("/test/default_size.jpg".to_string(), "default_data".to_string(), None).await;
+        let result = set_cached_thumbnail(
+            "/test/default_size.jpg".to_string(),
+            "default_data".to_string(),
+            None,
+        )
+        .await;
         assert!(result.is_ok());
     }
 

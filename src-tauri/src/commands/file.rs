@@ -1,7 +1,9 @@
-use crate::utils::image::{is_supported_image, get_image_dimensions, load_image_as_base64, generate_thumbnail};
+use crate::utils::image::{
+    generate_thumbnail, get_image_dimensions, is_supported_image, load_image_as_base64,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -65,8 +67,8 @@ pub async fn load_image(path: String) -> Result<ImageData, String> {
         return Err("Unsupported file format".to_string());
     }
 
-    let base64_data = load_image_as_base64(image_path)
-        .map_err(|e| format!("Failed to load image: {}", e))?;
+    let base64_data =
+        load_image_as_base64(image_path).map_err(|e| format!("Failed to load image: {}", e))?;
 
     let (width, height) = get_image_dimensions(image_path)
         .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
@@ -141,11 +143,11 @@ pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result
 }
 
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
-    let metadata = fs::metadata(path)
-        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    let metadata =
+        fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
 
-    let (width, height) = get_image_dimensions(path)
-        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
+    let (width, height) =
+        get_image_dimensions(path).map_err(|e| format!("Failed to get image dimensions: {}", e))?;
 
     let filename = path
         .file_name()
@@ -459,7 +461,8 @@ mod tests {
         let temp_dir = create_temp_dir();
         let image_path = create_test_jpeg(temp_dir.path(), "thumbnail_test.jpg");
 
-        let result = generate_image_thumbnail(image_path.to_string_lossy().to_string(), Some(30)).await;
+        let result =
+            generate_image_thumbnail(image_path.to_string_lossy().to_string(), Some(30)).await;
         assert!(result.is_ok());
 
         let thumbnail_data = result.unwrap();
@@ -491,7 +494,8 @@ mod tests {
         let text_file = temp_dir.path().join("text.txt");
         fs::write(&text_file, "not an image").unwrap();
 
-        let result = generate_image_thumbnail(text_file.to_string_lossy().to_string(), Some(30)).await;
+        let result =
+            generate_image_thumbnail(text_file.to_string_lossy().to_string(), Some(30)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unsupported file format"));
     }
@@ -501,7 +505,8 @@ mod tests {
         let temp_dir = create_temp_dir();
         let corrupted_path = create_fake_image(temp_dir.path(), "corrupted.jpg");
 
-        let result = generate_image_thumbnail(corrupted_path.to_string_lossy().to_string(), Some(30)).await;
+        let result =
+            generate_image_thumbnail(corrupted_path.to_string_lossy().to_string(), Some(30)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to generate thumbnail"));
     }
