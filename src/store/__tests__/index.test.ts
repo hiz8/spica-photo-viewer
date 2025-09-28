@@ -386,6 +386,143 @@ describe('AppStore', () => {
       expect(state.view.panX).toBe(0);
       expect(state.view.panY).toBe(0);
     });
+
+    it('should store original image dimensions in view state', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 1920, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 1080, configurable: true });
+
+      fitToWindow(2000, 1500);
+
+      const state = useAppStore.getState();
+      // Should store original dimensions, not scaled dimensions
+      expect(state.view.imageWidth).toBe(2000);
+      expect(state.view.imageHeight).toBe(1500);
+    });
+
+    it('should calculate correct positioning for centered image', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+
+      fitToWindow(400, 300);
+
+      const state = useAppStore.getState();
+      // Image should be centered: (containerWidth - imageWidth) / 2
+      // containerWidth = 1000, imageWidth = 400
+      const expectedLeft = (1000 - 400) / 2; // 300
+      // containerHeight = 800 - 80 (thumbnail bar) = 720, imageHeight = 300
+      const expectedTop = (720 - 300) / 2; // 210
+
+      expect(state.view.imageLeft).toBe(expectedLeft);
+      expect(state.view.imageTop).toBe(expectedTop);
+    });
+
+    it('should handle extreme aspect ratios correctly', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 1920, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 1080, configurable: true });
+
+      // Very wide image
+      fitToWindow(4000, 500);
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBeLessThan(100);
+      expect(state.view.imageWidth).toBe(4000);
+      expect(state.view.imageHeight).toBe(500);
+    });
+
+    it('should handle very large images by scaling down appropriately', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 1920, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 1080, configurable: true });
+
+      // 8K image
+      fitToWindow(7680, 4320);
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBeLessThan(50); // Should be significantly scaled down
+      expect(state.view.zoom).toBeGreaterThan(10); // But not below minimum
+    });
+
+    it('should handle tiny images by keeping them at 100%', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 1920, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 1080, configurable: true });
+
+      // Very small image
+      fitToWindow(64, 64);
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBe(100); // Should stay at 100%
+      expect(state.view.imageWidth).toBe(64);
+      expect(state.view.imageHeight).toBe(64);
+    });
+
+    it('should handle edge case: image exactly fits window', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 800, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+
+      // Image that exactly fits available space (800-40)x(600-80-40) = 760x480
+      fitToWindow(760, 480);
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBe(100); // Should stay at 100%
+      expect(state.view.imageWidth).toBe(760);
+      expect(state.view.imageHeight).toBe(480);
+    });
+
+    it('should respect minimum zoom limit for extremely large images', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 1920, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 1080, configurable: true });
+
+      // Extremely large image that would require <10% zoom
+      fitToWindow(50000, 30000);
+
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBe(10); // Should be clamped to minimum
+      expect(state.view.imageWidth).toBe(50000);
+      expect(state.view.imageHeight).toBe(30000);
+    });
+
+    it('should handle portrait vs landscape orientation correctly', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+
+      // Portrait image (height > width)
+      fitToWindow(600, 1200);
+
+      const state = useAppStore.getState();
+      // Should be constrained by height: available height = 800 - 80 - 40 = 680
+      // Scale factor = 680 / 1200 ≈ 0.567 = 56.7%
+      expect(state.view.zoom).toBeCloseTo(56.67, 1);
+      expect(state.view.imageWidth).toBe(600);
+      expect(state.view.imageHeight).toBe(1200);
+    });
+
+    it('should handle zero-sized window gracefully', () => {
+      const { fitToWindow } = useAppStore.getState();
+
+      Object.defineProperty(window, 'innerWidth', { value: 0, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 0, configurable: true });
+
+      fitToWindow(1000, 800);
+
+      const state = useAppStore.getState();
+      // Should clamp to minimum zoom even with zero window size
+      expect(state.view.zoom).toBe(10);
+    });
   });
 
   describe('openImageFromPath', () => {

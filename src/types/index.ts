@@ -36,6 +36,10 @@ export interface AppState {
     panY: number;
     isFullscreen: boolean;
     thumbnailOpacity: number;
+    imageLeft?: number;
+    imageTop?: number;
+    imageWidth?: number;
+    imageHeight?: number;
   };
 
   cache: {
@@ -57,6 +61,10 @@ export interface ViewState {
   panY: number;
   isFullscreen: boolean;
   thumbnailOpacity: number;
+  imageLeft?: number;
+  imageTop?: number;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export interface FolderState {
