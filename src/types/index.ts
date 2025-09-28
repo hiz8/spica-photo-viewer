@@ -35,6 +35,7 @@ export interface AppState {
     panX: number;
     panY: number;
     isFullscreen: boolean;
+    isMaximized: boolean;
     thumbnailOpacity: number;
     imageLeft?: number;
     imageTop?: number;
@@ -60,6 +61,7 @@ export interface ViewState {
   panX: number;
   panY: number;
   isFullscreen: boolean;
+  isMaximized: boolean;
   thumbnailOpacity: number;
   imageLeft?: number;
   imageTop?: number;
@@ -109,4 +111,9 @@ export interface ZoomPanState {
   isDragging: boolean;
   lastMouseX: number;
   lastMouseY: number;
+}
+
+export interface WindowState {
+  is_maximized: boolean;
+  is_fullscreen: boolean;
 }

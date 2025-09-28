@@ -19,6 +19,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     setPan,
     zoomAtPoint,
     fitToWindow,
+    resizeToImage,
   } = useAppStore();
 
   useImagePreloader();
@@ -38,7 +39,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
   useEffect(() => {
     const handleResize = () => {
       if (currentImage.data) {
-        fitToWindow(currentImage.data.width, currentImage.data.height);
+        fitToWindow(currentImage.data.width, currentImage.data.height, true);
       }
     };
 
@@ -57,7 +58,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
         if (preloadedImage.format === 'error') {
           throw new Error('Image failed to load previously');
         }
-        console.log(`Using preloaded image: ${path.split(/[\\/]/).pop()}`);
         setImageData(preloadedImage);
 
         // Auto-fit image to window
@@ -82,13 +82,26 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     }
   };
 
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    // Check if click was on the image element
+    const isImageClick = e.target === imageRef.current;
+
+    // Only handle clicks outside the image
+    if (!isImageClick && view.isMaximized && !view.isFullscreen && currentImage.data) {
+      resizeToImage();
+    }
+  }, [view.isMaximized, view.isFullscreen, currentImage.data, resizeToImage]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX,
-      y: e.clientY,
-    });
-    e.preventDefault();
+    // Only allow dragging on the image itself
+    if (e.target === imageRef.current) {
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX,
+        y: e.clientY,
+      });
+      e.preventDefault();
+    }
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -108,8 +121,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     setIsDragging(false);
   }, []);
 
-  const handleDoubleClick = useCallback(() => {
-    useAppStore.getState().resetZoom();
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    // Only reset zoom on image double-click
+    if (e.target === imageRef.current) {
+      useAppStore.getState().resetZoom();
+    }
   }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -170,41 +186,33 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     );
   }
 
-  if (!currentImage.data) {
-    return (
-      <div className={`image-viewer-loading ${className}`}>
-        <div className="loading-message">
-          Loading...
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div
       ref={containerRef}
       className={`image-viewer ${className}`}
-      onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onDoubleClick={handleDoubleClick}
       onWheel={handleWheel}
+      onClick={handleContainerClick}
     >
-      <img
-        ref={imageRef}
-        src={`data:image/${currentImage.data.format};base64,${currentImage.data.base64}`}
-        alt={currentImage.path}
-        style={imageStyle}
-        draggable={false}
-      />
+      {currentImage.data && (
+        <img
+          ref={imageRef}
+          src={`data:${currentImage.data.format};base64,${currentImage.data.base64}`}
+          alt={currentImage.path.split(/[\\/]/).pop() || 'Current image'}
+          style={imageStyle}
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClick}
+          draggable={false}
+        />
+      )}
 
       {view.zoom !== 100 && (
         <div className="zoom-indicator">
           {Math.round(view.zoom)}%
         </div>
       )}
-
     </div>
   );
 };
