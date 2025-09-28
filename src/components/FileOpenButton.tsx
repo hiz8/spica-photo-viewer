@@ -32,6 +32,14 @@ const FileOpenButton: React.FC<FileOpenButtonProps> = ({ className = '' }) => {
       });
 
       if (selected && typeof selected === 'string') {
+        // Maximize window when opening an image
+        try {
+          await invoke('maximize_window');
+          console.log('Window maximized when opening image via file dialog');
+        } catch (error) {
+          console.error('Failed to maximize window when opening image via file dialog:', error);
+        }
+
         // Get folder images
         const lastSep = Math.max(selected.lastIndexOf('\\'), selected.lastIndexOf('/'));
         const folderPath = selected.substring(0, lastSep);
