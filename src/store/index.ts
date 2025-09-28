@@ -362,7 +362,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         // Maximize window when opening an image
         try {
           await invoke('maximize_window');
-          console.log('Window maximized when opening image');
         } catch (error) {
           console.error('Failed to maximize window when opening image:', error);
         }

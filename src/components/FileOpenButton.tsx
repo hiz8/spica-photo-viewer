@@ -35,7 +35,6 @@ const FileOpenButton: React.FC<FileOpenButtonProps> = ({ className = '' }) => {
         // Maximize window when opening an image
         try {
           await invoke('maximize_window');
-          console.log('Window maximized when opening image via file dialog');
         } catch (error) {
           console.error('Failed to maximize window when opening image via file dialog:', error);
         }
