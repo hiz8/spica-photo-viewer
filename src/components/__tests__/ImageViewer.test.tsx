@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { mockImageData } from '../../utils/testUtils';
+import type { ImageData as AppImageData } from '../../types';
 
 // Mock the invoke function
 vi.mock('@tauri-apps/api/core', () => ({
@@ -16,17 +17,17 @@ vi.mock('../../hooks/useImagePreloader', () => ({
 const mockStore = {
   currentImage: {
     path: '',
-    data: null,
-    error: null,
+    data: null as AppImageData | null,
+    error: null as Error | null,
   },
   view: {
     zoom: 100,
     panX: 0,
     panY: 0,
-    imageLeft: 0,
-    imageTop: 0,
-    imageWidth: 0,
-    imageHeight: 0,
+    imageLeft: 0 as number | undefined,
+    imageTop: 0 as number | undefined,
+    imageWidth: 0 as number | undefined,
+    imageHeight: 0 as number | undefined,
   },
   cache: {
     preloaded: new Map(),
@@ -111,7 +112,7 @@ describe('ImageViewer', () => {
   describe('Image display', () => {
     beforeEach(() => {
       mockStore.currentImage.path = '/test/image.jpg';
-      mockStore.currentImage.data = mockImageData;
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
     it('should render image when data is available', () => {
@@ -237,7 +238,7 @@ describe('ImageViewer', () => {
   describe('Mouse interactions', () => {
     beforeEach(() => {
       mockStore.currentImage.path = '/test/image.jpg';
-      mockStore.currentImage.data = mockImageData;
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
     it('should start dragging on mouse down', () => {
@@ -310,6 +311,9 @@ describe('ImageViewer', () => {
         height: 600,
         right: 800,
         bottom: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
       }));
 
       render(<ImageViewer />);
@@ -331,7 +335,7 @@ describe('ImageViewer', () => {
   describe('Window resize handling', () => {
     beforeEach(() => {
       mockStore.currentImage.path = '/test/image.jpg';
-      mockStore.currentImage.data = mockImageData;
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
     it('should refit image on window resize', () => {
@@ -361,7 +365,7 @@ describe('ImageViewer', () => {
   describe('Transition effects', () => {
     beforeEach(() => {
       mockStore.currentImage.path = '/test/image.jpg';
-      mockStore.currentImage.data = mockImageData;
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
     it('should disable transition during drag', () => {
@@ -387,7 +391,7 @@ describe('ImageViewer', () => {
   describe('Accessibility', () => {
     it('should have proper ARIA roles and attributes', () => {
       mockStore.currentImage.path = '/test/image.jpg';
-      mockStore.currentImage.data = mockImageData;
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
 
       render(<ImageViewer />);
 
@@ -400,7 +404,7 @@ describe('ImageViewer', () => {
 
     it('should prevent default dragging behavior', () => {
       mockStore.currentImage.path = '/test/image.jpg';
-      mockStore.currentImage.data = mockImageData;
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
 
       render(<ImageViewer />);
 
@@ -416,7 +420,7 @@ describe('ImageViewer', () => {
         ...mockImageData,
         width: 1200,
         height: 800,
-      };
+      } as AppImageData | null;
     });
 
     it('should use original image dimensions for width and height', () => {

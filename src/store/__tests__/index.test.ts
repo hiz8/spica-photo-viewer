@@ -31,6 +31,7 @@ describe('AppStore', () => {
         panX: 0,
         panY: 0,
         isFullscreen: false,
+        isMaximized: false,
         thumbnailOpacity: 0.5,
       },
       cache: {
