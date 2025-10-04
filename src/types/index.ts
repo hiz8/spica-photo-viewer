@@ -46,6 +46,7 @@ export interface AppState {
   cache: {
     thumbnails: Map<string, string>;
     preloaded: Map<string, ImageData>;
+    imageViewStates: Map<string, ImageViewState>;
   };
 
   ui: {
@@ -92,6 +93,7 @@ export interface UIState {
 export interface CacheState {
   thumbnails: Map<string, string>;
   preloaded: Map<string, ImageData>;
+  imageViewStates: Map<string, ImageViewState>;
 }
 
 export interface KeyboardShortcuts {
@@ -111,6 +113,12 @@ export interface ZoomPanState {
   isDragging: boolean;
   lastMouseX: number;
   lastMouseY: number;
+}
+
+export interface ImageViewState {
+  zoom: number;
+  panX: number;
+  panY: number;
 }
 
 export interface WindowState {
