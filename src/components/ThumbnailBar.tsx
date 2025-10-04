@@ -50,7 +50,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
 
           setThumbnailData(thumbnail);
         } catch (err) {
-          console.warn(`Failed to load thumbnail for ${image.filename}:`, err);
+          console.warn(`Failed to load thumbnail for ${image.path}:`, err);
           setError(true);
 
           // Cache the error to avoid retrying
