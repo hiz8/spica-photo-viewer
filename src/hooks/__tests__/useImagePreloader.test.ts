@@ -1,6 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { mockImageData, mockImageList } from '../../utils/testUtils';
+import type { ImageInfo } from '../../types';
+
+// Helper function to create mock ImageInfo objects
+const createMockImageInfo = (index: number, overrides: Partial<ImageInfo> = {}): ImageInfo => ({
+  path: `/test/image${index}.jpg`,
+  filename: `image${index}.jpg`,
+  width: 800,
+  height: 600,
+  size: 1024,
+  modified: Date.now() - index * 1000,
+  format: 'jpeg',
+  ...overrides,
+});
+
+// Type guard for invoke parameters with path
+function hasPath(arg: unknown): arg is { path: string } {
+  return typeof arg === 'object' && arg !== null && 'path' in arg && typeof (arg as any).path === 'string';
+}
 
 // Mock the invoke function before importing
 vi.mock('@tauri-apps/api/core', () => ({
@@ -10,7 +28,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 // Mock the store
 const mockStore = {
   folder: {
-    images: [],
+    images: [] as ImageInfo[],
   },
   currentImage: {
     index: -1,
@@ -34,7 +52,7 @@ const mockInvoke = vi.mocked(invoke);
 describe('useImagePreloader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStore.folder.images = [];
+    mockStore.folder.images = [] as ImageInfo[];
     mockStore.currentImage.index = -1;
     mockStore.cache.preloaded = new Map();
     mockInvoke.mockClear();
@@ -107,7 +125,7 @@ describe('useImagePreloader', () => {
 
   describe('getPreloadQueue', () => {
     it('should return empty queue when no current image', () => {
-      mockStore.folder.images = mockImageList;
+      mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = -1;
 
       const { result } = renderHook(() => useImagePreloader());
@@ -135,7 +153,7 @@ describe('useImagePreloader', () => {
 
     it('should prioritize next and previous images', async () => {
       mockInvoke.mockResolvedValue(mockImageData);
-      mockStore.folder.images = mockImageList;
+      mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1; // Middle image
 
       const { result } = renderHook(() => useImagePreloader());
@@ -150,7 +168,7 @@ describe('useImagePreloader', () => {
 
     it('should skip already cached images in queue', async () => {
       mockInvoke.mockResolvedValue(mockImageData);
-      mockStore.folder.images = mockImageList;
+      mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
       // Mark first image as already cached
@@ -163,7 +181,7 @@ describe('useImagePreloader', () => {
       });
 
       // Should not try to preload the cached image
-      const calls = mockInvoke.mock.calls.map(call => call[1].path);
+      const calls = mockInvoke.mock.calls.map(call => hasPath(call[1]) ? call[1].path : undefined);
       expect(calls).not.toContain(mockImageList[0].path);
     });
   });
@@ -173,14 +191,9 @@ describe('useImagePreloader', () => {
       const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       // Setup cache with many images
-      const manyImages = Array.from({ length: 50 }, (_, i) => ({
-        path: `/test/image${i}.jpg`,
-        name: `image${i}.jpg`,
-        size: 1024,
-        modified: Date.now() - i * 1000,
-      }));
+      const manyImages = Array.from({ length: 50 }, (_, i) => createMockImageInfo(i));
 
-      mockStore.folder.images = manyImages;
+      mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 25; // Middle position
 
       // Add images to cache that are outside range
@@ -222,14 +235,9 @@ describe('useImagePreloader', () => {
       mockInvoke.mockResolvedValue(mockImageData);
 
       // Setup many images to exceed concurrent limit
-      const manyImages = Array.from({ length: 10 }, (_, i) => ({
-        path: `/test/image${i}.jpg`,
-        name: `image${i}.jpg`,
-        size: 1024,
-        modified: Date.now() - i * 1000,
-      }));
+      const manyImages = Array.from({ length: 10 }, (_, i) => createMockImageInfo(i));
 
-      mockStore.folder.images = manyImages;
+      mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 5;
 
       const { result } = renderHook(() => useImagePreloader());
@@ -251,7 +259,7 @@ describe('useImagePreloader', () => {
         .mockResolvedValueOnce(mockImageData) // First call succeeds
         .mockRejectedValueOnce(new Error('Failed')); // Second call fails
 
-      mockStore.folder.images = mockImageList;
+      mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
       const { result } = renderHook(() => useImagePreloader());
@@ -271,7 +279,7 @@ describe('useImagePreloader', () => {
   describe('useEffect integration', () => {
     it('should start preloading when current image changes', async () => {
       mockInvoke.mockResolvedValue(mockImageData);
-      mockStore.folder.images = mockImageList;
+      mockStore.folder.images = mockImageList as ImageInfo[];
 
       const { rerender } = renderHook(() => useImagePreloader());
 
@@ -293,7 +301,7 @@ describe('useImagePreloader', () => {
 
     it('should delay preloading by 500ms', async () => {
       mockInvoke.mockResolvedValue(mockImageData);
-      mockStore.folder.images = mockImageList;
+      mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
       renderHook(() => useImagePreloader());
@@ -315,7 +323,7 @@ describe('useImagePreloader', () => {
     });
 
     it('should cleanup timeout on unmount', () => {
-      mockStore.folder.images = mockImageList;
+      mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
       const { unmount } = renderHook(() => useImagePreloader());
@@ -350,7 +358,7 @@ describe('useImagePreloader', () => {
     it('should log cleanup operations', () => {
       const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      mockStore.folder.images = [mockImageList[1]]; // Only one image
+      mockStore.folder.images = [mockImageList[1]] as ImageInfo[]; // Only one image
       mockStore.currentImage.index = 0;
 
       // Add an image that will be cleaned up
