@@ -88,6 +88,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(({ image, index, isActi
 const ThumbnailBar: React.FC = () => {
   const { folder, currentImage, navigateToImage } = useAppStore();
   const containerRef = useRef<HTMLDivElement>(null);
+  const thumbnailBarRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
   const handleThumbnailClick = useCallback((index: number) => {
@@ -113,7 +114,7 @@ const ThumbnailBar: React.FC = () => {
     }
   }, [currentImage.index, folder.images.length, navigateToImage]);
 
-  useEffect(() => {
+  const scrollToActiveItem = useCallback(() => {
     if (containerRef.current && currentImage.index !== -1) {
       const activeItem = containerRef.current.querySelector('.thumbnail-item.active') as HTMLElement;
       if (activeItem) {
@@ -132,6 +133,25 @@ const ThumbnailBar: React.FC = () => {
     }
   }, [currentImage.index]);
 
+  useEffect(() => {
+    scrollToActiveItem();
+  }, [scrollToActiveItem]);
+
+  useEffect(() => {
+    const thumbnailBar = thumbnailBarRef.current;
+    if (!thumbnailBar) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      scrollToActiveItem();
+    });
+
+    resizeObserver.observe(thumbnailBar);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [scrollToActiveItem]);
+
   const imageInfo = useMemo(() => {
     if (!currentImage.path || !folder.images[currentImage.index]) {
       return null;
@@ -146,6 +166,7 @@ const ThumbnailBar: React.FC = () => {
 
   return (
     <div
+      ref={thumbnailBarRef}
       className={`thumbnail-bar ${isHovered ? 'hovered' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
