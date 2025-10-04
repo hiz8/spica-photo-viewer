@@ -31,11 +31,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The 'currentImage.data' dependency is intentionally omitted to avoid infinite loops.
   useEffect(() => {
     if (currentImage.path && !currentImage.data) {
       loadImage(currentImage.path);
     }
-    // biome-ignore lint/suspicious/useEffect: The 'currentImage.data' dependency is intentionally omitted to avoid infinite loops.
   }, [currentImage.path]);
 
   // Handle window resize to re-fit image
