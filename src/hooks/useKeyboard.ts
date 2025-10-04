@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "../store";
 
@@ -15,7 +15,7 @@ export const useKeyboard = () => {
     ui,
   } = useAppStore();
 
-  const toggleFullscreen = async () => {
+  const toggleFullscreen = useCallback(async () => {
     try {
       const window = getCurrentWindow();
       const isCurrentlyFullscreen = await window.isFullscreen();
@@ -30,9 +30,9 @@ export const useKeyboard = () => {
     } catch (error) {
       console.error("Failed to toggle fullscreen:", error);
     }
-  };
+  }, [setFullscreen]);
 
-  const exitFullscreen = async () => {
+  const exitFullscreen = useCallback(async () => {
     try {
       const window = getCurrentWindow();
       await window.setFullscreen(false);
@@ -40,16 +40,16 @@ export const useKeyboard = () => {
     } catch (error) {
       console.error("Failed to exit fullscreen:", error);
     }
-  };
+  }, [setFullscreen]);
 
-  const closeApplication = async () => {
+  const closeApplication = useCallback(async () => {
     try {
       const window = getCurrentWindow();
       await window.close();
     } catch (error) {
       console.error("Failed to close application:", error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -118,11 +118,11 @@ export const useKeyboard = () => {
     zoomIn,
     zoomOut,
     resetZoom,
-    setFullscreen,
     setShowAbout,
     view.isFullscreen,
     ui.showAbout,
     toggleFullscreen,
+    exitFullscreen,
     closeApplication,
   ]);
 };
