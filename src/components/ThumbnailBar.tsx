@@ -18,6 +18,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
     const [thumbnailData, setThumbnailData] = useState<string | null>(null);
     const [error, setError] = useState<boolean>(false);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: The 'image.filename' dependency is used only in error message, so it's omitted from dependencies.
     useEffect(() => {
       const loadThumbnail = async () => {
         try {
@@ -50,7 +51,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
 
           setThumbnailData(thumbnail);
         } catch (err) {
-          console.warn(`Failed to load thumbnail for ${image.path}:`, err);
+          console.warn(`Failed to load thumbnail for ${image.filename}:`, err);
           setError(true);
 
           // Cache the error to avoid retrying
