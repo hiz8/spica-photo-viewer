@@ -92,6 +92,24 @@ cargo test utils::image::tests
 cargo test commands::cache::tests
 ```
 
+### Linting and Formatting
+
+The project uses [Biome](https://biomejs.dev/) for linting and formatting frontend code (TypeScript/React):
+
+```bash
+# Check for lint issues
+npm run lint
+
+# Fix lint issues automatically
+npm run lint:fix
+
+# Check code formatting
+npm run format
+
+# Fix formatting issues automatically
+npm run format:fix
+```
+
 ### Building
 
 ```bash

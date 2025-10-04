@@ -13,6 +13,12 @@ npm run test:watch    # Run tests in watch mode
 npm run test:coverage # Run tests with coverage report
 npm run type-check    # TypeScript type checking
 
+# Code quality
+npm run lint          # Check for lint issues
+npm run lint:fix      # Fix lint issues automatically
+npm run format        # Check code formatting
+npm run format:fix    # Fix formatting issues automatically
+
 # Backend testing
 cd src-tauri && cargo test --lib
 cd src-tauri && cargo test commands::file::tests     # Run specific test module
@@ -106,5 +112,9 @@ interface AppState {
 - Follow existing patterns for component structure
 - Use `useCallback` for event handlers in components
 - Prefer functional components with hooks
+  - Indent: spaces
+  - Quotes: double quotes
+  - Import organization: automatic
+  - Run `npm run lint:fix` and `npm run format:fix` before committing
 
 For detailed project specifications, see [PROJECT_SPEC.md](./PROJECT_SPEC.md).
