@@ -98,21 +98,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   setFolderImages: (path, images) =>
-    set((state) => {
-      // Clear imageViewStates when changing folders
-      const shouldClearViewStates = state.folder.path !== path;
-      return {
-        folder: {
-          path,
-          images,
-          sortOrder: 'name',
-        },
-        cache: {
-          ...state.cache,
-          imageViewStates: shouldClearViewStates ? new Map() : state.cache.imageViewStates,
-        },
-      };
-    }),
+    set((state) => ({
+      folder: {
+        path,
+        images,
+        sortOrder: 'name',
+      },
+      cache: {
+        ...state.cache,
+        imageViewStates: state.folder.path !== path ? new Map() : state.cache.imageViewStates,
+      },
+    })),
 
   setView: (viewUpdate) =>
     set((state) => ({
@@ -201,35 +197,42 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const images = state.folder.images;
     if (index >= 0 && index < images.length) {
-      // Save current image's view state before navigating
-      if (state.currentImage.path) {
-        state.cache.imageViewStates.set(state.currentImage.path, {
-          zoom: state.view.zoom,
-          panX: state.view.panX,
-          panY: state.view.panY,
-        });
-      }
-
       const image = images[index];
 
       // Restore saved view state for the new image, or use default
       const savedViewState = state.cache.imageViewStates.get(image.path);
 
-      set((state) => ({
-        currentImage: {
-          ...state.currentImage,
-          path: image.path,
-          index,
-          data: null,
-          error: null,
-        },
-        view: {
-          ...state.view,
-          zoom: savedViewState?.zoom ?? 100,
-          panX: savedViewState?.panX ?? 0,
-          panY: savedViewState?.panY ?? 0,
-        },
-      }));
+      set((state) => {
+        // Create new imageViewStates Map with current image's state saved
+        const newImageViewStates = new Map(state.cache.imageViewStates);
+        if (state.currentImage.path) {
+          newImageViewStates.set(state.currentImage.path, {
+            zoom: state.view.zoom,
+            panX: state.view.panX,
+            panY: state.view.panY,
+          });
+        }
+
+        return {
+          currentImage: {
+            ...state.currentImage,
+            path: image.path,
+            index,
+            data: null,
+            error: null,
+          },
+          view: {
+            ...state.view,
+            zoom: savedViewState?.zoom ?? 100,
+            panX: savedViewState?.panX ?? 0,
+            panY: savedViewState?.panY ?? 0,
+          },
+          cache: {
+            ...state.cache,
+            imageViewStates: newImageViewStates,
+          },
+        };
+      });
     }
   },
 
@@ -391,10 +394,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           console.error('Failed to maximize window when opening image:', error);
         }
 
-        const state = get();
-        // Clear imageViewStates when opening a different folder
-        const shouldClearViewStates = state.folder.path !== folderPath;
-
         set((state) => ({
           folder: {
             ...state.folder,
@@ -416,7 +415,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           cache: {
             ...state.cache,
-            imageViewStates: shouldClearViewStates ? new Map() : state.cache.imageViewStates,
+            imageViewStates: state.folder.path !== folderPath ? new Map() : state.cache.imageViewStates,
           },
         }));
       } else {
