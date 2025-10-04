@@ -35,7 +35,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     if (currentImage.path && !currentImage.data) {
       loadImage(currentImage.path);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // biome-ignore lint/suspicious/useEffect: The 'currentImage.data' dependency is intentionally omitted to avoid infinite loops.
   }, [currentImage.path]);
 
   // Handle window resize to re-fit image
