@@ -122,5 +122,7 @@ export const useKeyboard = () => {
     setShowAbout,
     view.isFullscreen,
     ui.showAbout,
+    toggleFullscreen,
+    closeApplication,
   ]);
 };
