@@ -94,6 +94,7 @@ export const createMockStore = (overrides: any = {}) => ({
   cache: {
     thumbnails: new Map(),
     preloaded: new Map(),
+    imageViewStates: new Map(),
   },
   ui: {
     isLoading: false,
@@ -126,6 +127,8 @@ export const createMockStore = (overrides: any = {}) => ({
   openImageFromPath: vi.fn(),
   setPreloadedImage: vi.fn(),
   removePreloadedImage: vi.fn(),
+  updateImageDimensions: vi.fn(),
+  resizeToImage: vi.fn(),
   ...overrides,
 });
 

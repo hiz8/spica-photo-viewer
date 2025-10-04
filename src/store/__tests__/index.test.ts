@@ -36,6 +36,7 @@ describe('AppStore', () => {
       cache: {
         thumbnails: new Map(),
         preloaded: new Map(),
+        imageViewStates: new Map(),
       },
       ui: {
         isLoading: false,
@@ -90,6 +91,68 @@ describe('AppStore', () => {
       // Setting new image should clear error
       setCurrentImage('/test/new-image.jpg', 0);
       expect(useAppStore.getState().currentImage.error).toBeNull();
+    });
+  });
+
+  describe('setFolderImages', () => {
+    it('should set folder path and images', () => {
+      const { setFolderImages } = useAppStore.getState();
+
+      setFolderImages('/test/folder', mockImageList);
+
+      const state = useAppStore.getState();
+      expect(state.folder.path).toBe('/test/folder');
+      expect(state.folder.images).toEqual(mockImageList);
+    });
+
+    it('should clear imageViewStates when changing to a different folder', () => {
+      const { setFolderImages, navigateToImage, setZoom, setPan, setCurrentImage } = useAppStore.getState();
+
+      // Set up first folder with images and view states
+      setFolderImages('/test/folder1', mockImageList);
+      setCurrentImage(mockImageList[0].path, 0);
+      setZoom(150);
+      setPan(100, 50);
+
+      // Navigate to save the state
+      navigateToImage(1);
+
+      // Verify state was saved
+      let state = useAppStore.getState();
+      expect(state.cache.imageViewStates.has(mockImageList[0].path)).toBe(true);
+
+      // Change to a different folder
+      setFolderImages('/test/folder2', mockImageList);
+
+      // imageViewStates should be cleared
+      state = useAppStore.getState();
+      expect(state.cache.imageViewStates.size).toBe(0);
+    });
+
+    it('should preserve imageViewStates when setting the same folder', () => {
+      const { setFolderImages, navigateToImage, setZoom, setPan, setCurrentImage } = useAppStore.getState();
+
+      // Set up folder with images and view states
+      setFolderImages('/test/folder', mockImageList);
+      setCurrentImage(mockImageList[0].path, 0);
+      setZoom(150);
+      setPan(100, 50);
+
+      // Navigate to save the state
+      navigateToImage(1);
+
+      // Verify state was saved
+      let state = useAppStore.getState();
+      expect(state.cache.imageViewStates.has(mockImageList[0].path)).toBe(true);
+      const savedState = state.cache.imageViewStates.get(mockImageList[0].path);
+
+      // Set the same folder again (e.g., refresh)
+      setFolderImages('/test/folder', mockImageList);
+
+      // imageViewStates should be preserved
+      state = useAppStore.getState();
+      expect(state.cache.imageViewStates.has(mockImageList[0].path)).toBe(true);
+      expect(state.cache.imageViewStates.get(mockImageList[0].path)).toEqual(savedState);
     });
   });
 
@@ -148,7 +211,7 @@ describe('AppStore', () => {
       expect(state.currentImage.error).toBeNull();
     });
 
-    it('should reset view when navigating', () => {
+    it('should reset view when navigating to new image without saved state', () => {
       const { navigateToImage, setZoom, setPan } = useAppStore.getState();
 
       // Set some view state
@@ -161,6 +224,89 @@ describe('AppStore', () => {
       expect(state.view.zoom).toBe(100);
       expect(state.view.panX).toBe(0);
       expect(state.view.panY).toBe(0);
+    });
+
+    it('should save current image view state when navigating away', () => {
+      const { navigateToImage, setZoom, setPan, setCurrentImage } = useAppStore.getState();
+
+      // Set current image
+      setCurrentImage(mockImageList[0].path, 0);
+
+      // Set some view state
+      setZoom(150);
+      setPan(100, 50);
+
+      // Navigate to another image
+      navigateToImage(1);
+
+      // Check that the view state was saved for the first image
+      const state = useAppStore.getState();
+      const savedState = state.cache.imageViewStates.get(mockImageList[0].path);
+      expect(savedState).toBeDefined();
+      expect(savedState?.zoom).toBe(150);
+      expect(savedState?.panX).toBe(100);
+      expect(savedState?.panY).toBe(50);
+    });
+
+    it('should restore saved view state when navigating back to previously viewed image', () => {
+      const { navigateToImage, setZoom, setPan, setCurrentImage } = useAppStore.getState();
+
+      // Set current image and view state
+      setCurrentImage(mockImageList[0].path, 0);
+      setZoom(180);
+      setPan(75, 40);
+
+      // Navigate to another image
+      navigateToImage(1);
+
+      // Navigate back to the first image
+      navigateToImage(0);
+
+      // View state should be restored
+      const state = useAppStore.getState();
+      expect(state.view.zoom).toBe(180);
+      expect(state.view.panX).toBe(75);
+      expect(state.view.panY).toBe(40);
+    });
+
+    it('should handle multiple image navigations and preserve individual states', () => {
+      const { navigateToImage, setZoom, setPan, setCurrentImage } = useAppStore.getState();
+
+      // Image 0: zoom 120, pan (10, 20)
+      setCurrentImage(mockImageList[0].path, 0);
+      setZoom(120);
+      setPan(10, 20);
+
+      // Navigate to image 1: zoom 150, pan (30, 40)
+      navigateToImage(1);
+      setZoom(150);
+      setPan(30, 40);
+
+      // Navigate to image 2: zoom 200, pan (50, 60)
+      navigateToImage(2);
+      setZoom(200);
+      setPan(50, 60);
+
+      // Go back to image 0
+      navigateToImage(0);
+      let state = useAppStore.getState();
+      expect(state.view.zoom).toBe(120);
+      expect(state.view.panX).toBe(10);
+      expect(state.view.panY).toBe(20);
+
+      // Go to image 1
+      navigateToImage(1);
+      state = useAppStore.getState();
+      expect(state.view.zoom).toBe(150);
+      expect(state.view.panX).toBe(30);
+      expect(state.view.panY).toBe(40);
+
+      // Go to image 2
+      navigateToImage(2);
+      state = useAppStore.getState();
+      expect(state.view.zoom).toBe(200);
+      expect(state.view.panX).toBe(50);
+      expect(state.view.panY).toBe(60);
     });
 
     it('should not navigate to invalid index', () => {
