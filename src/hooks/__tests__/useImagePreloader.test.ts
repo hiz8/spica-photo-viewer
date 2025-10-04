@@ -3,6 +3,23 @@ import { renderHook, act } from '@testing-library/react';
 import { mockImageData, mockImageList } from '../../utils/testUtils';
 import type { ImageInfo } from '../../types';
 
+// Helper function to create mock ImageInfo objects
+const createMockImageInfo = (index: number, overrides: Partial<ImageInfo> = {}): ImageInfo => ({
+  path: `/test/image${index}.jpg`,
+  filename: `image${index}.jpg`,
+  width: 800,
+  height: 600,
+  size: 1024,
+  modified: Date.now() - index * 1000,
+  format: 'jpeg',
+  ...overrides,
+});
+
+// Type guard for invoke parameters with path
+function hasPath(arg: unknown): arg is { path: string } {
+  return typeof arg === 'object' && arg !== null && 'path' in arg && typeof (arg as any).path === 'string';
+}
+
 // Mock the invoke function before importing
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -164,7 +181,7 @@ describe('useImagePreloader', () => {
       });
 
       // Should not try to preload the cached image
-      const calls = mockInvoke.mock.calls.map(call => (call[1] as { path: string })?.path);
+      const calls = mockInvoke.mock.calls.map(call => hasPath(call[1]) ? call[1].path : undefined);
       expect(calls).not.toContain(mockImageList[0].path);
     });
   });
@@ -174,15 +191,7 @@ describe('useImagePreloader', () => {
       const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       // Setup cache with many images
-      const manyImages = Array.from({ length: 50 }, (_, i) => ({
-        path: `/test/image${i}.jpg`,
-        filename: `image${i}.jpg`,
-        width: 800,
-        height: 600,
-        size: 1024,
-        modified: Date.now() - i * 1000,
-        format: 'jpeg' as const,
-      }));
+      const manyImages = Array.from({ length: 50 }, (_, i) => createMockImageInfo(i));
 
       mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 25; // Middle position
@@ -226,15 +235,7 @@ describe('useImagePreloader', () => {
       mockInvoke.mockResolvedValue(mockImageData);
 
       // Setup many images to exceed concurrent limit
-      const manyImages = Array.from({ length: 10 }, (_, i) => ({
-        path: `/test/image${i}.jpg`,
-        filename: `image${i}.jpg`,
-        width: 800,
-        height: 600,
-        size: 1024,
-        modified: Date.now() - i * 1000,
-        format: 'jpeg' as const,
-      }));
+      const manyImages = Array.from({ length: 10 }, (_, i) => createMockImageInfo(i));
 
       mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 5;
