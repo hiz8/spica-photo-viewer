@@ -443,7 +443,7 @@ npm run tauri build
 
 ## Development Guidelines
 
-1. **Code Style**: Use Prettier and ESLint for consistency
+1. **Code Style**: Use Biome for linting and formatting consistency (frontend code: TypeScript/React)
 2. **Commits**: Conventional commits for clear history
 3. **Documentation**: JSDoc for public APIs
 4. **Error Handling**: Never crash, always graceful degradation

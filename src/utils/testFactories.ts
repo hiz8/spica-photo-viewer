@@ -1,48 +1,60 @@
-import { vi } from 'vitest';
-import { ImageData, ImageInfo } from '../types';
+import { vi } from "vitest";
+import type { ImageData, ImageInfo } from "../types";
 
 // Image data factories
-export const createImageData = (overrides: Partial<ImageData> = {}): ImageData => ({
-  path: '/test/image.jpg',
-  base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+export const createImageData = (
+  overrides: Partial<ImageData> = {},
+): ImageData => ({
+  path: "/test/image.jpg",
+  base64:
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
   width: 800,
   height: 600,
-  format: 'jpeg',
+  format: "jpeg",
   ...overrides,
 });
 
-export const createImageInfo = (overrides: Partial<ImageInfo> = {}): ImageInfo => ({
-  path: '/test/image.jpg',
-  filename: 'image.jpg',
+export const createImageInfo = (
+  overrides: Partial<ImageInfo> = {},
+): ImageInfo => ({
+  path: "/test/image.jpg",
+  filename: "image.jpg",
   width: 800,
   height: 600,
   size: 1024,
   modified: Date.now(),
-  format: 'jpeg',
+  format: "jpeg",
   ...overrides,
 });
 
-export const createImageList = (count: number = 3, baseName: string = 'image'): ImageInfo[] => {
-  return Array.from({ length: count }, (_, index) => createImageInfo({
-    path: `/test/${baseName}${index + 1}.jpg`,
-    filename: `${baseName}${index + 1}.jpg`,
-    modified: Date.now() - (count - index) * 1000,
-  }));
+export const createImageList = (
+  count: number = 3,
+  baseName: string = "image",
+): ImageInfo[] => {
+  return Array.from({ length: count }, (_, index) =>
+    createImageInfo({
+      path: `/test/${baseName}${index + 1}.jpg`,
+      filename: `${baseName}${index + 1}.jpg`,
+      modified: Date.now() - (count - index) * 1000,
+    }),
+  );
 };
 
-export const createErrorImageData = (path: string = '/test/error.jpg'): ImageData => ({
+export const createErrorImageData = (
+  path: string = "/test/error.jpg",
+): ImageData => ({
   path,
-  base64: '',
+  base64: "",
   width: 0,
   height: 0,
-  format: 'error',
+  format: "error",
 });
 
 // Mock factories
 export const createMockTauriApi = () => ({
   invoke: vi.fn(),
   open: vi.fn(),
-  getVersion: vi.fn(() => Promise.resolve('1.0.0')),
+  getVersion: vi.fn(() => Promise.resolve("1.0.0")),
   getCurrentWindow: vi.fn(() => ({
     isFullscreen: vi.fn(),
     setFullscreen: vi.fn(),
@@ -53,15 +65,15 @@ export const createMockTauriApi = () => ({
 // Store state factories
 export const createImageViewerState = (overrides: any = {}) => ({
   currentImage: {
-    path: '/test/image.jpg',
+    path: "/test/image.jpg",
     index: 0,
     data: createImageData(),
     error: null,
   },
   folder: {
-    path: '/test',
+    path: "/test",
     images: createImageList(),
-    sortOrder: 'name' as const,
+    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
@@ -86,15 +98,15 @@ export const createImageViewerState = (overrides: any = {}) => ({
 
 export const createEmptyViewerState = () => ({
   currentImage: {
-    path: '',
+    path: "",
     index: -1,
     data: null,
     error: null,
   },
   folder: {
-    path: '',
+    path: "",
     images: [],
-    sortOrder: 'name' as const,
+    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
@@ -119,7 +131,7 @@ export const createEmptyViewerState = () => ({
 export const createErrorViewerState = (error: Error) => ({
   ...createEmptyViewerState(),
   currentImage: {
-    path: '/test/image.jpg',
+    path: "/test/image.jpg",
     index: 0,
     data: null,
     error,
@@ -129,7 +141,7 @@ export const createErrorViewerState = (error: Error) => ({
 export const createLoadingViewerState = () => ({
   ...createEmptyViewerState(),
   currentImage: {
-    path: '/test/image.jpg',
+    path: "/test/image.jpg",
     index: 0,
     data: null,
     error: null,
@@ -147,13 +159,15 @@ export const createTestScenario = {
   withImage: () => createImageViewerState(),
   empty: () => createEmptyViewerState(),
   loading: () => createLoadingViewerState(),
-  withError: (message: string = 'Test error') => createErrorViewerState(new Error(message)),
-  withAboutDialog: () => createImageViewerState({
-    ui: {
-      isLoading: false,
-      showAbout: true,
-      isDragOver: false,
-      error: null,
-    },
-  }),
+  withError: (message: string = "Test error") =>
+    createErrorViewerState(new Error(message)),
+  withAboutDialog: () =>
+    createImageViewerState({
+      ui: {
+        isLoading: false,
+        showAbout: true,
+        isDragOver: false,
+        error: null,
+      },
+    }),
 };

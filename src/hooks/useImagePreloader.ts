@@ -1,41 +1,55 @@
-import { useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { useAppStore } from '../store';
-import { ImageData } from '../types';
+import { useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../store";
+import type { ImageData } from "../types";
 
 const PRELOAD_RANGE = 20; // ±20 images
 const MAX_CONCURRENT_LOADS = 3;
 
 export const useImagePreloader = () => {
-  const { folder, currentImage, cache, setPreloadedImage, removePreloadedImage } = useAppStore();
+  const {
+    folder,
+    currentImage,
+    cache,
+    setPreloadedImage,
+    removePreloadedImage,
+  } = useAppStore();
 
-  const preloadImage = useCallback(async (imagePath: string): Promise<void> => {
-    // Check if already preloaded or currently loading
-    if (cache.preloaded.has(imagePath)) {
-      return;
-    }
+  const preloadImage = useCallback(
+    async (imagePath: string): Promise<void> => {
+      // Check if already preloaded or currently loading
+      if (cache.preloaded.has(imagePath)) {
+        return;
+      }
 
-    try {
-      const imageData = await invoke<ImageData>('load_image', { path: imagePath });
+      try {
+        const imageData = await invoke<ImageData>("load_image", {
+          path: imagePath,
+        });
 
-      // Update cache in store using proper action
-      setPreloadedImage(imagePath, imageData);
+        // Update cache in store using proper action
+        setPreloadedImage(imagePath, imageData);
 
-      console.log(`Preloaded: ${imagePath.split(/[\\/]/).pop()}`);
-    } catch (error) {
-      console.warn(`Failed to preload image: ${imagePath.split(/[\\/]/).pop()}`, error);
+        console.log(`Preloaded: ${imagePath.split(/[\\/]/).pop()}`);
+      } catch (error) {
+        console.warn(
+          `Failed to preload image: ${imagePath.split(/[\\/]/).pop()}`,
+          error,
+        );
 
-      // Mark as failed in cache to avoid retry
-      const errorPlaceholder: ImageData = {
-        path: imagePath,
-        base64: '',
-        width: 0,
-        height: 0,
-        format: 'error'
-      };
-      setPreloadedImage(imagePath, errorPlaceholder);
-    }
-  }, [cache.preloaded, setPreloadedImage]);
+        // Mark as failed in cache to avoid retry
+        const errorPlaceholder: ImageData = {
+          path: imagePath,
+          base64: "",
+          width: 0,
+          height: 0,
+          format: "error",
+        };
+        setPreloadedImage(imagePath, errorPlaceholder);
+      }
+    },
+    [cache.preloaded, setPreloadedImage],
+  );
 
   const getPreloadQueue = useCallback(() => {
     if (currentImage.index === -1 || !folder.images.length) {
@@ -82,9 +96,11 @@ export const useImagePreloader = () => {
     const imagesToKeep = new Set<string>();
 
     // Keep current image and ±PRELOAD_RANGE images
-    for (let i = Math.max(0, currentIndex - PRELOAD_RANGE);
-         i <= Math.min(folder.images.length - 1, currentIndex + PRELOAD_RANGE);
-         i++) {
+    for (
+      let i = Math.max(0, currentIndex - PRELOAD_RANGE);
+      i <= Math.min(folder.images.length - 1, currentIndex + PRELOAD_RANGE);
+      i++
+    ) {
       imagesToKeep.add(folder.images[i].path);
     }
 
@@ -96,11 +112,16 @@ export const useImagePreloader = () => {
       }
     });
 
-    keysToRemove.forEach(path => {
+    keysToRemove.forEach((path) => {
       removePreloadedImage(path);
       console.log(`Cleaned from cache: ${path.split(/[\\/]/).pop()}`);
     });
-  }, [currentImage.index, folder.images, cache.preloaded, removePreloadedImage]);
+  }, [
+    currentImage.index,
+    folder.images,
+    cache.preloaded,
+    removePreloadedImage,
+  ]);
 
   const startPreloading = useCallback(async () => {
     const queue = getPreloadQueue();

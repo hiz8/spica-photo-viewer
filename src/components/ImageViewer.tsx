@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { useAppStore } from '../store';
-import { useImagePreloader } from '../hooks/useImagePreloader';
-import { ImageData } from '../types';
+import type React from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../store";
+import { useImagePreloader } from "../hooks/useImagePreloader";
+import type { ImageData } from "../types";
 
 interface ImageViewerProps {
   className?: string;
 }
 
-const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
+const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const {
     currentImage,
     view,
@@ -30,6 +31,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The 'currentImage.data' dependency is intentionally omitted to avoid infinite loops.
   useEffect(() => {
     if (currentImage.path && !currentImage.data) {
       loadImage(currentImage.path);
@@ -44,8 +46,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       }
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, [currentImage.data, fitToWindow]);
 
   const loadImage = async (path: string) => {
@@ -59,8 +61,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       // Check if image is already preloaded
       const preloadedImage = cache.preloaded.get(path);
       if (preloadedImage) {
-        if (preloadedImage.format === 'error') {
-          throw new Error('Image failed to load previously');
+        if (preloadedImage.format === "error") {
+          throw new Error("Image failed to load previously");
         }
         setImageData(preloadedImage);
 
@@ -74,7 +76,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       }
 
       // Load image if not preloaded
-      const imageData = await invoke<ImageData>('load_image', { path });
+      const imageData = await invoke<ImageData>("load_image", { path });
       setImageData(imageData);
 
       // Auto-fit or update dimensions based on saved state
@@ -87,22 +89,42 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       // Add to preload cache
       cache.preloaded.set(path, imageData);
     } catch (error) {
-      console.error('Failed to load image:', error);
+      console.error("Failed to load image:", error);
       setImageError(error as Error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleContainerClick = useCallback((e: React.MouseEvent) => {
-    // Check if click was on the image element
-    const isImageClick = e.target === imageRef.current;
+  const handleContainerClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Check if click was on the image element
+      const isImageClick = e.target === imageRef.current;
 
-    // Only handle clicks outside the image
-    if (!isImageClick && view.isMaximized && !view.isFullscreen && currentImage.data) {
-      resizeToImage();
-    }
-  }, [view.isMaximized, view.isFullscreen, currentImage.data, resizeToImage]);
+      // Only handle clicks outside the image
+      if (
+        !isImageClick &&
+        view.isMaximized &&
+        !view.isFullscreen &&
+        currentImage.data
+      ) {
+        resizeToImage();
+      }
+    },
+    [view.isMaximized, view.isFullscreen, currentImage.data, resizeToImage],
+  );
+
+  const handleContainerKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (view.isMaximized && !view.isFullscreen && currentImage.data) {
+          resizeToImage();
+        }
+      }
+    },
+    [view.isMaximized, view.isFullscreen, currentImage.data, resizeToImage],
+  );
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Only allow dragging on the image itself
@@ -116,18 +138,21 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     }
   }, []);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isDragging) {
-      // Calculate pan delta relative to zoom level
-      const deltaX = (e.clientX - dragStart.x) / (view.zoom / 100);
-      const deltaY = (e.clientY - dragStart.y) / (view.zoom / 100);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (isDragging) {
+        // Calculate pan delta relative to zoom level
+        const deltaX = (e.clientX - dragStart.x) / (view.zoom / 100);
+        const deltaY = (e.clientY - dragStart.y) / (view.zoom / 100);
 
-      setPan(view.panX + deltaX, view.panY + deltaY);
+        setPan(view.panX + deltaX, view.panY + deltaY);
 
-      // Update drag start for next move
-      setDragStart({ x: e.clientX, y: e.clientY });
-    }
-  }, [isDragging, dragStart, view.zoom, view.panX, view.panY, setPan]);
+        // Update drag start for next move
+        setDragStart({ x: e.clientX, y: e.clientY });
+      }
+    },
+    [isDragging, dragStart, view.zoom, view.panX, view.panY, setPan],
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -140,23 +165,26 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     }
   }, []);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
 
-    if (!containerRef.current) return;
+      if (!containerRef.current) return;
 
-    // Get cursor position relative to the container center
-    const rect = containerRef.current.getBoundingClientRect();
-    const containerCenterX = rect.left + rect.width / 2;
-    const containerCenterY = rect.top + rect.height / 2;
+      // Get cursor position relative to the container center
+      const rect = containerRef.current.getBoundingClientRect();
+      const containerCenterX = rect.left + rect.width / 2;
+      const containerCenterY = rect.top + rect.height / 2;
 
-    // Mouse position relative to container center
-    const mouseX = e.clientX - containerCenterX;
-    const mouseY = e.clientY - containerCenterY;
+      // Mouse position relative to container center
+      const mouseX = e.clientX - containerCenterX;
+      const mouseY = e.clientY - containerCenterY;
 
-    const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
-    zoomAtPoint(zoomFactor, mouseX, mouseY);
-  }, [zoomAtPoint]);
+      const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+      zoomAtPoint(zoomFactor, mouseX, mouseY);
+    },
+    [zoomAtPoint],
+  );
 
   const imageStyle: React.CSSProperties = useMemo(() => {
     // Always use original image dimensions for width/height
@@ -170,20 +198,26 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     return {
       left: baseLeft,
       top: baseTop,
-      width: imageWidth,   // Original image width
+      width: imageWidth, // Original image width
       height: imageHeight, // Original image height
       transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
-      cursor: isDragging ? 'grabbing' : 'grab',
-      transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+      cursor: isDragging ? "grabbing" : "grab",
+      transition: isDragging ? "none" : "transform 0.1s ease-out",
     };
-  }, [view.zoom, view.panX, view.panY, view.imageLeft, view.imageTop, currentImage.data, isDragging]);
+  }, [
+    view.zoom,
+    view.panX,
+    view.panY,
+    view.imageLeft,
+    view.imageTop,
+    currentImage.data,
+    isDragging,
+  ]);
 
   if (!currentImage.path) {
     return (
       <div className={`image-viewer-empty ${className}`}>
-        <div className="no-image-message">
-          No image selected
-        </div>
+        <div className="no-image-message">No image selected</div>
       </div>
     );
   }
@@ -201,18 +235,22 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
   return (
     <div
       ref={containerRef}
+      role="region"
+      aria-label="Image viewer"
+      tabIndex={0}
       className={`image-viewer ${className}`}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
       onClick={handleContainerClick}
+      onKeyDown={handleContainerKeyDown}
     >
       {currentImage.data && (
         <img
           ref={imageRef}
           src={`data:${currentImage.data.format};base64,${currentImage.data.base64}`}
-          alt={currentImage.path.split(/[\\/]/).pop() || 'Current image'}
+          alt={currentImage.path.split(/[\\/]/).pop() || "Current image"}
           style={imageStyle}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
@@ -221,9 +259,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       )}
 
       {view.zoom !== 100 && (
-        <div className="zoom-indicator">
-          {Math.round(view.zoom)}%
-        </div>
+        <div className="zoom-indicator">{Math.round(view.zoom)}%</div>
       )}
     </div>
   );

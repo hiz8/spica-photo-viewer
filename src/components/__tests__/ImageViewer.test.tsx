@@ -1,23 +1,23 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import { mockImageData } from '../../utils/testUtils';
-import type { ImageData as AppImageData } from '../../types';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import { mockImageData } from "../../utils/testUtils";
+import type { ImageData as AppImageData } from "../../types";
 
 // Mock the invoke function
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
 // Mock the useImagePreloader hook
-vi.mock('../../hooks/useImagePreloader', () => ({
+vi.mock("../../hooks/useImagePreloader", () => ({
   useImagePreloader: vi.fn(),
 }));
 
 // Mock the store
 const mockStore = {
   currentImage: {
-    path: '',
+    path: "",
     data: null as AppImageData | null,
     error: null as Error | null,
   },
@@ -44,20 +44,20 @@ const mockStore = {
   resizeToImage: vi.fn(),
 };
 
-vi.mock('../../store', () => ({
+vi.mock("../../store", () => ({
   useAppStore: vi.fn(() => mockStore),
 }));
 
-import ImageViewer from '../ImageViewer';
-import { invoke } from '@tauri-apps/api/core';
+import ImageViewer from "../ImageViewer";
+import { invoke } from "@tauri-apps/api/core";
 
 const mockInvoke = vi.mocked(invoke);
 
-describe('ImageViewer', () => {
+describe("ImageViewer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset store state
-    mockStore.currentImage.path = '';
+    mockStore.currentImage.path = "";
     mockStore.currentImage.data = null;
     mockStore.currentImage.error = null;
     mockStore.view.zoom = 100;
@@ -70,104 +70,117 @@ describe('ImageViewer', () => {
     mockStore.cache.preloaded = new Map();
   });
 
-  describe('Empty state', () => {
-    it('should render empty state when no image selected', () => {
+  describe("Empty state", () => {
+    it("should render empty state when no image selected", () => {
       render(<ImageViewer />);
 
-      expect(screen.getByText('No image selected')).toBeInTheDocument();
-      expect(screen.getByText('No image selected').parentElement).toHaveClass('image-viewer-empty');
+      expect(screen.getByText("No image selected")).toBeInTheDocument();
+      expect(screen.getByText("No image selected").parentElement).toHaveClass(
+        "image-viewer-empty",
+      );
     });
 
-    it('should apply custom className in empty state', () => {
+    it("should apply custom className in empty state", () => {
       render(<ImageViewer className="custom-class" />);
 
-      expect(screen.getByText('No image selected').parentElement).toHaveClass('image-viewer-empty', 'custom-class');
+      expect(screen.getByText("No image selected").parentElement).toHaveClass(
+        "image-viewer-empty",
+        "custom-class",
+      );
     });
   });
 
-  describe('Error state', () => {
-    it('should render error state when image has error', () => {
-      mockStore.currentImage.path = '/test/image.jpg';
-      mockStore.currentImage.error = new Error('Failed to load image');
+  describe("Error state", () => {
+    it("should render error state when image has error", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.error = new Error("Failed to load image");
 
       render(<ImageViewer />);
 
-      expect(screen.getByText('Failed to load image: Failed to load image')).toBeInTheDocument();
-      expect(screen.getByText('Failed to load image: Failed to load image').parentElement).toHaveClass('image-viewer-error');
+      expect(
+        screen.getByText("Failed to load image: Failed to load image"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Failed to load image: Failed to load image")
+          .parentElement,
+      ).toHaveClass("image-viewer-error");
     });
   });
 
-  describe('Loading state', () => {
-    it('should render empty viewer when image path exists but no data', () => {
-      mockStore.currentImage.path = '/test/image.jpg';
+  describe("Loading state", () => {
+    it("should render empty viewer when image path exists but no data", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
 
       render(<ImageViewer />);
 
       // Should render empty viewer container (no loading message in this component)
-      const container = document.querySelector('.image-viewer');
+      const container = document.querySelector(".image-viewer");
       expect(container).toBeInTheDocument();
     });
   });
 
-  describe('Image display', () => {
+  describe("Image display", () => {
     beforeEach(() => {
-      mockStore.currentImage.path = '/test/image.jpg';
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
-    it('should render image when data is available', () => {
+    it("should render image when data is available", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       expect(image).toBeInTheDocument();
-      expect(image).toHaveAttribute('src', `data:${mockImageData.format};base64,${mockImageData.base64}`);
-      expect(image).toHaveAttribute('alt', 'image.jpg');
-      expect(image).toHaveAttribute('draggable', 'false');
+      expect(image).toHaveAttribute(
+        "src",
+        `data:${mockImageData.format};base64,${mockImageData.base64}`,
+      );
+      expect(image).toHaveAttribute("alt", "image.jpg");
+      expect(image).toHaveAttribute("draggable", "false");
     });
 
-    it('should apply transform styles based on zoom and pan', () => {
+    it("should apply transform styles based on zoom and pan", () => {
       mockStore.view.zoom = 150;
       mockStore.view.panX = 50;
       mockStore.view.panY = 25;
 
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        transform: 'scale(1.5) translate(50px, 25px)',
+        transform: "scale(1.5) translate(50px, 25px)",
       });
     });
 
-    it('should show zoom indicator when zoom is not 100%', () => {
+    it("should show zoom indicator when zoom is not 100%", () => {
       mockStore.view.zoom = 200;
 
       render(<ImageViewer />);
 
-      expect(screen.getByText('200%')).toBeInTheDocument();
-      expect(screen.getByText('200%')).toHaveClass('zoom-indicator');
+      expect(screen.getByText("200%")).toBeInTheDocument();
+      expect(screen.getByText("200%")).toHaveClass("zoom-indicator");
     });
 
-    it('should not show zoom indicator when zoom is 100%', () => {
+    it("should not show zoom indicator when zoom is 100%", () => {
       mockStore.view.zoom = 100;
 
       render(<ImageViewer />);
 
-      expect(screen.queryByText('100%')).not.toBeInTheDocument();
+      expect(screen.queryByText("100%")).not.toBeInTheDocument();
     });
 
-    it('should apply cursor style based on dragging state', () => {
+    it("should apply cursor style based on dragging state", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
-      expect(image).toHaveStyle({ cursor: 'grab' });
+      const image = screen.getByRole("img");
+      expect(image).toHaveStyle({ cursor: "grab" });
     });
   });
 
-  describe('Image loading', () => {
-    it('should load image on mount when path exists but no data', async () => {
+  describe("Image loading", () => {
+    it("should load image on mount when path exists but no data", async () => {
       mockInvoke.mockResolvedValue(mockImageData);
-      mockStore.currentImage.path = '/test/image.jpg';
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
 
       await act(async () => {
@@ -180,31 +193,39 @@ describe('ImageViewer', () => {
       // Wait for async operation
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockInvoke).toHaveBeenCalledWith('load_image', { path: '/test/image.jpg' });
+          expect(mockInvoke).toHaveBeenCalledWith("load_image", {
+            path: "/test/image.jpg",
+          });
           expect(mockStore.setImageData).toHaveBeenCalledWith(mockImageData);
-          expect(mockStore.fitToWindow).toHaveBeenCalledWith(mockImageData.width, mockImageData.height);
+          expect(mockStore.fitToWindow).toHaveBeenCalledWith(
+            mockImageData.width,
+            mockImageData.height,
+          );
           expect(mockStore.setLoading).toHaveBeenCalledWith(false);
         });
       });
     });
 
-    it('should use preloaded image if available', () => {
-      mockStore.currentImage.path = '/test/image.jpg';
+    it("should use preloaded image if available", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
-      mockStore.cache.preloaded.set('/test/image.jpg', mockImageData);
+      mockStore.cache.preloaded.set("/test/image.jpg", mockImageData);
 
       render(<ImageViewer />);
 
       expect(mockStore.setImageData).toHaveBeenCalledWith(mockImageData);
-      expect(mockStore.fitToWindow).toHaveBeenCalledWith(mockImageData.width, mockImageData.height);
+      expect(mockStore.fitToWindow).toHaveBeenCalledWith(
+        mockImageData.width,
+        mockImageData.height,
+      );
       expect(mockInvoke).not.toHaveBeenCalled();
     });
 
-    it('should handle preloaded error images', async () => {
-      const errorImage = { ...mockImageData, format: 'error' as const };
-      mockStore.currentImage.path = '/test/image.jpg';
+    it("should handle preloaded error images", async () => {
+      const errorImage = { ...mockImageData, format: "error" as const };
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
-      mockStore.cache.preloaded.set('/test/image.jpg', errorImage);
+      mockStore.cache.preloaded.set("/test/image.jpg", errorImage);
 
       await act(async () => {
         render(<ImageViewer />);
@@ -215,10 +236,12 @@ describe('ImageViewer', () => {
       expect(mockStore.setLoading).toHaveBeenCalledWith(false);
     });
 
-    it('should handle image loading error', async () => {
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      mockInvoke.mockRejectedValue(new Error('Load failed'));
-      mockStore.currentImage.path = '/test/image.jpg';
+    it("should handle image loading error", async () => {
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      mockInvoke.mockRejectedValue(new Error("Load failed"));
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
 
       await act(async () => {
@@ -227,7 +250,9 @@ describe('ImageViewer', () => {
 
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockStore.setImageError).toHaveBeenCalledWith(expect.any(Error));
+          expect(mockStore.setImageError).toHaveBeenCalledWith(
+            expect.any(Error),
+          );
           expect(mockStore.setLoading).toHaveBeenCalledWith(false);
         });
       });
@@ -236,26 +261,26 @@ describe('ImageViewer', () => {
     });
   });
 
-  describe('Mouse interactions', () => {
+  describe("Mouse interactions", () => {
     beforeEach(() => {
-      mockStore.currentImage.path = '/test/image.jpg';
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
-    it('should start dragging on mouse down', () => {
+    it("should start dragging on mouse down", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
 
       // Image should change to grabbing cursor during drag
-      expect(image).toHaveStyle({ cursor: 'grabbing' });
+      expect(image).toHaveStyle({ cursor: "grabbing" });
     });
 
-    it('should handle mouse move during drag', () => {
+    it("should handle mouse move during drag", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       const container = image.parentElement!;
 
       // Start drag on image
@@ -267,43 +292,43 @@ describe('ImageViewer', () => {
       expect(mockStore.setPan).toHaveBeenCalled();
     });
 
-    it('should stop dragging on mouse up', () => {
+    it("should stop dragging on mouse up", () => {
       render(<ImageViewer />);
 
-      const container = screen.getByRole('img').parentElement!;
+      const container = screen.getByRole("img").parentElement!;
 
       // Start and stop drag
       fireEvent.mouseDown(container, { clientX: 100, clientY: 50 });
       fireEvent.mouseUp(container);
 
-      const image = screen.getByRole('img');
-      expect(image).toHaveStyle({ cursor: 'grab' });
+      const image = screen.getByRole("img");
+      expect(image).toHaveStyle({ cursor: "grab" });
     });
 
-    it('should stop dragging on mouse leave', () => {
+    it("should stop dragging on mouse leave", () => {
       render(<ImageViewer />);
 
-      const container = screen.getByRole('img').parentElement!;
+      const container = screen.getByRole("img").parentElement!;
 
       // Start drag and leave
       fireEvent.mouseDown(container, { clientX: 100, clientY: 50 });
       fireEvent.mouseLeave(container);
 
-      const image = screen.getByRole('img');
-      expect(image).toHaveStyle({ cursor: 'grab' });
+      const image = screen.getByRole("img");
+      expect(image).toHaveStyle({ cursor: "grab" });
     });
 
-    it('should render container with event handlers', () => {
+    it("should render container with event handlers", () => {
       render(<ImageViewer />);
 
-      const container = screen.getByRole('img').parentElement!;
+      const container = screen.getByRole("img").parentElement!;
 
       // Verify that the container is properly rendered and can receive events
       expect(container).toBeInTheDocument();
-      expect(container).toHaveClass('image-viewer');
+      expect(container).toHaveClass("image-viewer");
     });
 
-    it('should handle wheel event for zooming', () => {
+    it("should handle wheel event for zooming", () => {
       // Mock getBoundingClientRect
       const mockGetBoundingClientRect = vi.fn(() => ({
         left: 0,
@@ -319,7 +344,7 @@ describe('ImageViewer', () => {
 
       render(<ImageViewer />);
 
-      const container = screen.getByRole('img').parentElement!;
+      const container = screen.getByRole("img").parentElement!;
       container.getBoundingClientRect = mockGetBoundingClientRect;
 
       // Use fireEvent.wheel directly with proper event properties
@@ -333,90 +358,97 @@ describe('ImageViewer', () => {
     });
   });
 
-  describe('Window resize handling', () => {
+  describe("Window resize handling", () => {
     beforeEach(() => {
-      mockStore.currentImage.path = '/test/image.jpg';
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
-    it('should refit image on window resize', () => {
+    it("should refit image on window resize", () => {
       render(<ImageViewer />);
 
       // Clear previous calls
       mockStore.fitToWindow.mockClear();
 
       // Trigger resize
-      fireEvent(window, new Event('resize'));
+      fireEvent(window, new Event("resize"));
 
-      expect(mockStore.fitToWindow).toHaveBeenCalledWith(mockImageData.width, mockImageData.height, true);
+      expect(mockStore.fitToWindow).toHaveBeenCalledWith(
+        mockImageData.width,
+        mockImageData.height,
+        true,
+      );
     });
 
-    it('should cleanup resize listener on unmount', () => {
-      const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener');
+    it("should cleanup resize listener on unmount", () => {
+      const removeEventListenerSpy = vi.spyOn(window, "removeEventListener");
 
       const { unmount } = render(<ImageViewer />);
       unmount();
 
-      expect(removeEventListenerSpy).toHaveBeenCalledWith('resize', expect.any(Function));
+      expect(removeEventListenerSpy).toHaveBeenCalledWith(
+        "resize",
+        expect.any(Function),
+      );
 
       removeEventListenerSpy.mockRestore();
     });
   });
 
-  describe('Transition effects', () => {
+  describe("Transition effects", () => {
     beforeEach(() => {
-      mockStore.currentImage.path = '/test/image.jpg';
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
     });
 
-    it('should disable transition during drag', () => {
+    it("should disable transition during drag", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
 
       // Start drag on image
       fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
 
-      expect(image).toHaveStyle({ transition: 'none' });
+      expect(image).toHaveStyle({ transition: "none" });
     });
 
-    it('should enable transition when not dragging', () => {
+    it("should enable transition when not dragging", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
 
-      expect(image).toHaveStyle({ transition: 'transform 0.1s ease-out' });
+      expect(image).toHaveStyle({ transition: "transform 0.1s ease-out" });
     });
   });
 
-  describe('Accessibility', () => {
-    it('should have proper ARIA roles and attributes', () => {
-      mockStore.currentImage.path = '/test/image.jpg';
+  describe("Accessibility", () => {
+    it("should have proper ARIA roles and attributes", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
 
       render(<ImageViewer />);
 
-      const container = screen.getByRole('img').parentElement!;
-      expect(container).toHaveClass('image-viewer');
+      const container = screen.getByRole("img").parentElement!;
+      expect(container).toHaveClass("image-viewer");
 
-      const image = screen.getByRole('img');
-      expect(image).toHaveAttribute('alt', 'image.jpg');
+      const image = screen.getByRole("img");
+      expect(image).toHaveAttribute("alt", "image.jpg");
     });
 
-    it('should prevent default dragging behavior', () => {
-      mockStore.currentImage.path = '/test/image.jpg';
+    it("should prevent default dragging behavior", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
 
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
-      expect(image).toHaveAttribute('draggable', 'false');
+      const image = screen.getByRole("img");
+      expect(image).toHaveAttribute("draggable", "false");
     });
   });
 
-  describe('Image positioning and scaling', () => {
+  describe("Image positioning and scaling", () => {
     beforeEach(() => {
-      mockStore.currentImage.path = '/test/image.jpg';
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = {
         ...mockImageData,
         width: 1200,
@@ -424,43 +456,43 @@ describe('ImageViewer', () => {
       } as AppImageData | null;
     });
 
-    it('should use original image dimensions for width and height', () => {
+    it("should use original image dimensions for width and height", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        width: '1200px',
-        height: '800px',
+        width: "1200px",
+        height: "800px",
       });
     });
 
-    it('should apply positioned coordinates from view state', () => {
+    it("should apply positioned coordinates from view state", () => {
       mockStore.view.imageLeft = 360;
       mockStore.view.imageTop = 140;
 
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        left: '360px',
-        top: '140px',
+        left: "360px",
+        top: "140px",
       });
     });
 
-    it('should fall back to 0 position when no coordinates provided', () => {
+    it("should fall back to 0 position when no coordinates provided", () => {
       mockStore.view.imageLeft = undefined;
       mockStore.view.imageTop = undefined;
 
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        left: '0px',
-        top: '0px',
+        left: "0px",
+        top: "0px",
       });
     });
 
-    it('should combine positioning with scaling and translation', () => {
+    it("should combine positioning with scaling and translation", () => {
       mockStore.view.imageLeft = 100;
       mockStore.view.imageTop = 50;
       mockStore.view.zoom = 150;
@@ -469,18 +501,18 @@ describe('ImageViewer', () => {
 
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        left: '100px',
-        top: '50px',
-        width: '1200px',
-        height: '800px',
-        transform: 'scale(1.5) translate(20px, 10px)',
+        left: "100px",
+        top: "50px",
+        width: "1200px",
+        height: "800px",
+        transform: "scale(1.5) translate(20px, 10px)",
       });
     });
 
-    it('should handle missing image data gracefully', () => {
-      mockStore.currentImage.path = '/test/image.jpg';
+    it("should handle missing image data gracefully", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
       mockStore.view.imageLeft = 100;
       mockStore.view.imageTop = 50;
@@ -488,17 +520,17 @@ describe('ImageViewer', () => {
       render(<ImageViewer />);
 
       // Should render empty container when path exists but no data, not crash
-      const container = document.querySelector('.image-viewer');
+      const container = document.querySelector(".image-viewer");
       expect(container).toBeInTheDocument();
     });
 
-    it('should update styles when view state changes', () => {
+    it("should update styles when view state changes", () => {
       const { rerender } = render(<ImageViewer />);
 
-      let image = screen.getByRole('img');
+      let image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        left: '0px',
-        top: '0px',
+        left: "0px",
+        top: "0px",
       });
 
       // Update view state
@@ -507,20 +539,20 @@ describe('ImageViewer', () => {
 
       rerender(<ImageViewer />);
 
-      image = screen.getByRole('img');
+      image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        left: '200px',
-        top: '100px',
+        left: "200px",
+        top: "100px",
       });
     });
 
-    it('should apply correct CSS class for absolute positioning', () => {
+    it("should apply correct CSS class for absolute positioning", () => {
       render(<ImageViewer />);
 
-      const image = screen.getByRole('img');
+      const image = screen.getByRole("img");
       // CSS positioning is handled by App.css via class, not inline styles
       expect(image).toBeInTheDocument();
-      expect(image.tagName).toBe('IMG');
+      expect(image.tagName).toBe("IMG");
     });
   });
 });

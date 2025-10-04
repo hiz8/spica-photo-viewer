@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { getVersion } from '@tauri-apps/api/app';
-import { useAppStore } from '../store';
+import type React from "react";
+import { useState, useEffect } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import { useAppStore } from "../store";
 
 const AboutDialog: React.FC = () => {
   const { ui, setShowAbout } = useAppStore();
-  const [version, setVersion] = useState<string>('');
+  const [version, setVersion] = useState<string>("");
 
   useEffect(() => {
     const loadVersion = async () => {
@@ -12,8 +13,8 @@ const AboutDialog: React.FC = () => {
         const appVersion = await getVersion();
         setVersion(appVersion);
       } catch (error) {
-        console.error('Failed to get app version:', error);
-        setVersion('Unknown');
+        console.error("Failed to get app version:", error);
+        setVersion("Unknown");
       }
     };
 
@@ -34,12 +35,31 @@ const AboutDialog: React.FC = () => {
     }
   };
 
+  const handleBackdropKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (e.target === e.currentTarget) {
+        handleClose();
+      }
+    }
+  };
+
   return (
-    <div className="about-dialog-backdrop" onClick={handleBackdropClick}>
+    <div
+      role="button"
+      tabIndex={0}
+      className="about-dialog-backdrop"
+      onClick={handleBackdropClick}
+      onKeyDown={handleBackdropKeyDown}
+    >
       <div className="about-dialog">
         <div className="about-dialog-header">
           <h2>Spica Photo Viewer</h2>
-          <button className="about-dialog-close" onClick={handleClose}>
+          <button
+            type="button"
+            className="about-dialog-close"
+            onClick={handleClose}
+          >
             ×
           </button>
         </div>
@@ -52,8 +72,8 @@ const AboutDialog: React.FC = () => {
 
           <div className="about-info">
             <p className="description">
-              A lightweight, fast image viewer application for Windows,
-              inspired by Picasa Photo Viewer.
+              A lightweight, fast image viewer application for Windows, inspired
+              by Picasa Photo Viewer.
             </p>
 
             <div className="features">
@@ -97,7 +117,8 @@ const AboutDialog: React.FC = () => {
 
             <div className="tech-info">
               <p className="built-with">
-                Built with <strong>Tauri v2</strong> and <strong>React 19</strong>
+                Built with <strong>Tauri v2</strong> and{" "}
+                <strong>React 19</strong>
               </p>
             </div>
           </div>
