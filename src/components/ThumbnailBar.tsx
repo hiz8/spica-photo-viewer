@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import { ImageInfo } from '../types';
 
+const THUMBNAIL_SIZE = 20;
+
 interface ThumbnailItemProps {
   image: ImageInfo;
   index: number;
@@ -20,7 +22,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(({ image, index, isActi
         // First, try to get from cache
         const cachedThumbnail = await invoke<string | null>('get_cached_thumbnail', {
           path: image.path,
-          size: 30
+          size: THUMBNAIL_SIZE
         });
 
         if (cachedThumbnail) {
@@ -31,14 +33,14 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(({ image, index, isActi
         // If not cached, generate new thumbnail
         const thumbnail = await invoke<string>('generate_image_thumbnail', {
           path: image.path,
-          size: 30
+          size: THUMBNAIL_SIZE
         });
 
         // Cache the generated thumbnail
         await invoke('set_cached_thumbnail', {
           path: image.path,
           thumbnail,
-          size: 30
+          size: THUMBNAIL_SIZE
         });
 
         setThumbnailData(thumbnail);
@@ -51,7 +53,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(({ image, index, isActi
           await invoke('set_cached_thumbnail', {
             path: image.path,
             thumbnail: 'error',
-            size: 30
+            size: THUMBNAIL_SIZE
           });
         } catch (cacheErr) {
           console.warn('Failed to cache thumbnail error:', cacheErr);
