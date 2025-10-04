@@ -1,16 +1,16 @@
-import React, { useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import ImageViewer from './components/ImageViewer';
-import DropZone from './components/DropZone';
-import FileOpenButton from './components/FileOpenButton';
-import ThumbnailBar from './components/ThumbnailBar';
-import AboutDialog from './components/AboutDialog';
-import { useKeyboard } from './hooks/useKeyboard';
+import React, { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import ImageViewer from "./components/ImageViewer";
+import DropZone from "./components/DropZone";
+import FileOpenButton from "./components/FileOpenButton";
+import ThumbnailBar from "./components/ThumbnailBar";
+import AboutDialog from "./components/AboutDialog";
+import { useKeyboard } from "./hooks/useKeyboard";
 // import { useFileDrop } from './hooks/useFileDrop';
-import { useCacheManager } from './hooks/useCacheManager';
-import { useWindowState } from './hooks/useWindowState';
-import { useAppStore } from './store';
-import './App.css';
+import { useCacheManager } from "./hooks/useCacheManager";
+import { useWindowState } from "./hooks/useWindowState";
+import { useAppStore } from "./store";
+import "./App.css";
 
 const App: React.FC = () => {
   const { ui, currentImage, view, openImageFromPath } = useAppStore();
@@ -24,13 +24,13 @@ const App: React.FC = () => {
   useEffect(() => {
     const checkStartupFile = async () => {
       try {
-        const startupFile = await invoke<string | null>('get_startup_file');
+        const startupFile = await invoke<string | null>("get_startup_file");
         if (startupFile) {
-          console.log('Opening startup file:', startupFile);
+          console.log("Opening startup file:", startupFile);
           await openImageFromPath(startupFile);
         }
       } catch (error) {
-        console.error('Failed to check startup file:', error);
+        console.error("Failed to check startup file:", error);
       }
     };
 
@@ -38,7 +38,9 @@ const App: React.FC = () => {
   }, [openImageFromPath]);
 
   return (
-    <div className={`photo-viewer-app ${view.isFullscreen ? 'fullscreen' : ''}`}>
+    <div
+      className={`photo-viewer-app ${view.isFullscreen ? "fullscreen" : ""}`}
+    >
       <DropZone className="main-drop-zone">
         <ImageViewer />
 
@@ -53,11 +55,7 @@ const App: React.FC = () => {
         )}
       </DropZone>
 
-      {ui.error && (
-        <div className="error-toast">
-          {ui.error.message}
-        </div>
-      )}
+      {ui.error && <div className="error-toast">{ui.error.message}</div>}
 
       <ThumbnailBar />
       <AboutDialog />

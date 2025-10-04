@@ -1,27 +1,35 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { mockImageData, mockImageList } from '../../utils/testUtils';
-import type { ImageInfo } from '../../types';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { mockImageData, mockImageList } from "../../utils/testUtils";
+import type { ImageInfo } from "../../types";
 
 // Helper function to create mock ImageInfo objects
-const createMockImageInfo = (index: number, overrides: Partial<ImageInfo> = {}): ImageInfo => ({
+const createMockImageInfo = (
+  index: number,
+  overrides: Partial<ImageInfo> = {},
+): ImageInfo => ({
   path: `/test/image${index}.jpg`,
   filename: `image${index}.jpg`,
   width: 800,
   height: 600,
   size: 1024,
   modified: Date.now() - index * 1000,
-  format: 'jpeg',
+  format: "jpeg",
   ...overrides,
 });
 
 // Type guard for invoke parameters with path
 function hasPath(arg: unknown): arg is { path: string } {
-  return typeof arg === 'object' && arg !== null && 'path' in arg && typeof (arg as any).path === 'string';
+  return (
+    typeof arg === "object" &&
+    arg !== null &&
+    "path" in arg &&
+    typeof (arg as any).path === "string"
+  );
 }
 
 // Mock the invoke function before importing
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
@@ -40,16 +48,16 @@ const mockStore = {
   removePreloadedImage: vi.fn(),
 };
 
-vi.mock('../../store', () => ({
+vi.mock("../../store", () => ({
   useAppStore: vi.fn(() => mockStore),
 }));
 
-import { useImagePreloader } from '../useImagePreloader';
-import { invoke } from '@tauri-apps/api/core';
+import { useImagePreloader } from "../useImagePreloader";
+import { invoke } from "@tauri-apps/api/core";
 
 const mockInvoke = vi.mocked(invoke);
 
-describe('useImagePreloader', () => {
+describe("useImagePreloader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStore.folder.images = [] as ImageInfo[];
@@ -66,65 +74,74 @@ describe('useImagePreloader', () => {
     vi.useRealTimers();
   });
 
-  describe('preloadImage', () => {
-    it('should preload image successfully', async () => {
+  describe("preloadImage", () => {
+    it("should preload image successfully", async () => {
       mockInvoke.mockResolvedValue(mockImageData);
 
       const { result } = renderHook(() => useImagePreloader());
 
       await act(async () => {
-        await result.current.preloadImage('/test/image.jpg');
+        await result.current.preloadImage("/test/image.jpg");
       });
 
-      expect(mockInvoke).toHaveBeenCalledWith('load_image', { path: '/test/image.jpg' });
-      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith('/test/image.jpg', mockImageData);
+      expect(mockInvoke).toHaveBeenCalledWith("load_image", {
+        path: "/test/image.jpg",
+      });
+      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+        "/test/image.jpg",
+        mockImageData,
+      );
     });
 
-    it('should not preload if image already in cache', async () => {
+    it("should not preload if image already in cache", async () => {
       // Setup cache with existing image
-      mockStore.cache.preloaded.set('/test/image.jpg', mockImageData);
+      mockStore.cache.preloaded.set("/test/image.jpg", mockImageData);
 
       const { result } = renderHook(() => useImagePreloader());
 
       await act(async () => {
-        await result.current.preloadImage('/test/image.jpg');
+        await result.current.preloadImage("/test/image.jpg");
       });
 
       expect(mockInvoke).not.toHaveBeenCalled();
       expect(mockStore.setPreloadedImage).not.toHaveBeenCalled();
     });
 
-    it('should handle preload error gracefully', async () => {
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      mockInvoke.mockRejectedValue(new Error('Failed to load image'));
+    it("should handle preload error gracefully", async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
+      mockInvoke.mockRejectedValue(new Error("Failed to load image"));
 
       const { result } = renderHook(() => useImagePreloader());
 
       await act(async () => {
-        await result.current.preloadImage('/test/failed-image.jpg');
+        await result.current.preloadImage("/test/failed-image.jpg");
       });
 
-      expect(mockInvoke).toHaveBeenCalledWith('load_image', { path: '/test/failed-image.jpg' });
+      expect(mockInvoke).toHaveBeenCalledWith("load_image", {
+        path: "/test/failed-image.jpg",
+      });
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        'Failed to preload image: failed-image.jpg',
-        expect.any(Error)
+        "Failed to preload image: failed-image.jpg",
+        expect.any(Error),
       );
 
       // Should mark as error in cache
       expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
-        '/test/failed-image.jpg',
+        "/test/failed-image.jpg",
         expect.objectContaining({
-          format: 'error',
-          path: '/test/failed-image.jpg',
-        })
+          format: "error",
+          path: "/test/failed-image.jpg",
+        }),
       );
 
       consoleWarnSpy.mockRestore();
     });
   });
 
-  describe('getPreloadQueue', () => {
-    it('should return empty queue when no current image', () => {
+  describe("getPreloadQueue", () => {
+    it("should return empty queue when no current image", () => {
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = -1;
 
@@ -138,7 +155,7 @@ describe('useImagePreloader', () => {
       expect(mockInvoke).not.toHaveBeenCalled();
     });
 
-    it('should return empty queue when no images in folder', () => {
+    it("should return empty queue when no images in folder", () => {
       mockStore.folder.images = [];
       mockStore.currentImage.index = 0;
 
@@ -151,7 +168,7 @@ describe('useImagePreloader', () => {
       expect(mockInvoke).not.toHaveBeenCalled();
     });
 
-    it('should prioritize next and previous images', async () => {
+    it("should prioritize next and previous images", async () => {
       mockInvoke.mockResolvedValue(mockImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1; // Middle image
@@ -166,7 +183,7 @@ describe('useImagePreloader', () => {
       expect(mockInvoke).toHaveBeenCalled();
     });
 
-    it('should skip already cached images in queue', async () => {
+    it("should skip already cached images in queue", async () => {
       mockInvoke.mockResolvedValue(mockImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
@@ -181,25 +198,31 @@ describe('useImagePreloader', () => {
       });
 
       // Should not try to preload the cached image
-      const calls = mockInvoke.mock.calls.map(call => hasPath(call[1]) ? call[1].path : undefined);
+      const calls = mockInvoke.mock.calls.map((call) =>
+        hasPath(call[1]) ? call[1].path : undefined,
+      );
       expect(calls).not.toContain(mockImageList[0].path);
     });
   });
 
-  describe('cleanupCache', () => {
-    it('should remove images outside preload range', () => {
-      const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  describe("cleanupCache", () => {
+    it("should remove images outside preload range", () => {
+      const consoleLogSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => {});
 
       // Setup cache with many images
-      const manyImages = Array.from({ length: 50 }, (_, i) => createMockImageInfo(i));
+      const manyImages = Array.from({ length: 50 }, (_, i) =>
+        createMockImageInfo(i),
+      );
 
       mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 25; // Middle position
 
       // Add images to cache that are outside range
-      mockStore.cache.preloaded.set('/test/image0.jpg', mockImageData); // Far from current
-      mockStore.cache.preloaded.set('/test/image49.jpg', mockImageData); // Far from current
-      mockStore.cache.preloaded.set('/test/image25.jpg', mockImageData); // Current image
+      mockStore.cache.preloaded.set("/test/image0.jpg", mockImageData); // Far from current
+      mockStore.cache.preloaded.set("/test/image49.jpg", mockImageData); // Far from current
+      mockStore.cache.preloaded.set("/test/image25.jpg", mockImageData); // Current image
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -208,15 +231,21 @@ describe('useImagePreloader', () => {
       });
 
       // Should remove images outside ±20 range
-      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith('/test/image0.jpg');
-      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith('/test/image49.jpg');
+      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+        "/test/image0.jpg",
+      );
+      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+        "/test/image49.jpg",
+      );
       // Should not remove current image
-      expect(mockStore.removePreloadedImage).not.toHaveBeenCalledWith('/test/image25.jpg');
+      expect(mockStore.removePreloadedImage).not.toHaveBeenCalledWith(
+        "/test/image25.jpg",
+      );
 
       consoleLogSpy.mockRestore();
     });
 
-    it('should handle cleanup when no current image', () => {
+    it("should handle cleanup when no current image", () => {
       mockStore.currentImage.index = -1;
 
       const { result } = renderHook(() => useImagePreloader());
@@ -230,12 +259,14 @@ describe('useImagePreloader', () => {
     });
   });
 
-  describe('startPreloading', () => {
-    it('should process preload queue with concurrent limit', async () => {
+  describe("startPreloading", () => {
+    it("should process preload queue with concurrent limit", async () => {
       mockInvoke.mockResolvedValue(mockImageData);
 
       // Setup many images to exceed concurrent limit
-      const manyImages = Array.from({ length: 10 }, (_, i) => createMockImageInfo(i));
+      const manyImages = Array.from({ length: 10 }, (_, i) =>
+        createMockImageInfo(i),
+      );
 
       mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 5;
@@ -251,13 +282,15 @@ describe('useImagePreloader', () => {
       expect(mockStore.setPreloadedImage).toHaveBeenCalled();
     });
 
-    it('should handle partial failures in concurrent loading', async () => {
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    it("should handle partial failures in concurrent loading", async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
 
       // Mock some successful and some failed loads
       mockInvoke
         .mockResolvedValueOnce(mockImageData) // First call succeeds
-        .mockRejectedValueOnce(new Error('Failed')); // Second call fails
+        .mockRejectedValueOnce(new Error("Failed")); // Second call fails
 
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
@@ -276,8 +309,8 @@ describe('useImagePreloader', () => {
     });
   });
 
-  describe('useEffect integration', () => {
-    it('should start preloading when current image changes', async () => {
+  describe("useEffect integration", () => {
+    it("should start preloading when current image changes", async () => {
       mockInvoke.mockResolvedValue(mockImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
 
@@ -299,7 +332,7 @@ describe('useImagePreloader', () => {
       expect(mockInvoke).toHaveBeenCalled();
     });
 
-    it('should delay preloading by 500ms', async () => {
+    it("should delay preloading by 500ms", async () => {
       mockInvoke.mockResolvedValue(mockImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
@@ -322,7 +355,7 @@ describe('useImagePreloader', () => {
       expect(mockInvoke).toHaveBeenCalled();
     });
 
-    it('should cleanup timeout on unmount', () => {
+    it("should cleanup timeout on unmount", () => {
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
@@ -339,30 +372,34 @@ describe('useImagePreloader', () => {
     });
   });
 
-  describe('console logging', () => {
-    it('should log successful preload', async () => {
-      const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  describe("console logging", () => {
+    it("should log successful preload", async () => {
+      const consoleLogSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => {});
       mockInvoke.mockResolvedValue(mockImageData);
 
       const { result } = renderHook(() => useImagePreloader());
 
       await act(async () => {
-        await result.current.preloadImage('/test/subfolder/image.jpg');
+        await result.current.preloadImage("/test/subfolder/image.jpg");
       });
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('Preloaded: image.jpg');
+      expect(consoleLogSpy).toHaveBeenCalledWith("Preloaded: image.jpg");
 
       consoleLogSpy.mockRestore();
     });
 
-    it('should log cleanup operations', () => {
-      const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    it("should log cleanup operations", () => {
+      const consoleLogSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => {});
 
       mockStore.folder.images = [mockImageList[1]] as ImageInfo[]; // Only one image
       mockStore.currentImage.index = 0;
 
       // Add an image that will be cleaned up
-      mockStore.cache.preloaded.set('/test/old-image.jpg', mockImageData);
+      mockStore.cache.preloaded.set("/test/old-image.jpg", mockImageData);
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -370,7 +407,9 @@ describe('useImagePreloader', () => {
         result.current.cleanupCache();
       });
 
-      expect(consoleLogSpy).toHaveBeenCalledWith('Cleaned from cache: old-image.jpg');
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        "Cleaned from cache: old-image.jpg",
+      );
 
       consoleLogSpy.mockRestore();
     });

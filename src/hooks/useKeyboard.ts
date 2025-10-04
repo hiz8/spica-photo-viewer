@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { useAppStore } from '../store';
+import { useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useAppStore } from "../store";
 
 export const useKeyboard = () => {
   const {
@@ -28,7 +28,7 @@ export const useKeyboard = () => {
         setFullscreen(true);
       }
     } catch (error) {
-      console.error('Failed to toggle fullscreen:', error);
+      console.error("Failed to toggle fullscreen:", error);
     }
   };
 
@@ -38,7 +38,7 @@ export const useKeyboard = () => {
       await window.setFullscreen(false);
       setFullscreen(false);
     } catch (error) {
-      console.error('Failed to exit fullscreen:', error);
+      console.error("Failed to exit fullscreen:", error);
     }
   };
 
@@ -47,39 +47,39 @@ export const useKeyboard = () => {
       const window = getCurrentWindow();
       await window.close();
     } catch (error) {
-      console.error('Failed to close application:', error);
+      console.error("Failed to close application:", error);
     }
   };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       switch (event.key) {
-        case 'ArrowLeft':
+        case "ArrowLeft":
           event.preventDefault();
           navigatePrevious();
           break;
 
-        case 'ArrowRight':
+        case "ArrowRight":
           event.preventDefault();
           navigateNext();
           break;
 
-        case 'ArrowUp':
+        case "ArrowUp":
           event.preventDefault();
           zoomIn();
           break;
 
-        case 'ArrowDown':
+        case "ArrowDown":
           event.preventDefault();
           zoomOut();
           break;
 
-        case 'F11':
+        case "F11":
           event.preventDefault();
           toggleFullscreen();
           break;
 
-        case 'Escape':
+        case "Escape":
           event.preventDefault();
           if (ui.showAbout) {
             setShowAbout(false);
@@ -90,12 +90,12 @@ export const useKeyboard = () => {
           }
           break;
 
-        case 'F1':
+        case "F1":
           event.preventDefault();
           setShowAbout(true);
           break;
 
-        case '0':
+        case "0":
           if (event.ctrlKey) {
             event.preventDefault();
             resetZoom();
@@ -107,10 +107,10 @@ export const useKeyboard = () => {
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [
     navigateNext,

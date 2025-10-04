@@ -1,69 +1,73 @@
-import React from 'react';
-import { render, RenderOptions, act } from '@testing-library/react';
-import { vi } from 'vitest';
-import { ImageData, ImageInfo } from '../types';
+import React from "react";
+import { render, RenderOptions, act } from "@testing-library/react";
+import { vi } from "vitest";
+import { ImageData, ImageInfo } from "../types";
 
 // Test utilities for common test scenarios
 
 // Sample test data
 export const mockImageData: ImageData = {
-  path: '/test/image.jpg',
-  base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  path: "/test/image.jpg",
+  base64:
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
   width: 800,
   height: 600,
-  format: 'jpeg',
+  format: "jpeg",
 };
 
 export const mockImageInfo: ImageInfo = {
-  path: '/test/image.jpg',
-  filename: 'image.jpg',
+  path: "/test/image.jpg",
+  filename: "image.jpg",
   width: 800,
   height: 600,
   size: 1024,
   modified: Date.now(),
-  format: 'jpeg',
+  format: "jpeg",
 };
 
 export const mockImageList: ImageInfo[] = [
   {
-    path: '/test/image1.jpg',
-    filename: 'image1.jpg',
+    path: "/test/image1.jpg",
+    filename: "image1.jpg",
     width: 800,
     height: 600,
     size: 1024,
     modified: Date.now() - 3000,
-    format: 'jpeg',
+    format: "jpeg",
   },
   {
-    path: '/test/image2.png',
-    filename: 'image2.png',
+    path: "/test/image2.png",
+    filename: "image2.png",
     width: 1024,
     height: 768,
     size: 2048,
     modified: Date.now() - 2000,
-    format: 'png',
+    format: "png",
   },
   {
-    path: '/test/image3.gif',
-    filename: 'image3.gif',
+    path: "/test/image3.gif",
+    filename: "image3.gif",
     width: 400,
     height: 300,
     size: 512,
     modified: Date.now() - 1000,
-    format: 'gif',
+    format: "gif",
   },
 ];
 
 // Custom render function that can include providers
 export const renderWithProviders = (
   ui: React.ReactElement,
-  options?: Omit<RenderOptions, 'wrapper'>
+  options?: Omit<RenderOptions, "wrapper">,
 ) => {
   return render(ui, options);
 };
 
 // Async render helper that wraps components in act()
-export const renderAsync = async (ui: React.ReactElement, options?: Omit<RenderOptions, 'wrapper'>) => {
+export const renderAsync = async (
+  ui: React.ReactElement,
+  options?: Omit<RenderOptions, "wrapper">,
+) => {
   let result: any;
   await act(async () => {
     result = render(ui, options);
@@ -74,15 +78,15 @@ export const renderAsync = async (ui: React.ReactElement, options?: Omit<RenderO
 // Store mock factory
 export const createMockStore = (overrides: any = {}) => ({
   currentImage: {
-    path: '',
+    path: "",
     index: -1,
     data: null,
     error: null,
   },
   folder: {
-    path: '',
+    path: "",
     images: [],
-    sortOrder: 'name' as const,
+    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
@@ -135,7 +139,7 @@ export const createMockStore = (overrides: any = {}) => ({
 // Wait for async operations with act wrapper
 export const waitForAsync = async (callback: () => void | Promise<void>) => {
   await act(async () => {
-    if (typeof callback === 'function') {
+    if (typeof callback === "function") {
       await callback();
     }
   });
@@ -144,7 +148,10 @@ export const waitForAsync = async (callback: () => void | Promise<void>) => {
 // Standardized async test patterns
 export const asyncTestPatterns = {
   // Render component with async operations
-  renderWithAsyncOps: async (ui: React.ReactElement, options?: Omit<RenderOptions, 'wrapper'>) => {
+  renderWithAsyncOps: async (
+    ui: React.ReactElement,
+    options?: Omit<RenderOptions, "wrapper">,
+  ) => {
     let result: any;
     await act(async () => {
       result = render(ui, options);
@@ -159,7 +166,7 @@ export const asyncTestPatterns = {
         await callback();
       }
       // Give React time to process all updates
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
   },
 
@@ -182,17 +189,17 @@ export const asyncTestPatterns = {
 
 // Mock window resize helper
 export const mockWindowResize = (width: number, height: number) => {
-  Object.defineProperty(window, 'innerWidth', {
+  Object.defineProperty(window, "innerWidth", {
     writable: true,
     configurable: true,
     value: width,
   });
-  Object.defineProperty(window, 'innerHeight', {
+  Object.defineProperty(window, "innerHeight", {
     writable: true,
     configurable: true,
     value: height,
   });
-  window.dispatchEvent(new Event('resize'));
+  window.dispatchEvent(new Event("resize"));
 };
 
 // Mock mouse event helpers
@@ -200,7 +207,7 @@ export const createMouseEvent = (
   type: string,
   clientX: number = 0,
   clientY: number = 0,
-  button: number = 0
+  button: number = 0,
 ): MouseEvent => {
   return new MouseEvent(type, {
     clientX,
@@ -215,9 +222,9 @@ export const createMouseEvent = (
 export const createWheelEvent = (
   deltaY: number,
   clientX: number = 0,
-  clientY: number = 0
+  clientY: number = 0,
 ): WheelEvent => {
-  return new WheelEvent('wheel', {
+  return new WheelEvent("wheel", {
     deltaY,
     clientX,
     clientY,
@@ -229,9 +236,9 @@ export const createWheelEvent = (
 // Mock keyboard event helper
 export const createKeyboardEvent = (
   key: string,
-  ctrlKey: boolean = false
+  ctrlKey: boolean = false,
 ): KeyboardEvent => {
-  return new KeyboardEvent('keydown', {
+  return new KeyboardEvent("keydown", {
     key,
     ctrlKey,
     bubbles: true,

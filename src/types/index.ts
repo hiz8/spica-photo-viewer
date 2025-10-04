@@ -5,7 +5,7 @@ export interface ImageInfo {
   height: number;
   size: number;
   modified: number;
-  format: 'jpeg' | 'png' | 'webp' | 'gif';
+  format: "jpeg" | "png" | "webp" | "gif";
 }
 
 export interface ImageData {
@@ -103,7 +103,7 @@ export interface KeyboardShortcuts {
   ArrowDown: () => void;
   F11: () => void;
   Escape: () => void;
-  'Ctrl+0': () => void;
+  "Ctrl+0": () => void;
 }
 
 export interface ZoomPanState {

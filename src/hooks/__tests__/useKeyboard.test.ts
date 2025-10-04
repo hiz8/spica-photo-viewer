@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
-import { createKeyboardEvent } from '../../utils/testUtils';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { renderHook } from "@testing-library/react";
+import { createKeyboardEvent } from "../../utils/testUtils";
 
 // Mock Tauri window API
 const mockWindow = {
@@ -9,7 +9,7 @@ const mockWindow = {
   close: vi.fn(),
 };
 
-vi.mock('@tauri-apps/api/window', () => ({
+vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => mockWindow),
 }));
 
@@ -30,13 +30,13 @@ const mockStore = {
   },
 };
 
-vi.mock('../../store', () => ({
+vi.mock("../../store", () => ({
   useAppStore: vi.fn(() => mockStore),
 }));
 
-import { useKeyboard } from '../useKeyboard';
+import { useKeyboard } from "../useKeyboard";
 
-describe('useKeyboard', () => {
+describe("useKeyboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStore.view.isFullscreen = false;
@@ -48,52 +48,52 @@ describe('useKeyboard', () => {
     mockWindow.close.mockResolvedValue(undefined);
   });
 
-  it('should handle arrow left key for previous navigation', () => {
+  it("should handle arrow left key for previous navigation", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('ArrowLeft');
+    const event = createKeyboardEvent("ArrowLeft");
     document.dispatchEvent(event);
 
     expect(mockStore.navigatePrevious).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('should handle arrow right key for next navigation', () => {
+  it("should handle arrow right key for next navigation", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('ArrowRight');
+    const event = createKeyboardEvent("ArrowRight");
     document.dispatchEvent(event);
 
     expect(mockStore.navigateNext).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('should handle arrow up key for zoom in', () => {
+  it("should handle arrow up key for zoom in", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('ArrowUp');
+    const event = createKeyboardEvent("ArrowUp");
     document.dispatchEvent(event);
 
     expect(mockStore.zoomIn).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('should handle arrow down key for zoom out', () => {
+  it("should handle arrow down key for zoom out", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('ArrowDown');
+    const event = createKeyboardEvent("ArrowDown");
     document.dispatchEvent(event);
 
     expect(mockStore.zoomOut).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('should handle F11 key for fullscreen toggle', async () => {
+  it("should handle F11 key for fullscreen toggle", async () => {
     mockWindow.isFullscreen.mockResolvedValue(false);
 
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('F11');
+    const event = createKeyboardEvent("F11");
     document.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
@@ -104,12 +104,12 @@ describe('useKeyboard', () => {
     });
   });
 
-  it('should handle F11 key to exit fullscreen when already fullscreen', async () => {
+  it("should handle F11 key to exit fullscreen when already fullscreen", async () => {
     mockWindow.isFullscreen.mockResolvedValue(true);
 
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('F11');
+    const event = createKeyboardEvent("F11");
     document.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
@@ -121,12 +121,12 @@ describe('useKeyboard', () => {
     });
   });
 
-  it('should handle F11 key to enter fullscreen when not fullscreen', async () => {
+  it("should handle F11 key to enter fullscreen when not fullscreen", async () => {
     mockWindow.isFullscreen.mockResolvedValue(false);
 
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('F11');
+    const event = createKeyboardEvent("F11");
     document.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
@@ -138,56 +138,56 @@ describe('useKeyboard', () => {
     });
   });
 
-  it('should handle F1 key to show About dialog', () => {
+  it("should handle F1 key to show About dialog", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('F1');
+    const event = createKeyboardEvent("F1");
     document.dispatchEvent(event);
 
     expect(mockStore.setShowAbout).toHaveBeenCalledWith(true);
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('should handle Ctrl+0 for zoom reset', () => {
+  it("should handle Ctrl+0 for zoom reset", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('0', true); // Ctrl key pressed
+    const event = createKeyboardEvent("0", true); // Ctrl key pressed
     document.dispatchEvent(event);
 
     expect(mockStore.resetZoom).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('should not handle 0 key without Ctrl modifier', () => {
+  it("should not handle 0 key without Ctrl modifier", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('0', false);
+    const event = createKeyboardEvent("0", false);
     document.dispatchEvent(event);
 
     expect(mockStore.resetZoom).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
   });
 
-  describe('Escape key behavior', () => {
-    it('should close About dialog when About is shown', async () => {
+  describe("Escape key behavior", () => {
+    it("should close About dialog when About is shown", async () => {
       mockStore.ui.showAbout = true;
 
       renderHook(() => useKeyboard());
 
-      const event = createKeyboardEvent('Escape');
+      const event = createKeyboardEvent("Escape");
       document.dispatchEvent(event);
 
       expect(mockStore.setShowAbout).toHaveBeenCalledWith(false);
       expect(event.defaultPrevented).toBe(true);
     });
 
-    it('should exit fullscreen when in fullscreen mode and About not shown', async () => {
+    it("should exit fullscreen when in fullscreen mode and About not shown", async () => {
       mockStore.view.isFullscreen = true;
       mockStore.ui.showAbout = false;
 
       renderHook(() => useKeyboard());
 
-      const event = createKeyboardEvent('Escape');
+      const event = createKeyboardEvent("Escape");
       document.dispatchEvent(event);
 
       expect(event.defaultPrevented).toBe(true);
@@ -198,13 +198,13 @@ describe('useKeyboard', () => {
       });
     });
 
-    it('should close application when not in fullscreen and About not shown', async () => {
+    it("should close application when not in fullscreen and About not shown", async () => {
       mockStore.view.isFullscreen = false;
       mockStore.ui.showAbout = false;
 
       renderHook(() => useKeyboard());
 
-      const event = createKeyboardEvent('Escape');
+      const event = createKeyboardEvent("Escape");
       document.dispatchEvent(event);
 
       expect(event.defaultPrevented).toBe(true);
@@ -215,10 +215,10 @@ describe('useKeyboard', () => {
     });
   });
 
-  it('should ignore unhandled keys', () => {
+  it("should ignore unhandled keys", () => {
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('Space');
+    const event = createKeyboardEvent("Space");
     document.dispatchEvent(event);
 
     // Should not call any store methods
@@ -234,59 +234,70 @@ describe('useKeyboard', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('should cleanup event listener on unmount', () => {
-    const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
+  it("should cleanup event listener on unmount", () => {
+    const removeEventListenerSpy = vi.spyOn(document, "removeEventListener");
 
     const { unmount } = renderHook(() => useKeyboard());
 
     unmount();
 
-    expect(removeEventListenerSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+    expect(removeEventListenerSpy).toHaveBeenCalledWith(
+      "keydown",
+      expect.any(Function),
+    );
 
     removeEventListenerSpy.mockRestore();
   });
 
-  it('should handle fullscreen API errors gracefully', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockWindow.setFullscreen.mockRejectedValue(new Error('Fullscreen API error'));
+  it("should handle fullscreen API errors gracefully", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockWindow.setFullscreen.mockRejectedValue(
+      new Error("Fullscreen API error"),
+    );
 
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('F11');
+    const event = createKeyboardEvent("F11");
     document.dispatchEvent(event);
 
     await vi.waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith('Failed to toggle fullscreen:', expect.any(Error));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        "Failed to toggle fullscreen:",
+        expect.any(Error),
+      );
     });
 
     consoleSpy.mockRestore();
   });
 
-  it('should handle window close API errors gracefully', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockWindow.close.mockRejectedValue(new Error('Close API error'));
+  it("should handle window close API errors gracefully", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockWindow.close.mockRejectedValue(new Error("Close API error"));
     mockStore.view.isFullscreen = false;
     mockStore.ui.showAbout = false;
 
     renderHook(() => useKeyboard());
 
-    const event = createKeyboardEvent('Escape');
+    const event = createKeyboardEvent("Escape");
     document.dispatchEvent(event);
 
     await vi.waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith('Failed to close application:', expect.any(Error));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        "Failed to close application:",
+        expect.any(Error),
+      );
     });
 
     consoleSpy.mockRestore();
   });
 
-  it('should handle multiple sequential key presses correctly', () => {
+  it("should handle multiple sequential key presses correctly", () => {
     renderHook(() => useKeyboard());
 
     // Simulate rapid key presses
-    const leftEvent = createKeyboardEvent('ArrowLeft');
-    const rightEvent = createKeyboardEvent('ArrowRight');
-    const upEvent = createKeyboardEvent('ArrowUp');
+    const leftEvent = createKeyboardEvent("ArrowLeft");
+    const rightEvent = createKeyboardEvent("ArrowRight");
+    const upEvent = createKeyboardEvent("ArrowUp");
 
     document.dispatchEvent(leftEvent);
     document.dispatchEvent(rightEvent);

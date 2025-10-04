@@ -1,7 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { useAppStore } from '../store';
-import { ImageInfo } from '../types';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  memo,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../store";
+import { ImageInfo } from "../types";
 
 const THUMBNAIL_SIZE = 20;
 
@@ -12,78 +19,81 @@ interface ThumbnailItemProps {
   onClick: (index: number) => void;
 }
 
-const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(({ image, index, isActive, onClick }) => {
-  const [thumbnailData, setThumbnailData] = useState<string | null>(null);
-  const [error, setError] = useState<boolean>(false);
+const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
+  ({ image, index, isActive, onClick }) => {
+    const [thumbnailData, setThumbnailData] = useState<string | null>(null);
+    const [error, setError] = useState<boolean>(false);
 
-  useEffect(() => {
-    const loadThumbnail = async () => {
-      try {
-        // First, try to get from cache
-        const cachedThumbnail = await invoke<string | null>('get_cached_thumbnail', {
-          path: image.path,
-          size: THUMBNAIL_SIZE
-        });
-
-        if (cachedThumbnail) {
-          setThumbnailData(cachedThumbnail);
-          return;
-        }
-
-        // If not cached, generate new thumbnail
-        const thumbnail = await invoke<string>('generate_image_thumbnail', {
-          path: image.path,
-          size: THUMBNAIL_SIZE
-        });
-
-        // Cache the generated thumbnail
-        await invoke('set_cached_thumbnail', {
-          path: image.path,
-          thumbnail,
-          size: THUMBNAIL_SIZE
-        });
-
-        setThumbnailData(thumbnail);
-      } catch (err) {
-        console.warn(`Failed to load thumbnail for ${image.filename}:`, err);
-        setError(true);
-
-        // Cache the error to avoid retrying
+    useEffect(() => {
+      const loadThumbnail = async () => {
         try {
-          await invoke('set_cached_thumbnail', {
+          // First, try to get from cache
+          const cachedThumbnail = await invoke<string | null>(
+            "get_cached_thumbnail",
+            {
+              path: image.path,
+              size: THUMBNAIL_SIZE,
+            },
+          );
+
+          if (cachedThumbnail) {
+            setThumbnailData(cachedThumbnail);
+            return;
+          }
+
+          // If not cached, generate new thumbnail
+          const thumbnail = await invoke<string>("generate_image_thumbnail", {
             path: image.path,
-            thumbnail: 'error',
-            size: THUMBNAIL_SIZE
+            size: THUMBNAIL_SIZE,
           });
-        } catch (cacheErr) {
-          console.warn('Failed to cache thumbnail error:', cacheErr);
+
+          // Cache the generated thumbnail
+          await invoke("set_cached_thumbnail", {
+            path: image.path,
+            thumbnail,
+            size: THUMBNAIL_SIZE,
+          });
+
+          setThumbnailData(thumbnail);
+        } catch (err) {
+          console.warn(`Failed to load thumbnail for ${image.filename}:`, err);
+          setError(true);
+
+          // Cache the error to avoid retrying
+          try {
+            await invoke("set_cached_thumbnail", {
+              path: image.path,
+              thumbnail: "error",
+              size: THUMBNAIL_SIZE,
+            });
+          } catch (cacheErr) {
+            console.warn("Failed to cache thumbnail error:", cacheErr);
+          }
         }
-      }
-    };
+      };
 
-    loadThumbnail();
-  }, [image.path]);
+      loadThumbnail();
+    }, [image.path]);
 
-  return (
-    <div
-      className={`thumbnail-item ${isActive ? 'active' : ''}`}
-      onClick={() => onClick(index)}
-      title={image.filename}
-    >
-      {thumbnailData && !error ? (
-        <img
-          src={`data:image/jpeg;base64,${thumbnailData}`}
-          alt={image.filename}
-          className="thumbnail-image"
-        />
-      ) : (
-        <div className="thumbnail-placeholder">
-          {error ? '❌' : '⏳'}
-        </div>
-      )}
-    </div>
-  );
-});
+    return (
+      <div
+        className={`thumbnail-item ${isActive ? "active" : ""}`}
+        onClick={() => onClick(index)}
+        title={image.filename}
+      >
+        {thumbnailData && !error ? (
+          <img
+            src={`data:image/jpeg;base64,${thumbnailData}`}
+            alt={image.filename}
+            className="thumbnail-image"
+          />
+        ) : (
+          <div className="thumbnail-placeholder">{error ? "❌" : "⏳"}</div>
+        )}
+      </div>
+    );
+  },
+);
 
 const ThumbnailBar: React.FC = () => {
   const { folder, currentImage, navigateToImage } = useAppStore();
@@ -91,32 +101,43 @@ const ThumbnailBar: React.FC = () => {
   const thumbnailBarRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
-  const handleThumbnailClick = useCallback((index: number) => {
-    if (folder.images[index]) {
-      navigateToImage(index);
-    }
-  }, [folder.images, navigateToImage]);
+  const handleThumbnailClick = useCallback(
+    (index: number) => {
+      if (folder.images[index]) {
+        navigateToImage(index);
+      }
+    },
+    [folder.images, navigateToImage],
+  );
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.deltaY > 0) {
-      // Scroll down = next image
-      const nextIndex = Math.min(currentImage.index + 1, folder.images.length - 1);
-      if (nextIndex !== currentImage.index) {
-        navigateToImage(nextIndex);
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY > 0) {
+        // Scroll down = next image
+        const nextIndex = Math.min(
+          currentImage.index + 1,
+          folder.images.length - 1,
+        );
+        if (nextIndex !== currentImage.index) {
+          navigateToImage(nextIndex);
+        }
+      } else {
+        // Scroll up = previous image
+        const prevIndex = Math.max(currentImage.index - 1, 0);
+        if (prevIndex !== currentImage.index) {
+          navigateToImage(prevIndex);
+        }
       }
-    } else {
-      // Scroll up = previous image
-      const prevIndex = Math.max(currentImage.index - 1, 0);
-      if (prevIndex !== currentImage.index) {
-        navigateToImage(prevIndex);
-      }
-    }
-  }, [currentImage.index, folder.images.length, navigateToImage]);
+    },
+    [currentImage.index, folder.images.length, navigateToImage],
+  );
 
   const scrollToActiveItem = useCallback(() => {
     if (containerRef.current && currentImage.index !== -1) {
-      const activeItem = containerRef.current.querySelector('.thumbnail-item.active') as HTMLElement;
+      const activeItem = containerRef.current.querySelector(
+        ".thumbnail-item.active",
+      ) as HTMLElement;
       if (activeItem) {
         const container = containerRef.current;
         const containerWidth = container.offsetWidth;
@@ -124,10 +145,10 @@ const ThumbnailBar: React.FC = () => {
         const itemWidth = activeItem.offsetWidth;
 
         // Calculate center position
-        const scrollLeft = itemLeft - (containerWidth / 2) + (itemWidth / 2);
+        const scrollLeft = itemLeft - containerWidth / 2 + itemWidth / 2;
         container.scrollTo({
           left: scrollLeft,
-          behavior: 'smooth'
+          behavior: "smooth",
         });
       }
     }
@@ -167,7 +188,7 @@ const ThumbnailBar: React.FC = () => {
   return (
     <div
       ref={thumbnailBarRef}
-      className={`thumbnail-bar ${isHovered ? 'hovered' : ''}`}
+      className={`thumbnail-bar ${isHovered ? "hovered" : ""}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onWheel={handleWheel}
@@ -184,11 +205,7 @@ const ThumbnailBar: React.FC = () => {
         ))}
       </div>
 
-      {imageInfo && (
-        <div className="image-info">
-          {imageInfo}
-        </div>
-      )}
+      {imageInfo && <div className="image-info">{imageInfo}</div>}
     </div>
   );
 };

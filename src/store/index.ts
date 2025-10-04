@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
-import { AppState, ImageInfo, ImageData, ViewState } from '../types';
+import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
+import { AppState, ImageInfo, ImageData, ViewState } from "../types";
 
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
@@ -27,7 +27,11 @@ interface AppActions {
   zoomIn: () => void;
   zoomOut: () => void;
   zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
-  fitToWindow: (imageWidth: number, imageHeight: number, preserveZoom?: boolean) => void;
+  fitToWindow: (
+    imageWidth: number,
+    imageHeight: number,
+    preserveZoom?: boolean,
+  ) => void;
   openImageFromPath: (imagePath: string) => Promise<void>;
   setPreloadedImage: (path: string, data: ImageData) => void;
   removePreloadedImage: (path: string) => void;
@@ -40,15 +44,15 @@ type AppStore = AppState & AppActions;
 export const useAppStore = create<AppStore>((set, get) => ({
   // Initial state
   currentImage: {
-    path: '',
+    path: "",
     index: -1,
     data: null,
     error: null,
   },
   folder: {
-    path: '',
+    path: "",
     images: [],
-    sortOrder: 'name',
+    sortOrder: "name",
   },
   view: {
     zoom: 100,
@@ -102,11 +106,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       folder: {
         path,
         images,
-        sortOrder: 'name',
+        sortOrder: "name",
       },
       cache: {
         ...state.cache,
-        imageViewStates: state.folder.path !== path ? new Map() : state.cache.imageViewStates,
+        imageViewStates:
+          state.folder.path !== path ? new Map() : state.cache.imageViewStates,
       },
     })),
 
@@ -242,8 +247,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     // Try to find next valid image (skip corrupted ones)
     while (nextIndex < state.folder.images.length) {
-      const cachedImage = state.cache.preloaded.get(state.folder.images[nextIndex].path);
-      if (!cachedImage || cachedImage.format !== 'error') {
+      const cachedImage = state.cache.preloaded.get(
+        state.folder.images[nextIndex].path,
+      );
+      if (!cachedImage || cachedImage.format !== "error") {
         get().navigateToImage(nextIndex);
         return;
       }
@@ -262,8 +269,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     // Try to find previous valid image (skip corrupted ones)
     while (prevIndex >= 0) {
-      const cachedImage = state.cache.preloaded.get(state.folder.images[prevIndex].path);
-      if (!cachedImage || cachedImage.format !== 'error') {
+      const cachedImage = state.cache.preloaded.get(
+        state.folder.images[prevIndex].path,
+      );
+      if (!cachedImage || cachedImage.format !== "error") {
         get().navigateToImage(prevIndex);
         return;
       }
@@ -280,7 +289,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     if (state.currentImage.data) {
       // Reset to fit-to-window when resetting zoom
-      get().fitToWindow(state.currentImage.data.width, state.currentImage.data.height);
+      get().fitToWindow(
+        state.currentImage.data.width,
+        state.currentImage.data.height,
+      );
     } else {
       set((state) => ({
         view: {
@@ -313,13 +325,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (newZoom !== currentZoom) {
       // Convert screen coordinates to image coordinates before zoom
       const currentScale = currentZoom / 100;
-      const imageX = (pointX / currentScale) - state.view.panX;
-      const imageY = (pointY / currentScale) - state.view.panY;
+      const imageX = pointX / currentScale - state.view.panX;
+      const imageY = pointY / currentScale - state.view.panY;
 
       // Calculate new pan so that the same image point stays under the mouse
       const newScale = newZoom / 100;
-      const newPanX = (pointX / newScale) - imageX;
-      const newPanY = (pointY / newScale) - imageY;
+      const newPanX = pointX / newScale - imageX;
+      const newPanY = pointY / newScale - imageY;
 
       set((state) => ({
         view: {
@@ -336,8 +348,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const MARGIN = 20;
 
     // Calculate available display area with proper margins
-    const availableWidth = window.innerWidth - (MARGIN * 2);
-    const availableHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT - (MARGIN * 2);
+    const availableWidth = window.innerWidth - MARGIN * 2;
+    const availableHeight =
+      window.innerHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2;
 
     // Calculate scale factors for both dimensions
     const scaleX = availableWidth / imageWidth;
@@ -368,7 +381,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         // Store original image dimensions and calculated position
         imageLeft: centerX,
         imageTop: centerY,
-        imageWidth,  // Original image width
+        imageWidth, // Original image width
         imageHeight, // Original image height
       },
     }));
@@ -377,21 +390,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
   openImageFromPath: async (imagePath: string) => {
     try {
       // Get the folder containing the image (handle both \\ and / separators)
-      const lastSlashIndex = Math.max(imagePath.lastIndexOf('\\'), imagePath.lastIndexOf('/'));
+      const lastSlashIndex = Math.max(
+        imagePath.lastIndexOf("\\"),
+        imagePath.lastIndexOf("/"),
+      );
       const folderPath = imagePath.substring(0, lastSlashIndex);
 
       // Load all images in the folder
-      const images = await invoke<ImageInfo[]>('get_folder_images', { path: folderPath });
+      const images = await invoke<ImageInfo[]>("get_folder_images", {
+        path: folderPath,
+      });
 
       // Find the index of the specific image
-      const imageIndex = images.findIndex((img: ImageInfo) => img.path === imagePath);
+      const imageIndex = images.findIndex(
+        (img: ImageInfo) => img.path === imagePath,
+      );
 
       if (imageIndex !== -1) {
         // Maximize window when opening an image
         try {
-          await invoke('maximize_window');
+          await invoke("maximize_window");
         } catch (error) {
-          console.error('Failed to maximize window when opening image:', error);
+          console.error("Failed to maximize window when opening image:", error);
         }
 
         set((state) => ({
@@ -415,14 +435,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           cache: {
             ...state.cache,
-            imageViewStates: state.folder.path !== folderPath ? new Map() : state.cache.imageViewStates,
+            imageViewStates:
+              state.folder.path !== folderPath
+                ? new Map()
+                : state.cache.imageViewStates,
           },
         }));
       } else {
-        console.error('Image not found in folder:', imagePath);
+        console.error("Image not found in folder:", imagePath);
       }
     } catch (error) {
-      console.error('Failed to open image from path:', error);
+      console.error("Failed to open image from path:", error);
       set((state) => ({
         ui: {
           ...state.ui,
@@ -478,7 +501,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const state = get();
 
       // Check if conditions are met for resizing
-      if (!state.view.isMaximized || state.view.isFullscreen || !state.currentImage.data) {
+      if (
+        !state.view.isMaximized ||
+        state.view.isFullscreen ||
+        !state.currentImage.data
+      ) {
         return;
       }
 
@@ -486,7 +513,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const currentZoom = state.view.zoom;
 
       // Get image element to calculate its actual screen position
-      const imageElement = document.querySelector('.image-viewer img') as HTMLImageElement;
+      const imageElement = document.querySelector(
+        ".image-viewer img",
+      ) as HTMLImageElement;
       if (imageElement) {
         const rect = imageElement.getBoundingClientRect();
 
@@ -494,7 +523,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const imageScreenCenterX = rect.left + rect.width / 2;
         const imageScreenCenterY = rect.top + rect.height / 2;
 
-        await invoke('resize_window_to_image', {
+        await invoke("resize_window_to_image", {
           imageWidth: width,
           imageHeight: height,
           zoomPercent: currentZoom,
@@ -513,11 +542,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
         }));
       } else {
-        console.error('Could not find image element for positioning');
+        console.error("Could not find image element for positioning");
       }
-
     } catch (error) {
-      console.error('Failed to resize window to image size:', error);
+      console.error("Failed to resize window to image size:", error);
     }
   },
 }));
