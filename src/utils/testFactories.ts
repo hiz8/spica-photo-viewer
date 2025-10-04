@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { ImageData, ImageInfo } from "../types";
+import type { ImageData, ImageInfo } from "../types";
 
 // Image data factories
 export const createImageData = (

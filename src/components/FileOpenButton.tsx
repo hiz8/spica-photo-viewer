@@ -1,8 +1,8 @@
-import React from "react";
+import type React from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { ImageInfo } from "../types";
+import type { ImageInfo } from "../types";
 
 interface FileOpenButtonProps {
   className?: string;
@@ -69,6 +69,7 @@ const FileOpenButton: React.FC<FileOpenButtonProps> = ({ className = "" }) => {
 
   return (
     <button
+      type="button"
       className={`file-open-button ${className}`}
       onClick={handleOpenFile}
     >

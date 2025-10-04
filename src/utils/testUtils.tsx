@@ -1,7 +1,7 @@
-import React from "react";
-import { render, RenderOptions, act } from "@testing-library/react";
+import type React from "react";
+import { render, type RenderOptions, act } from "@testing-library/react";
 import { vi } from "vitest";
-import { ImageData, ImageInfo } from "../types";
+import type { ImageData, ImageInfo } from "../types";
 
 // Test utilities for common test scenarios
 

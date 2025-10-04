@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "../store";
-import { WindowState } from "../types";
+import type { WindowState } from "../types";
 
 export const useWindowState = () => {
   const { setMaximized, setFullscreen } = useAppStore();

@@ -1,4 +1,5 @@
-import React, {
+import type React from "react";
+import {
   useState,
   useEffect,
   useRef,
@@ -8,7 +9,7 @@ import React, {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { ImageInfo } from "../types";
+import type { ImageInfo } from "../types";
 
 const THUMBNAIL_SIZE = 20;
 

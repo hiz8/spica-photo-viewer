@@ -1,4 +1,5 @@
-import React, {
+import type React from "react";
+import {
   useEffect,
   useRef,
   useState,
@@ -8,7 +9,7 @@ import React, {
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { useImagePreloader } from "../hooks/useImagePreloader";
-import { ImageData } from "../types";
+import type { ImageData } from "../types";
 
 interface ImageViewerProps {
   className?: string;
@@ -40,7 +41,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     if (currentImage.path && !currentImage.data) {
       loadImage(currentImage.path);
     }
-  }, [currentImage.path]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentImage.path, currentImage.data]);
 
   // Handle window resize to re-fit image
   useEffect(() => {
@@ -227,12 +229,20 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   return (
     <div
       ref={containerRef}
+      role="region"
+      aria-label="Image viewer"
+      tabIndex={0}
       className={`image-viewer ${className}`}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
       onClick={handleContainerClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          handleContainerClick();
+        }
+      }}
     >
       {currentImage.data && (
         <img

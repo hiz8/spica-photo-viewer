@@ -38,7 +38,9 @@ export const useCacheManager = () => {
           0,
           cache.preloaded.size - MAX_PRELOADED_IMAGES,
         );
-        entriesToRemove.forEach(([path]) => cache.preloaded.delete(path));
+        entriesToRemove.forEach(([path]) => {
+          cache.preloaded.delete(path);
+        });
         console.log(
           `Cleaned up ${entriesToRemove.length} preloaded images from memory`,
         );
@@ -51,7 +53,9 @@ export const useCacheManager = () => {
           0,
           cache.thumbnails.size - MAX_THUMBNAIL_CACHE,
         );
-        entriesToRemove.forEach(([path]) => cache.thumbnails.delete(path));
+        entriesToRemove.forEach(([path]) => {
+          cache.thumbnails.delete(path);
+        });
         console.log(
           `Cleaned up ${entriesToRemove.length} thumbnails from memory`,
         );

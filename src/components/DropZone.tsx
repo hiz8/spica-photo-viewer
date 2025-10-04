@@ -1,4 +1,5 @@
-import React, { useCallback } from "react";
+import type React from "react";
+import { useCallback } from "react";
 import { useAppStore } from "../store";
 
 interface DropZoneProps {
@@ -67,6 +68,7 @@ const DropZone: React.FC<DropZoneProps> = ({ className = "", children }) => {
 
   return (
     <div
+      role="region"
       className={`drop-zone ${className} ${ui.isDragOver ? "drag-over" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

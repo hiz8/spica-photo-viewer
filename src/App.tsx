@@ -1,4 +1,5 @@
-import React, { useEffect } from "react";
+import type React from "react";
+import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import ImageViewer from "./components/ImageViewer";
 import DropZone from "./components/DropZone";

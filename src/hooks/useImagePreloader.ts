@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { ImageData } from "../types";
+import type { ImageData } from "../types";
 
 const PRELOAD_RANGE = 20; // ±20 images
 const MAX_CONCURRENT_LOADS = 3;

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { AppState, ImageInfo, ImageData, ViewState } from "../types";
+import type { AppState, ImageInfo, ImageData, ViewState } from "../types";
 
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;

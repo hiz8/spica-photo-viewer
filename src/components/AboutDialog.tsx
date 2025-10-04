@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import type React from "react";
+import { useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "../store";
 
@@ -35,11 +36,25 @@ const AboutDialog: React.FC = () => {
   };
 
   return (
-    <div className="about-dialog-backdrop" onClick={handleBackdropClick}>
+    <div
+      role="button"
+      tabIndex={0}
+      className="about-dialog-backdrop"
+      onClick={handleBackdropClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          handleBackdropClick(e as unknown as React.MouseEvent);
+        }
+      }}
+    >
       <div className="about-dialog">
         <div className="about-dialog-header">
           <h2>Spica Photo Viewer</h2>
-          <button className="about-dialog-close" onClick={handleClose}>
+          <button
+            type="button"
+            className="about-dialog-close"
+            onClick={handleClose}
+          >
             ×
           </button>
         </div>
