@@ -36,7 +36,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       loadImage(currentImage.path);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentImage.path, currentImage.data]);
+  }, [currentImage.path]);
 
   // Handle window resize to re-fit image
   useEffect(() => {
@@ -109,6 +109,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         currentImage.data
       ) {
         resizeToImage();
+      }
+    },
+    [view.isMaximized, view.isFullscreen, currentImage.data, resizeToImage],
+  );
+
+  const handleContainerKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (view.isMaximized && !view.isFullscreen && currentImage.data) {
+          resizeToImage();
+        }
       }
     },
     [view.isMaximized, view.isFullscreen, currentImage.data, resizeToImage],
@@ -232,11 +244,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
       onClick={handleContainerClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          handleContainerClick();
-        }
-      }}
+      onKeyDown={handleContainerKeyDown}
     >
       {currentImage.data && (
         <img

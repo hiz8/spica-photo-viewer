@@ -67,7 +67,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
       };
 
       loadThumbnail();
-    }, [image.path, image.filename]);
+    }, [image.path]);
 
     return (
       <div

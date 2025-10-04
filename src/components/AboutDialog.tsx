@@ -35,17 +35,22 @@ const AboutDialog: React.FC = () => {
     }
   };
 
+  const handleBackdropKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (e.target === e.currentTarget) {
+        handleClose();
+      }
+    }
+  };
+
   return (
     <div
       role="button"
       tabIndex={0}
       className="about-dialog-backdrop"
       onClick={handleBackdropClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          handleBackdropClick(e as unknown as React.MouseEvent);
-        }
-      }}
+      onKeyDown={handleBackdropKeyDown}
     >
       <div className="about-dialog">
         <div className="about-dialog-header">
