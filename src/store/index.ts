@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { AppState, ImageInfo, ImageData, ViewState } from '../types';
 
+// Constants
+const THUMBNAIL_BAR_HEIGHT = 80;
+
 interface AppActions {
   setCurrentImage: (path: string, index: number) => void;
   setImageData: (data: ImageData | null) => void;
@@ -28,6 +31,7 @@ interface AppActions {
   openImageFromPath: (imagePath: string) => Promise<void>;
   setPreloadedImage: (path: string, data: ImageData) => void;
   removePreloadedImage: (path: string) => void;
+  updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
 }
 
@@ -57,6 +61,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   cache: {
     thumbnails: new Map(),
     preloaded: new Map(),
+    imageViewStates: new Map(),
   },
   ui: {
     isLoading: false,
@@ -93,13 +98,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   setFolderImages: (path, images) =>
-    set(() => ({
-      folder: {
-        path,
-        images,
-        sortOrder: 'name',
-      },
-    })),
+    set((state) => {
+      // Clear imageViewStates when changing folders
+      const shouldClearViewStates = state.folder.path !== path;
+      return {
+        folder: {
+          path,
+          images,
+          sortOrder: 'name',
+        },
+        cache: {
+          ...state.cache,
+          imageViewStates: shouldClearViewStates ? new Map() : state.cache.imageViewStates,
+        },
+      };
+    }),
 
   setView: (viewUpdate) =>
     set((state) => ({
@@ -188,7 +201,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const images = state.folder.images;
     if (index >= 0 && index < images.length) {
+      // Save current image's view state before navigating
+      if (state.currentImage.path) {
+        state.cache.imageViewStates.set(state.currentImage.path, {
+          zoom: state.view.zoom,
+          panX: state.view.panX,
+          panY: state.view.panY,
+        });
+      }
+
       const image = images[index];
+
+      // Restore saved view state for the new image, or use default
+      const savedViewState = state.cache.imageViewStates.get(image.path);
+
       set((state) => ({
         currentImage: {
           ...state.currentImage,
@@ -199,9 +225,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
         view: {
           ...state.view,
-          zoom: 100,
-          panX: 0,
-          panY: 0,
+          zoom: savedViewState?.zoom ?? 100,
+          panX: savedViewState?.panX ?? 0,
+          panY: savedViewState?.panY ?? 0,
         },
       }));
     }
@@ -304,7 +330,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   fitToWindow: (imageWidth, imageHeight, preserveZoom = false) => {
-    const THUMBNAIL_BAR_HEIGHT = 80;
     const MARGIN = 20;
 
     // Calculate available display area with proper margins
@@ -366,6 +391,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
           console.error('Failed to maximize window when opening image:', error);
         }
 
+        const state = get();
+        // Clear imageViewStates when opening a different folder
+        const shouldClearViewStates = state.folder.path !== folderPath;
+
         set((state) => ({
           folder: {
             ...state.folder,
@@ -384,6 +413,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
             zoom: 100,
             panX: 0,
             panY: 0,
+          },
+          cache: {
+            ...state.cache,
+            imageViewStates: shouldClearViewStates ? new Map() : state.cache.imageViewStates,
           },
         }));
       } else {
@@ -423,6 +456,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       };
     }),
+
+  updateImageDimensions: (imageWidth, imageHeight) => {
+    const containerWidth = window.innerWidth;
+    const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
+    const centerX = (containerWidth - imageWidth) / 2;
+    const centerY = (containerHeight - imageHeight) / 2;
+
+    set((state) => ({
+      view: {
+        ...state.view,
+        imageLeft: centerX,
+        imageTop: centerY,
+        imageWidth,
+        imageHeight,
+      },
+    }));
+  },
 
   resizeToImage: async () => {
     try {
