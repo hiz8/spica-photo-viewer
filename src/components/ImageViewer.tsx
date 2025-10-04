@@ -19,6 +19,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
     setPan,
     zoomAtPoint,
     fitToWindow,
+    updateImageDimensions,
     resizeToImage,
   } = useAppStore();
 
@@ -52,6 +53,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       setLoading(true);
       setImageError(null);
 
+      // Check if this image has saved view state
+      const hasSavedState = cache.imageViewStates.has(path);
+
       // Check if image is already preloaded
       const preloadedImage = cache.preloaded.get(path);
       if (preloadedImage) {
@@ -60,8 +64,12 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
         }
         setImageData(preloadedImage);
 
-        // Auto-fit image to window
-        fitToWindow(preloadedImage.width, preloadedImage.height);
+        // Auto-fit or update dimensions based on saved state
+        if (!hasSavedState) {
+          fitToWindow(preloadedImage.width, preloadedImage.height);
+        } else {
+          updateImageDimensions(preloadedImage.width, preloadedImage.height);
+        }
         return;
       }
 
@@ -69,8 +77,12 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = '' }) => {
       const imageData = await invoke<ImageData>('load_image', { path });
       setImageData(imageData);
 
-      // Auto-fit image to window
-      fitToWindow(imageData.width, imageData.height);
+      // Auto-fit or update dimensions based on saved state
+      if (!hasSavedState) {
+        fitToWindow(imageData.width, imageData.height);
+      } else {
+        updateImageDimensions(imageData.width, imageData.height);
+      }
 
       // Add to preload cache
       cache.preloaded.set(path, imageData);

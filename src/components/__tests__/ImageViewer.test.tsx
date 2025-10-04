@@ -30,6 +30,7 @@ const mockStore = {
   },
   cache: {
     preloaded: new Map(),
+    imageViewStates: new Map(),
   },
   setImageData: vi.fn(),
   setImageError: vi.fn(),
@@ -37,6 +38,8 @@ const mockStore = {
   setPan: vi.fn(),
   zoomAtPoint: vi.fn(),
   fitToWindow: vi.fn(),
+  updateImageDimensions: vi.fn(),
+  resizeToImage: vi.fn(),
 };
 
 vi.mock('../../store', () => ({

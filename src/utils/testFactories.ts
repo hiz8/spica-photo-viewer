@@ -73,6 +73,7 @@ export const createImageViewerState = (overrides: any = {}) => ({
   cache: {
     thumbnails: new Map(),
     preloaded: new Map(),
+    imageViewStates: new Map(),
   },
   ui: {
     isLoading: false,
@@ -105,6 +106,7 @@ export const createEmptyViewerState = () => ({
   cache: {
     thumbnails: new Map(),
     preloaded: new Map(),
+    imageViewStates: new Map(),
   },
   ui: {
     isLoading: false,
