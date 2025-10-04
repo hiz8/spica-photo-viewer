@@ -22,9 +22,10 @@
 2. **Thumbnail Bar**: Horizontal thumbnail strip at bottom (30×30px)
 3. **Navigation**: Keyboard and mouse controls for browsing
 4. **Zoom & Pan**: Smooth zoom (10%-2000%) with drag-to-pan capability
-5. **Fullscreen Mode**: F11 toggle for immersive viewing
-6. **File Association**: Double-click image files to open directly
-7. **Drag & Drop**: Drop image files onto the window to open them
+5. **View State Persistence**: Per-image zoom and pan positions remembered within session
+6. **Fullscreen Mode**: F11 toggle for immersive viewing
+7. **File Association**: Double-click image files to open directly
+8. **Drag & Drop**: Drop image files onto the window to open them
 
 ## Technical Architecture
 
@@ -170,6 +171,29 @@ spica-photo-viewer/
 - **Retention**: 24 hours (clean on startup)
 - **Fallback**: Memory-only if file system fails
 
+### View State Persistence
+
+#### Per-Image State Management
+
+- **Storage**: In-memory Map structure (`imageViewStates`)
+- **Saved Properties**: Zoom level, pan X/Y coordinates
+- **Persistence Scope**: Within single directory session
+- **Automatic Clearing**: When opening different folder or closing application
+
+#### Behavior
+
+1. **Navigation**: Current image's zoom/pan state is automatically saved before navigating
+2. **Return**: When returning to previously viewed image, exact view state is restored
+3. **New Images**: First-time viewed images use automatic fit-to-window
+4. **State Restoration**: Saved view states take precedence over fit-to-window behavior
+
+#### Implementation Details
+
+- Uses Zustand store with immutable state updates
+- Image path as unique identifier for state mapping
+- Conditional loading logic based on saved state existence
+- Memory-efficient Map-based caching system
+
 ### Error Handling
 
 #### Corrupted/Unsupported Files
@@ -284,6 +308,12 @@ async fn get_cache_stats() -> Result<HashMap<String, u64>, String>
 ## State Management Structure
 
 ```typescript
+interface ImageViewState {
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
 interface AppState {
   // Current viewing state
   currentImage: {
@@ -313,6 +343,7 @@ interface AppState {
   cache: {
     thumbnails: Map<string, string>; // path -> base64
     preloaded: Map<string, ImageData>; // path -> data
+    imageViewStates: Map<string, ImageViewState>; // path -> view state
   };
 
   // UI state
@@ -333,6 +364,8 @@ interface AppState {
 - Cache expiration logic
 - Zoom calculations
 - Navigation bounds checking
+- View state persistence and restoration
+- State clearing on folder changes
 
 ### Integration Tests
 
