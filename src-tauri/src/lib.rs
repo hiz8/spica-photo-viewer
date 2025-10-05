@@ -9,7 +9,7 @@ use commands::cache::{
 };
 use commands::file::{
     generate_image_thumbnail, get_folder_images, get_startup_file, handle_dropped_file, load_image,
-    validate_image_file,
+    validate_image_file, open_with_dialog,
 };
 use commands::window::{get_window_position, get_window_state, maximize_window, resize_window_to_image};
 
@@ -32,7 +32,8 @@ pub fn run() {
             get_window_state,
             get_window_position,
             resize_window_to_image,
-            maximize_window
+            maximize_window,
+            open_with_dialog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

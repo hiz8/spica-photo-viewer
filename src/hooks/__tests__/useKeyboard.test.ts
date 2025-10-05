@@ -22,6 +22,7 @@ const mockStore = {
   resetZoom: vi.fn(),
   setFullscreen: vi.fn(),
   setShowAbout: vi.fn(),
+  openWithDialog: vi.fn(),
   view: {
     isFullscreen: false,
   },
@@ -215,6 +216,56 @@ describe("useKeyboard", () => {
     });
   });
 
+  it("should handle Ctrl+Shift+O for open with dialog", () => {
+    renderHook(() => useKeyboard());
+
+    const event = createKeyboardEvent("O", true, true);
+    document.dispatchEvent(event);
+
+    expect(mockStore.openWithDialog).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("should handle Ctrl+Shift+o (lowercase) for open with dialog", () => {
+    renderHook(() => useKeyboard());
+
+    const event = createKeyboardEvent("o", true, true);
+    document.dispatchEvent(event);
+
+    expect(mockStore.openWithDialog).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("should not handle O key without Ctrl+Shift modifiers", () => {
+    renderHook(() => useKeyboard());
+
+    const event = createKeyboardEvent("O", false);
+    document.dispatchEvent(event);
+
+    expect(mockStore.openWithDialog).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("should not handle O key with only Ctrl modifier", () => {
+    renderHook(() => useKeyboard());
+
+    const event = createKeyboardEvent("O", true, false);
+    document.dispatchEvent(event);
+
+    expect(mockStore.openWithDialog).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("should not handle O key with only Shift modifier", () => {
+    renderHook(() => useKeyboard());
+
+    const event = createKeyboardEvent("O", false, true);
+    document.dispatchEvent(event);
+
+    expect(mockStore.openWithDialog).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("should ignore unhandled keys", () => {
     renderHook(() => useKeyboard());
 
@@ -229,6 +280,7 @@ describe("useKeyboard", () => {
     expect(mockStore.resetZoom).not.toHaveBeenCalled();
     expect(mockStore.setFullscreen).not.toHaveBeenCalled();
     expect(mockStore.setShowAbout).not.toHaveBeenCalled();
+    expect(mockStore.openWithDialog).not.toHaveBeenCalled();
 
     // Should not prevent default
     expect(event.defaultPrevented).toBe(false);

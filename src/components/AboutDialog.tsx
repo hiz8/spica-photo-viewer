@@ -105,6 +105,10 @@ const AboutDialog: React.FC = () => {
                   <span>Reset zoom</span>
                 </div>
                 <div className="shortcut-item">
+                  <kbd>Ctrl+Shift+O</kbd>
+                  <span>Open with...</span>
+                </div>
+                <div className="shortcut-item">
                   <kbd>F11</kbd>
                   <span>Fullscreen</span>
                 </div>

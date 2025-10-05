@@ -34,6 +34,7 @@ A lightweight, fast image viewer application for Windows, inspired by Picasa Pho
 - `←/→` - Navigate previous/next image
 - `↑/↓` - Zoom in/out
 - `Ctrl+0` - Reset zoom to 100%
+- `Ctrl+Shift+O` - Open with... (Windows "Open with" dialog)
 - `F11` - Toggle fullscreen mode
 - `F1` - Show about dialog
 - `ESC` - Exit fullscreen/about dialog, or close application

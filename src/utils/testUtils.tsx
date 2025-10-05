@@ -133,6 +133,7 @@ export const createMockStore = (overrides: any = {}) => ({
   removePreloadedImage: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
+  openWithDialog: vi.fn(),
   ...overrides,
 });
 
@@ -237,10 +238,12 @@ export const createWheelEvent = (
 export const createKeyboardEvent = (
   key: string,
   ctrlKey: boolean = false,
+  shiftKey: boolean = false,
 ): KeyboardEvent => {
   return new KeyboardEvent("keydown", {
     key,
     ctrlKey,
+    shiftKey,
     bubbles: true,
     cancelable: true,
   });

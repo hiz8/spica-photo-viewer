@@ -873,4 +873,60 @@ describe("AppStore", () => {
       expect(useAppStore.getState().view.thumbnailOpacity).toBe(0.3);
     });
   });
+
+  describe("openWithDialog", () => {
+    it("should call open_with_dialog with current image path", async () => {
+      const { setCurrentImage, openWithDialog } = useAppStore.getState();
+
+      setCurrentImage("/test/image.jpg", 0);
+      mockInvoke.mockResolvedValue(undefined);
+
+      await openWithDialog();
+
+      expect(mockInvoke).toHaveBeenCalledWith("open_with_dialog", {
+        path: "/test/image.jpg",
+      });
+    });
+
+    it("should set error when no image is open", async () => {
+      const { openWithDialog } = useAppStore.getState();
+
+      await openWithDialog();
+
+      const state = useAppStore.getState();
+      expect(state.ui.error).toBeDefined();
+      expect(state.ui.error?.message).toContain("No image currently open");
+    });
+
+    it("should handle invoke error", async () => {
+      const { setCurrentImage, openWithDialog } = useAppStore.getState();
+
+      setCurrentImage("/test/image.jpg", 0);
+      mockInvoke.mockRejectedValue(new Error("Failed to open dialog"));
+
+      await openWithDialog();
+
+      const state = useAppStore.getState();
+      expect(state.ui.error).toBeDefined();
+      expect(state.ui.error?.message).toContain("Failed to open with dialog");
+    });
+
+    it("should clear error after timeout", async () => {
+      vi.useFakeTimers();
+      const { openWithDialog } = useAppStore.getState();
+
+      await openWithDialog();
+
+      const stateBefore = useAppStore.getState();
+      expect(stateBefore.ui.error).toBeDefined();
+
+      // Fast-forward time by 3 seconds
+      vi.advanceTimersByTime(3000);
+
+      const stateAfter = useAppStore.getState();
+      expect(stateAfter.ui.error).toBeNull();
+
+      vi.useRealTimers();
+    });
+  });
 });

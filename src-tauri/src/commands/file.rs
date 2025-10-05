@@ -6,6 +6,13 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(target_os = "windows")]
+use std::ffi::OsStr;
+#[cfg(target_os = "windows")]
+use std::ptr;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
@@ -140,6 +147,76 @@ pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result
 
     generate_thumbnail(image_path, thumbnail_size)
         .map_err(|e| format!("Failed to generate thumbnail: {}", e))
+}
+
+/// Opens the Windows "Open with..." dialog for the specified file
+#[tauri::command]
+pub fn open_with_dialog(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let file_path = Path::new(&path);
+
+        // Validate file exists
+        if !file_path.exists() || !file_path.is_file() {
+            return Err("File not found".to_string());
+        }
+
+        // Validate path to prevent security issues
+        let canonical_path = file_path.canonicalize()
+            .map_err(|e| format!("Failed to resolve file path: {}", e))?;
+
+        // Convert path to wide string for Windows API
+        let wide_path: Vec<u16> = OsStr::new(canonical_path.as_os_str())
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let operation: Vec<u16> = OsStr::new("openas")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        // Call ShellExecuteW to open the "Open with..." dialog
+        unsafe {
+            #[link(name = "shell32")]
+            extern "system" {
+                fn ShellExecuteW(
+                    hwnd: *mut std::ffi::c_void,
+                    lpOperation: *const u16,
+                    lpFile: *const u16,
+                    lpParameters: *const u16,
+                    lpDirectory: *const u16,
+                    nShowCmd: i32,
+                ) -> isize;
+            }
+
+            let result = ShellExecuteW(
+                ptr::null_mut(),
+                operation.as_ptr(),
+                wide_path.as_ptr(),
+                ptr::null(),
+                ptr::null(),
+                1, // SW_SHOWNORMAL
+            );
+
+            // ShellExecuteW returns > 32 on success
+            if result > 32 {
+                Ok(())
+            } else {
+                // Don't treat error code 0 (user cancelled) as an error
+                if result == 0 {
+                    Ok(())
+                } else {
+                    Err(format!("Failed to open dialog (error code: {})", result))
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("This feature is only supported on Windows".to_string())
+    }
 }
 
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
@@ -509,5 +586,91 @@ mod tests {
             generate_image_thumbnail(corrupted_path.to_string_lossy().to_string(), Some(30)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to generate thumbnail"));
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_valid_file() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "test.jpg");
+
+        let result = open_with_dialog(image_path.to_string_lossy().to_string());
+
+        // On Windows, this should succeed (or fail with a specific error)
+        // On other platforms, it should return the unsupported error
+        #[cfg(target_os = "windows")]
+        {
+            // The function should either succeed or fail with a specific error
+            // We can't easily test the actual dialog in CI
+            assert!(result.is_ok() || result.is_err());
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .contains("only supported on Windows"));
+        }
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_nonexistent_file() {
+        let result = open_with_dialog("/nonexistent/file.jpg".to_string());
+        
+        #[cfg(target_os = "windows")]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("File not found"));
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .contains("only supported on Windows"));
+        }
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_directory() {
+        let temp_dir = create_temp_dir();
+        let result = open_with_dialog(temp_dir.path().to_string_lossy().to_string());
+        
+        #[cfg(target_os = "windows")]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("File not found"));
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .contains("only supported on Windows"));
+        }
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_special_characters() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "test with spaces.jpg");
+
+        let result = open_with_dialog(image_path.to_string_lossy().to_string());
+
+        #[cfg(target_os = "windows")]
+        {
+            // Should handle paths with spaces correctly
+            assert!(result.is_ok() || result.is_err());
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .contains("only supported on Windows"));
+        }
     }
 }

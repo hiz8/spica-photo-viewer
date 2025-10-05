@@ -37,6 +37,7 @@ interface AppActions {
   removePreloadedImage: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
+  openWithDialog: () => Promise<void>;
 }
 
 type AppStore = AppState & AppActions;
@@ -546,6 +547,42 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to resize window to image size:", error);
+    }
+  },
+
+  openWithDialog: async () => {
+    try {
+      const state = get();
+      const currentPath = state.currentImage.path;
+
+      if (!currentPath) {
+        console.error("No image currently open");
+        set((state) => ({
+          ui: {
+            ...state.ui,
+            error: new Error("No image currently open"),
+          },
+        }));
+        setTimeout(
+          () => set((state) => ({ ui: { ...state.ui, error: null } })),
+          3000,
+        );
+        return;
+      }
+
+      await invoke("open_with_dialog", { path: currentPath });
+    } catch (error) {
+      console.error("Failed to open with dialog:", error);
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          error: new Error(`Failed to open with dialog: ${error}`),
+        },
+      }));
+      setTimeout(
+        () => set((state) => ({ ui: { ...state.ui, error: null } })),
+        3000,
+      );
     }
   },
 }));
