@@ -6,13 +6,6 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-#[cfg(target_os = "windows")]
-use std::os::windows::ffi::OsStrExt;
-#[cfg(target_os = "windows")]
-use std::ffi::OsStr;
-#[cfg(target_os = "windows")]
-use std::ptr;
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
@@ -165,51 +158,16 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
         let canonical_path = file_path.canonicalize()
             .map_err(|e| format!("Failed to resolve file path: {}", e))?;
 
-        // Convert path to wide string for Windows API
-        let wide_path: Vec<u16> = OsStr::new(canonical_path.as_os_str())
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
+        // Use rundll32.exe to invoke the "Open with..." dialog
+        // This method works reliably for all file types, regardless of existing associations
+        let output = std::process::Command::new("rundll32.exe")
+            .arg("shell32.dll,OpenAs_RunDLL")
+            .arg(canonical_path.as_os_str())
+            .spawn();
 
-        let operation: Vec<u16> = OsStr::new("openas")
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
-
-        // Call ShellExecuteW to open the "Open with..." dialog
-        unsafe {
-            #[link(name = "shell32")]
-            extern "system" {
-                fn ShellExecuteW(
-                    hwnd: *mut std::ffi::c_void,
-                    lpOperation: *const u16,
-                    lpFile: *const u16,
-                    lpParameters: *const u16,
-                    lpDirectory: *const u16,
-                    nShowCmd: i32,
-                ) -> isize;
-            }
-
-            let result = ShellExecuteW(
-                ptr::null_mut(),
-                operation.as_ptr(),
-                wide_path.as_ptr(),
-                ptr::null(),
-                ptr::null(),
-                1, // SW_SHOWNORMAL
-            );
-
-            // ShellExecuteW returns > 32 on success
-            if result > 32 {
-                Ok(())
-            } else {
-                // Don't treat error code 0 (user cancelled) as an error
-                if result == 0 {
-                    Ok(())
-                } else {
-                    Err(format!("Failed to open dialog (error code: {})", result))
-                }
-            }
+        match output {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to open dialog: {}", e)),
         }
     }
 
