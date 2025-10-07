@@ -11,6 +11,7 @@ export const useKeyboard = () => {
     resetZoom,
     setFullscreen,
     setShowAbout,
+    openFileDialog,
     openWithDialog,
     view,
     ui,
@@ -108,6 +109,9 @@ export const useKeyboard = () => {
           if (event.ctrlKey && event.shiftKey) {
             event.preventDefault();
             openWithDialog();
+          } else if (event.ctrlKey) {
+            event.preventDefault();
+            openFileDialog();
           }
           break;
 
@@ -128,6 +132,7 @@ export const useKeyboard = () => {
     zoomOut,
     resetZoom,
     setShowAbout,
+    openFileDialog,
     openWithDialog,
     view.isFullscreen,
     ui.showAbout,

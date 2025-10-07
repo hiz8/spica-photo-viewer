@@ -133,6 +133,7 @@ export const createMockStore = (overrides: any = {}) => ({
   removePreloadedImage: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
+  openFileDialog: vi.fn(),
   openWithDialog: vi.fn(),
   ...overrides,
 });

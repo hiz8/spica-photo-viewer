@@ -37,6 +37,7 @@ interface AppActions {
   removePreloadedImage: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
+  openFileDialog: () => Promise<void>;
   openWithDialog: () => Promise<void>;
 }
 
@@ -547,6 +548,85 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to resize window to image size:", error);
+    }
+  },
+
+  openFileDialog: async () => {
+    try {
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          isLoading: true,
+          error: null,
+        },
+      }));
+
+      const { open } = await import("@tauri-apps/plugin-dialog");
+
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: "Images",
+            extensions: ["jpg", "jpeg", "png", "webp", "gif"],
+          },
+        ],
+      });
+
+      if (selected && typeof selected === "string") {
+        // Maximize window when opening an image
+        try {
+          await invoke("maximize_window");
+        } catch (error) {
+          console.error(
+            "Failed to maximize window when opening image via file dialog:",
+            error,
+          );
+        }
+
+        // Get folder images
+        const lastSep = Math.max(
+          selected.lastIndexOf("\\"),
+          selected.lastIndexOf("/"),
+        );
+        const folderPath = selected.substring(0, lastSep);
+        const folderImages = await invoke<ImageInfo[]>("get_folder_images", {
+          path: folderPath,
+        });
+
+        get().setFolderImages(folderPath, folderImages);
+
+        // Set current image
+        const imageIndex = folderImages.findIndex(
+          (img) => img.path === selected,
+        );
+        if (imageIndex !== -1) {
+          get().setCurrentImage(selected, imageIndex);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to open file:", error);
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          error: new Error("Failed to open file"),
+        },
+      }));
+      setTimeout(() => {
+        set((state) => ({
+          ui: {
+            ...state.ui,
+            error: null,
+          },
+        }));
+      }, 3000);
+    } finally {
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          isLoading: false,
+        },
+      }));
     }
   },
 
