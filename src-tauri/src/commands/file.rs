@@ -6,6 +6,10 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
+// Windows API constants
+#[cfg(target_os = "windows")]
+const MAX_PATH_EXTENDED: usize = 32768;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
@@ -179,13 +183,23 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
     // Convert to short path name (8.3 format) to avoid issues with special characters
     // like parentheses, spaces, etc. in file names
     let path_wide: Vec<u16> = path_str.encode_utf16().chain(Some(0)).collect();
-    let mut short_path_buf: Vec<u16> = vec![0; 32768]; // MAX_PATH extended
+    let mut short_path_buf: Vec<u16> = vec![0; MAX_PATH_EXTENDED];
 
     unsafe {
+        use windows::Win32::Foundation::GetLastError;
+
         let result = GetShortPathNameW(PCWSTR(path_wide.as_ptr()), Some(&mut short_path_buf));
 
         if result == 0 {
-            // If GetShortPathNameW fails, fall back to the original path
+            // GetShortPathNameW failed - check the error code
+            let error = GetLastError();
+            // ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED (5), ERROR_INVALID_NAME (123)
+            // Log the error but fall back to original path for compatibility
+            // This allows the function to work even if short path conversion is not available
+            eprintln!(
+                "GetShortPathNameW failed with error code {:?}, falling back to original path",
+                error
+            );
             Ok(path_str)
         } else {
             // Use the short path name
