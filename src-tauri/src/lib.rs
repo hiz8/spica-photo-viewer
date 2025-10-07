@@ -9,7 +9,7 @@ use commands::cache::{
 };
 use commands::file::{
     generate_image_thumbnail, get_folder_images, get_startup_file, handle_dropped_file, load_image,
-    validate_image_file,
+    open_with_dialog, validate_image_file,
 };
 use commands::window::{get_window_position, get_window_state, maximize_window, resize_window_to_image};
 
@@ -25,6 +25,7 @@ pub fn run() {
             validate_image_file,
             generate_image_thumbnail,
             get_startup_file,
+            open_with_dialog,
             get_cached_thumbnail,
             set_cached_thumbnail,
             clear_old_cache,

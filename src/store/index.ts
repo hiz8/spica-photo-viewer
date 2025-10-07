@@ -37,6 +37,7 @@ interface AppActions {
   removePreloadedImage: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
+  openWithDialog: () => Promise<void>;
 }
 
 type AppStore = AppState & AppActions;
@@ -546,6 +547,36 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to resize window to image size:", error);
+    }
+  },
+
+  openWithDialog: async () => {
+    try {
+      const state = get();
+
+      // Check if there's a current image loaded
+      if (!state.currentImage.path) {
+        set((state) => ({
+          ui: {
+            ...state.ui,
+            error: new Error("No image is currently loaded"),
+          },
+        }));
+        return;
+      }
+
+      // Call the Tauri command to open the "Open With" dialog
+      await invoke("open_with_dialog", {
+        path: state.currentImage.path,
+      });
+    } catch (error) {
+      console.error("Failed to open 'Open With' dialog:", error);
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          error: new Error(`Failed to open 'Open With' dialog: ${error}`),
+        },
+      }));
     }
   },
 }));

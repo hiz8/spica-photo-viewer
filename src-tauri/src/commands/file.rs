@@ -6,6 +6,10 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
+// Windows API constants
+#[cfg(target_os = "windows")]
+const MAX_PATH_EXTENDED: usize = 32768;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
@@ -140,6 +144,99 @@ pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result
 
     generate_thumbnail(image_path, thumbnail_size)
         .map_err(|e| format!("Failed to generate thumbnail: {}", e))
+}
+
+/// Validates the file path and converts it to a short path name (8.3 format) for Windows.
+///
+/// This function handles special characters (parentheses, spaces, Japanese characters, etc.)
+/// by converting the path to Windows short path name format, which avoids command-line
+/// escaping issues when passing to rundll32.exe.
+///
+/// Returns the prepared path as a String, or an error if validation fails.
+#[cfg(target_os = "windows")]
+fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+
+    let file_path = Path::new(path);
+
+    // Validate file exists
+    if !file_path.exists() {
+        return Err("File not found".to_string());
+    }
+
+    if !file_path.is_file() {
+        return Err("Path is not a file".to_string());
+    }
+
+    // Convert path to absolute path
+    let absolute_path = file_path
+        .canonicalize()
+        .map_err(|e| format!("Failed to get absolute path: {}", e))?;
+
+    // Convert to string and remove the UNC prefix (\\?\) if present
+    let mut path_str = absolute_path.to_string_lossy().to_string();
+    if path_str.starts_with(r"\\?\") {
+        path_str = path_str[4..].to_string();
+    }
+
+    // Convert to short path name (8.3 format) to avoid issues with special characters
+    // like parentheses, spaces, etc. in file names
+    let path_wide: Vec<u16> = path_str.encode_utf16().chain(Some(0)).collect();
+    let mut short_path_buf: Vec<u16> = vec![0; MAX_PATH_EXTENDED];
+
+    unsafe {
+        use windows::Win32::Foundation::GetLastError;
+
+        let result = GetShortPathNameW(PCWSTR(path_wide.as_ptr()), Some(&mut short_path_buf));
+
+        if result == 0 {
+            // GetShortPathNameW failed - check the error code
+            let error = GetLastError();
+            // ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED (5), ERROR_INVALID_NAME (123)
+            // Log the error but fall back to original path for compatibility
+            // This allows the function to work even if short path conversion is not available
+            eprintln!(
+                "GetShortPathNameW failed with error code {:?}, falling back to original path",
+                error
+            );
+            Ok(path_str)
+        } else {
+            // Use the short path name
+            let short_path = String::from_utf16_lossy(&short_path_buf[..result as usize]);
+            Ok(short_path)
+        }
+    }
+}
+
+#[tauri::command]
+pub fn open_with_dialog(path: String) -> Result<(), String> {
+    // Windows-specific implementation
+    #[cfg(target_os = "windows")]
+    {
+        // Validate and prepare the path
+        let _prepared_path = prepare_path_for_open_with(&path)?;
+
+        // Skip actual dialog spawn during tests to avoid UI interaction
+        #[cfg(not(test))]
+        {
+            use std::process::Command;
+
+            Command::new("rundll32.exe")
+                .arg("shell32.dll,OpenAs_RunDLL")
+                .arg(&_prepared_path)
+                .spawn()
+                .map_err(|e| format!("Failed to spawn rundll32.exe: {}", e))?;
+        }
+
+        Ok(())
+    }
+
+    // Non-Windows platforms
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Open With dialog is only supported on Windows".to_string())
+    }
 }
 
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
@@ -509,5 +606,109 @@ mod tests {
             generate_image_thumbnail(corrupted_path.to_string_lossy().to_string(), Some(30)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to generate thumbnail"));
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_valid_file() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "test.jpg");
+
+        let result = open_with_dialog(image_path.to_string_lossy().to_string());
+
+        // In test environment, actual dialog spawn is skipped
+        #[cfg(target_os = "windows")]
+        {
+            assert!(result.is_ok());
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("only supported on Windows"));
+        }
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_nonexistent_file() {
+        let result = open_with_dialog("/nonexistent/file.jpg".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("File not found"));
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_directory() {
+        let temp_dir = create_temp_dir();
+
+        let result = open_with_dialog(temp_dir.path().to_string_lossy().to_string());
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err();
+        assert!(
+            error_msg.contains("File not found") || error_msg.contains("Path is not a file"),
+            "Expected error about file not found, got: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_parentheses_in_filename() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "test (Custom).jpg");
+
+        let result = open_with_dialog(image_path.to_string_lossy().to_string());
+
+        // Regression test for special characters (parentheses) in filename
+        // In test environment, actual dialog spawn is skipped
+        #[cfg(target_os = "windows")]
+        {
+            assert!(result.is_ok(), "Should handle parentheses in filename");
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("only supported on Windows"));
+        }
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_spaces_in_filename() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "test with spaces.jpg");
+
+        let result = open_with_dialog(image_path.to_string_lossy().to_string());
+
+        // Regression test for spaces in filename
+        // In test environment, actual dialog spawn is skipped
+        #[cfg(target_os = "windows")]
+        {
+            assert!(result.is_ok(), "Should handle spaces in filename");
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("only supported on Windows"));
+        }
+    }
+
+    #[test]
+    fn test_open_with_dialog_with_japanese_filename() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "テスト画像.jpg");
+
+        let result = open_with_dialog(image_path.to_string_lossy().to_string());
+
+        // Regression test for non-ASCII characters (Japanese) in filename
+        // In test environment, actual dialog spawn is skipped
+        #[cfg(target_os = "windows")]
+        {
+            assert!(result.is_ok(), "Should handle Japanese characters in filename");
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("only supported on Windows"));
+        }
     }
 }
