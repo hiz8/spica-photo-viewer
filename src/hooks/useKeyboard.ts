@@ -11,6 +11,7 @@ export const useKeyboard = () => {
     resetZoom,
     setFullscreen,
     setShowAbout,
+    openWithDialog,
     view,
     ui,
   } = useAppStore();
@@ -102,6 +103,14 @@ export const useKeyboard = () => {
           }
           break;
 
+        case "o":
+        case "O":
+          if (event.ctrlKey && event.shiftKey) {
+            event.preventDefault();
+            openWithDialog();
+          }
+          break;
+
         default:
           break;
       }
@@ -119,6 +128,7 @@ export const useKeyboard = () => {
     zoomOut,
     resetZoom,
     setShowAbout,
+    openWithDialog,
     view.isFullscreen,
     ui.showAbout,
     toggleFullscreen,
