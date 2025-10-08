@@ -94,7 +94,6 @@ describe("AppStore", () => {
       expect(useAppStore.getState().currentImage.error).toBeNull();
     });
 
-
     it("should clear image data when setting new image", () => {
       const { setCurrentImage, setImageData } = useAppStore.getState();
 
