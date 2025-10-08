@@ -37,6 +37,7 @@ interface AppActions {
   removePreloadedImage: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
+  openFileDialog: () => Promise<void>;
   openWithDialog: () => Promise<void>;
 }
 
@@ -82,6 +83,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ...state.currentImage,
         path,
         index,
+        data: null,
         error: null,
       },
     })),
@@ -547,6 +549,58 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to resize window to image size:", error);
+    }
+  },
+
+  openFileDialog: async () => {
+    try {
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          isLoading: true,
+          error: null,
+        },
+      }));
+
+      const { open } = await import("@tauri-apps/plugin-dialog");
+
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: "Images",
+            extensions: ["jpg", "jpeg", "png", "webp", "gif"],
+          },
+        ],
+      });
+
+      if (selected && typeof selected === "string") {
+        // Use openImageFromPath to handle the rest
+        await get().openImageFromPath(selected);
+      }
+    } catch (error) {
+      console.error("Failed to open file:", error);
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          error: new Error("Failed to open file"),
+        },
+      }));
+      setTimeout(() => {
+        set((state) => ({
+          ui: {
+            ...state.ui,
+            error: null,
+          },
+        }));
+      }, 3000);
+    } finally {
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          isLoading: false,
+        },
+      }));
     }
   },
 

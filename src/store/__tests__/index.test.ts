@@ -93,6 +93,26 @@ describe("AppStore", () => {
       setCurrentImage("/test/new-image.jpg", 0);
       expect(useAppStore.getState().currentImage.error).toBeNull();
     });
+
+    it("should clear image data when setting new image", () => {
+      const { setCurrentImage, setImageData } = useAppStore.getState();
+
+      // Set initial image with data
+      setCurrentImage("/test/image1.jpg", 0);
+      setImageData(mockImageData);
+
+      const stateWithData = useAppStore.getState();
+      expect(stateWithData.currentImage.data).not.toBeNull();
+      expect(stateWithData.currentImage.path).toBe("/test/image1.jpg");
+
+      // Setting new image should clear data
+      setCurrentImage("/test/image2.jpg", 1);
+
+      const stateAfter = useAppStore.getState();
+      expect(stateAfter.currentImage.path).toBe("/test/image2.jpg");
+      expect(stateAfter.currentImage.index).toBe(1);
+      expect(stateAfter.currentImage.data).toBeNull();
+    });
   });
 
   describe("setFolderImages", () => {

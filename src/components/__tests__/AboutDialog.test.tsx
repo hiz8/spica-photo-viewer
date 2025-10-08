@@ -96,6 +96,12 @@ describe("AboutDialog", () => {
     expect(screen.getByText("Ctrl+0")).toBeInTheDocument();
     expect(screen.getByText("Reset zoom")).toBeInTheDocument();
 
+    expect(screen.getByText("Ctrl+O")).toBeInTheDocument();
+    expect(screen.getByText("Open file")).toBeInTheDocument();
+
+    expect(screen.getByText("Ctrl+Shift+O")).toBeInTheDocument();
+    expect(screen.getByText("Open with app")).toBeInTheDocument();
+
     expect(screen.getByText("ESC")).toBeInTheDocument();
     expect(screen.getByText("Exit/Close")).toBeInTheDocument();
   });
