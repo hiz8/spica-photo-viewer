@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import "@testing-library/jest-dom";
 
 // Mock Tauri app API
 vi.mock("@tauri-apps/api/app", () => ({
@@ -127,9 +128,10 @@ describe("AboutDialog", () => {
     });
 
     const overlay = screen
-      .getByText("Spica Photo Viewer")
-      .closest(".about-dialog-backdrop")!;
-    fireEvent.click(overlay);
+      .getByText<HTMLElement>("Spica Photo Viewer")
+      .closest(".about-dialog-backdrop");
+    expect(overlay).not.toBeNull();
+    fireEvent.click(overlay as HTMLElement);
 
     expect(mockStore.setShowAbout).toHaveBeenCalledWith(false);
   });
@@ -143,8 +145,9 @@ describe("AboutDialog", () => {
 
     const content = screen
       .getByText("Spica Photo Viewer")
-      .closest(".about-dialog")!;
-    fireEvent.click(content);
+      .closest(".about-dialog");
+    expect(content).not.toBeNull();
+    fireEvent.click(content as HTMLElement);
 
     expect(mockStore.setShowAbout).not.toHaveBeenCalled();
   });
@@ -169,7 +172,8 @@ describe("AboutDialog", () => {
 
     const dialogContainer = screen
       .getByText("Spica Photo Viewer")
-      .closest(".about-dialog-backdrop")!;
+      .closest(".about-dialog-backdrop");
+    expect(dialogContainer).not.toBeNull();
     expect(dialogContainer).toHaveClass("about-dialog-backdrop");
   });
 
@@ -201,10 +205,11 @@ describe("AboutDialog", () => {
 
     const content = screen
       .getByText("Spica Photo Viewer")
-      .closest(".about-dialog")!;
+      .closest(".about-dialog");
+    expect(content).not.toBeNull();
 
     // Content click should not close dialog
-    fireEvent.click(content);
+    fireEvent.click(content as HTMLElement);
     expect(mockStore.setShowAbout).not.toHaveBeenCalled();
   });
 });

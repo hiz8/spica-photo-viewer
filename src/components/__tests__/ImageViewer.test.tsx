@@ -281,7 +281,8 @@ describe("ImageViewer", () => {
       render(<ImageViewer />);
 
       const image = screen.getByRole("img");
-      const container = image.parentElement!;
+      const container = image.parentElement as HTMLElement;
+      expect(container).not.toBeNull();
 
       // Start drag on image
       fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
@@ -295,7 +296,8 @@ describe("ImageViewer", () => {
     it("should stop dragging on mouse up", () => {
       render(<ImageViewer />);
 
-      const container = screen.getByRole("img").parentElement!;
+      const container = screen.getByRole("img").parentElement as HTMLElement;
+      expect(container).not.toBeNull();
 
       // Start and stop drag
       fireEvent.mouseDown(container, { clientX: 100, clientY: 50 });
@@ -308,7 +310,8 @@ describe("ImageViewer", () => {
     it("should stop dragging on mouse leave", () => {
       render(<ImageViewer />);
 
-      const container = screen.getByRole("img").parentElement!;
+      const container = screen.getByRole("img").parentElement as HTMLElement;
+      expect(container).not.toBeNull();
 
       // Start drag and leave
       fireEvent.mouseDown(container, { clientX: 100, clientY: 50 });
@@ -321,7 +324,8 @@ describe("ImageViewer", () => {
     it("should render container with event handlers", () => {
       render(<ImageViewer />);
 
-      const container = screen.getByRole("img").parentElement!;
+      const container = screen.getByRole("img").parentElement;
+      expect(container).not.toBeNull();
 
       // Verify that the container is properly rendered and can receive events
       expect(container).toBeInTheDocument();
@@ -344,11 +348,13 @@ describe("ImageViewer", () => {
 
       render(<ImageViewer />);
 
-      const container = screen.getByRole("img").parentElement!;
-      container.getBoundingClientRect = mockGetBoundingClientRect;
+      const container = screen.getByRole("img").parentElement;
+      expect(container).not.toBeNull();
+      (container as HTMLElement).getBoundingClientRect =
+        mockGetBoundingClientRect;
 
       // Use fireEvent.wheel directly with proper event properties
-      fireEvent.wheel(container, {
+      fireEvent.wheel(container as HTMLElement, {
         deltaY: -120,
         clientX: 400,
         clientY: 300,
@@ -428,7 +434,8 @@ describe("ImageViewer", () => {
 
       render(<ImageViewer />);
 
-      const container = screen.getByRole("img").parentElement!;
+      const container = screen.getByRole("img").parentElement;
+      expect(container).not.toBeNull();
       expect(container).toHaveClass("image-viewer");
 
       const image = screen.getByRole("img");

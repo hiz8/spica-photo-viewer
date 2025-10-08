@@ -40,7 +40,7 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
 
 // Suppress console warnings during tests
 const originalConsoleWarn = console.warn;
-console.warn = (...args: any[]) => {
+console.warn = (...args: unknown[]) => {
   // Suppress specific React warnings that don't affect functionality
   if (
     typeof args[0] === "string" &&

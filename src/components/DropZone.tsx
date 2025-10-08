@@ -67,8 +67,8 @@ const DropZone: React.FC<DropZoneProps> = ({ className = "", children }) => {
   );
 
   return (
-    <div
-      role="region"
+    <section
+      aria-label="Drop zone"
       className={`drop-zone ${className} ${ui.isDragOver ? "drag-over" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -84,7 +84,7 @@ const DropZone: React.FC<DropZoneProps> = ({ className = "", children }) => {
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 };
 

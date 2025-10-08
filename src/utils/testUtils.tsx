@@ -1,5 +1,10 @@
 import type React from "react";
-import { render, type RenderOptions, act } from "@testing-library/react";
+import {
+  render,
+  type RenderOptions,
+  type RenderResult,
+  act,
+} from "@testing-library/react";
 import { vi } from "vitest";
 import type { ImageData, ImageInfo } from "../types";
 
@@ -67,8 +72,8 @@ export const renderWithProviders = (
 export const renderAsync = async (
   ui: React.ReactElement,
   options?: Omit<RenderOptions, "wrapper">,
-) => {
-  let result: any;
+): Promise<RenderResult> => {
+  let result = {} as RenderResult;
   await act(async () => {
     result = render(ui, options);
   });
@@ -76,7 +81,7 @@ export const renderAsync = async (
 };
 
 // Store mock factory
-export const createMockStore = (overrides: any = {}) => ({
+export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   currentImage: {
     path: "",
     index: -1,
@@ -153,8 +158,8 @@ export const asyncTestPatterns = {
   renderWithAsyncOps: async (
     ui: React.ReactElement,
     options?: Omit<RenderOptions, "wrapper">,
-  ) => {
-    let result: any;
+  ): Promise<RenderResult> => {
+    let result = {} as RenderResult;
     await act(async () => {
       result = render(ui, options);
     });

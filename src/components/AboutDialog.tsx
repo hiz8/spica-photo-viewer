@@ -1,11 +1,12 @@
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "../store";
 
 const AboutDialog: React.FC = () => {
   const { ui, setShowAbout } = useAppStore();
   const [version, setVersion] = useState<string>("");
+  const titleId = useId();
 
   useEffect(() => {
     const loadVersion = async () => {
@@ -46,15 +47,16 @@ const AboutDialog: React.FC = () => {
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
       className="about-dialog-backdrop"
       onClick={handleBackdropClick}
       onKeyDown={handleBackdropKeyDown}
     >
       <div className="about-dialog">
         <div className="about-dialog-header">
-          <h2>Spica Photo Viewer</h2>
+          <h2 id={titleId}>Spica Photo Viewer</h2>
           <button
             type="button"
             className="about-dialog-close"

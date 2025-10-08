@@ -71,7 +71,8 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
     }, [image.path]);
 
     return (
-      <div
+      <button
+        type="button"
         className={`thumbnail-item ${isActive ? "active" : ""}`}
         onClick={() => onClick(index)}
         title={image.filename}
@@ -85,7 +86,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
         ) : (
           <div className="thumbnail-placeholder">{error ? "❌" : "⏳"}</div>
         )}
-      </div>
+      </button>
     );
   },
 );
@@ -181,8 +182,9 @@ const ThumbnailBar: React.FC = () => {
   }
 
   return (
-    <div
+    <nav
       ref={thumbnailBarRef}
+      aria-label="Thumbnail navigation"
       className={`thumbnail-bar ${isHovered ? "hovered" : ""}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -201,7 +203,7 @@ const ThumbnailBar: React.FC = () => {
       </div>
 
       {imageInfo && <div className="image-info">{imageInfo}</div>}
-    </div>
+    </nav>
   );
 };
 

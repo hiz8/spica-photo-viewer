@@ -63,7 +63,9 @@ export const createMockTauriApi = () => ({
 });
 
 // Store state factories
-export const createImageViewerState = (overrides: any = {}) => ({
+export const createImageViewerState = (
+  overrides: Record<string, unknown> = {},
+) => ({
   currentImage: {
     path: "/test/image.jpg",
     index: 0,
