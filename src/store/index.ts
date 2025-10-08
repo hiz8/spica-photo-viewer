@@ -83,6 +83,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ...state.currentImage,
         path,
         index,
+        data: null,
         error: null,
       },
     })),
