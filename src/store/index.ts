@@ -575,35 +575,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
 
       if (selected && typeof selected === "string") {
-        // Maximize window when opening an image
-        try {
-          await invoke("maximize_window");
-        } catch (error) {
-          console.error(
-            "Failed to maximize window when opening image via file dialog:",
-            error,
-          );
-        }
-
-        // Get folder images
-        const lastSep = Math.max(
-          selected.lastIndexOf("\\"),
-          selected.lastIndexOf("/"),
-        );
-        const folderPath = selected.substring(0, lastSep);
-        const folderImages = await invoke<ImageInfo[]>("get_folder_images", {
-          path: folderPath,
-        });
-
-        get().setFolderImages(folderPath, folderImages);
-
-        // Set current image
-        const imageIndex = folderImages.findIndex(
-          (img) => img.path === selected,
-        );
-        if (imageIndex !== -1) {
-          get().setCurrentImage(selected, imageIndex);
-        }
+        // Use openImageFromPath to handle the rest
+        await get().openImageFromPath(selected);
       }
     } catch (error) {
       console.error("Failed to open file:", error);
