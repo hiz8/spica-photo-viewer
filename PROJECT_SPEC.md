@@ -131,8 +131,11 @@ spica-photo-viewer/
 - **←/→**: Navigate previous/next image
 - **↑/↓**: Zoom in/out (center-based)
 - **Ctrl+0**: Reset zoom to 100%
+- **Ctrl+O**: Open file dialog
+- **Ctrl+Shift+O**: Open with external application
 - **F11**: Toggle fullscreen
-- **ESC**: Exit application
+- **F1**: Show about dialog
+- **ESC**: Exit fullscreen/about dialog, or exit application
 
 #### Mouse Controls
 
