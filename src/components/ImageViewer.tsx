@@ -233,11 +233,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   }
 
   return (
-    <div
+    <section
       ref={containerRef}
-      role="region"
       aria-label="Image viewer"
-      tabIndex={0}
       className={`image-viewer ${className}`}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -261,7 +259,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       {view.zoom !== 100 && (
         <div className="zoom-indicator">{Math.round(view.zoom)}%</div>
       )}
-    </div>
+    </section>
   );
 };
 
