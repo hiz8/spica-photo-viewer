@@ -24,7 +24,7 @@ function hasPath(arg: unknown): arg is { path: string } {
     typeof arg === "object" &&
     arg !== null &&
     "path" in arg &&
-    typeof (arg as any).path === "string"
+    typeof (arg as Record<string, unknown>).path === "string"
   );
 }
 
