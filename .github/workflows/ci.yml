@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          npm rebuild rollup
+          npm install --no-save @rollup/rollup-linux-x64-gnu
 
       - name: Type check
         run: npm run type-check
