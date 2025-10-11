@@ -83,19 +83,3 @@ pub fn create_fake_image(dir: &Path, filename: &str) -> PathBuf {
     fs::write(&file_path, b"This is not an image").expect("Failed to create fake image");
     file_path
 }
-
-/// Sets up a test environment variable
-pub fn setup_test_env_var(key: &str, value: &str) -> String {
-    let original = std::env::var(key).unwrap_or_default();
-    std::env::set_var(key, value);
-    original
-}
-
-/// Restores an environment variable
-pub fn restore_env_var(key: &str, original: &str) {
-    if original.is_empty() {
-        std::env::remove_var(key);
-    } else {
-        std::env::set_var(key, original);
-    }
-}
