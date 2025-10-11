@@ -29,8 +29,13 @@ fn get_cache_dir() -> Result<std::path::PathBuf, String> {
     } else {
         // Linux: $XDG_CACHE_HOME/SpicaPhotoViewer or ~/.cache/SpicaPhotoViewer
         let cache_base = std::env::var("XDG_CACHE_HOME").unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            format!("{}/.cache", home)
+            match std::env::var("HOME") {
+                Ok(home) => format!("{}/.cache", home),
+                Err(_) => {
+                    eprintln!("Warning: HOME environment variable not set. Using /tmp/.cache as cache base.");
+                    "/tmp/.cache".to_string()
+                }
+            }
         });
         Path::new(&cache_base).join("SpicaPhotoViewer")
     };
