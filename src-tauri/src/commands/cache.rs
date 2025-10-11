@@ -221,7 +221,6 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u32>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[tokio::test]
     async fn test_get_cached_thumbnail_returns_ok() {
