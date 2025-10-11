@@ -13,10 +13,32 @@ pub struct CacheEntry {
 const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 fn get_cache_dir() -> Result<std::path::PathBuf, String> {
-    let app_data =
-        std::env::var("APPDATA").map_err(|_| "Failed to get APPDATA directory".to_string())?;
-
-    let cache_dir = Path::new(&app_data).join("SpicaPhotoViewer").join("cache");
+    let cache_dir = if cfg!(target_os = "windows") {
+        // Windows: %APPDATA%\SpicaPhotoViewer\cache
+        let app_data = std::env::var("APPDATA")
+            .map_err(|_| "Failed to get APPDATA directory".to_string())?;
+        Path::new(&app_data).join("SpicaPhotoViewer").join("cache")
+    } else if cfg!(target_os = "macos") {
+        // macOS: ~/Library/Caches/SpicaPhotoViewer
+        let home = std::env::var("HOME")
+            .map_err(|_| "Failed to get HOME directory".to_string())?;
+        Path::new(&home)
+            .join("Library")
+            .join("Caches")
+            .join("SpicaPhotoViewer")
+    } else {
+        // Linux: $XDG_CACHE_HOME/SpicaPhotoViewer or ~/.cache/SpicaPhotoViewer
+        let cache_base = std::env::var("XDG_CACHE_HOME").unwrap_or_else(|_| {
+            match std::env::var("HOME") {
+                Ok(home) => format!("{}/.cache", home),
+                Err(_) => {
+                    eprintln!("Warning: HOME environment variable not set. Using /tmp/.cache as cache base.");
+                    "/tmp/.cache".to_string()
+                }
+            }
+        });
+        Path::new(&cache_base).join("SpicaPhotoViewer")
+    };
 
     if !cache_dir.exists() {
         fs::create_dir_all(&cache_dir)

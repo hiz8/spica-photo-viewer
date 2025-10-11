@@ -629,6 +629,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_open_with_dialog_with_nonexistent_file() {
         let result = open_with_dialog("/nonexistent/file.jpg".to_string());
         assert!(result.is_err());
@@ -636,6 +637,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_open_with_dialog_with_directory() {
         let temp_dir = create_temp_dir();
 
