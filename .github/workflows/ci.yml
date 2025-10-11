@@ -1,4 +1,4 @@
-name: Frontend Tests
+name: CI Tests
 
 on:
   push:
@@ -36,3 +36,22 @@ jobs:
 
       - name: Run frontend tests
         run: npm run test
+
+  backend-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Run backend tests
+        run: cargo test --lib
+        working-directory: src-tauri
