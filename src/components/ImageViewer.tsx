@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { useImagePreloader } from "../hooks/useImagePreloader";
 import type { ImageData } from "../types";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 
 interface ImageViewerProps {
   className?: string;
@@ -30,13 +31,117 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: The 'currentImage.data' dependency is intentionally omitted to avoid infinite loops.
+  const loadImage = useCallback(
+    async (path: string) => {
+      try {
+        setLoading(true);
+        setImageError(null);
+
+        // Check if this image has saved view state
+        const hasSavedState = cache.imageViewStates.has(path);
+
+        // Check if image is already preloaded
+        const preloadedImage = cache.preloaded.get(path);
+        if (preloadedImage) {
+          if (preloadedImage.format === "error") {
+            throw new Error("Image failed to load previously");
+          }
+
+          // Check if loading was cancelled before setting data
+          if (abortControllerRef.current?.signal.aborted) {
+            return;
+          }
+
+          setImageData(preloadedImage);
+
+          // Auto-fit or update dimensions based on saved state
+          if (!hasSavedState) {
+            fitToWindow(preloadedImage.width, preloadedImage.height);
+          } else {
+            updateImageDimensions(preloadedImage.width, preloadedImage.height);
+          }
+          return;
+        }
+
+        // Load image if not preloaded
+        const imageData = await invoke<ImageData>("load_image", { path });
+
+        // Check if loading was cancelled while waiting for invoke
+        if (abortControllerRef.current?.signal.aborted) {
+          return;
+        }
+
+        // Check if imageData is valid
+        if (!imageData) {
+          throw new Error("Failed to load image: No data returned");
+        }
+
+        setImageData(imageData);
+
+        // Auto-fit or update dimensions based on saved state
+        if (!hasSavedState) {
+          fitToWindow(imageData.width, imageData.height);
+        } else {
+          updateImageDimensions(imageData.width, imageData.height);
+        }
+
+        // Add to preload cache
+        cache.preloaded.set(path, imageData);
+      } catch (error) {
+        // Don't log errors if the load was cancelled
+        if (!abortControllerRef.current?.signal.aborted) {
+          console.error("Failed to load image:", error);
+          setImageError(error as Error);
+        }
+      } finally {
+        // Only clear loading state if not cancelled
+        if (!abortControllerRef.current?.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [
+      cache.imageViewStates,
+      cache.preloaded,
+      setLoading,
+      setImageError,
+      setImageData,
+      fitToWindow,
+      updateImageDimensions,
+    ],
+  );
+
+  // Load image with debounce to handle rapid navigation
   useEffect(() => {
-    if (currentImage.path && !currentImage.data) {
-      loadImage(currentImage.path);
+    // Cancel any pending image load
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
-  }, [currentImage.path]);
+
+    if (!currentImage.path) return;
+
+    // Debounce image loading to avoid loading intermediate images during rapid navigation
+    const timeoutId = setTimeout(async () => {
+      // Create new AbortController for this load
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+
+      if (signal.aborted) return;
+
+      // Load the image
+      await loadImage(currentImage.path);
+    }, IMAGE_LOAD_DEBOUNCE_MS);
+
+    return () => {
+      // Clear the timeout and abort any ongoing load when path changes
+      clearTimeout(timeoutId);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [currentImage.path, loadImage]);
 
   // Handle window resize to re-fit image
   useEffect(() => {
@@ -49,52 +154,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [currentImage.data, fitToWindow]);
-
-  const loadImage = async (path: string) => {
-    try {
-      setLoading(true);
-      setImageError(null);
-
-      // Check if this image has saved view state
-      const hasSavedState = cache.imageViewStates.has(path);
-
-      // Check if image is already preloaded
-      const preloadedImage = cache.preloaded.get(path);
-      if (preloadedImage) {
-        if (preloadedImage.format === "error") {
-          throw new Error("Image failed to load previously");
-        }
-        setImageData(preloadedImage);
-
-        // Auto-fit or update dimensions based on saved state
-        if (!hasSavedState) {
-          fitToWindow(preloadedImage.width, preloadedImage.height);
-        } else {
-          updateImageDimensions(preloadedImage.width, preloadedImage.height);
-        }
-        return;
-      }
-
-      // Load image if not preloaded
-      const imageData = await invoke<ImageData>("load_image", { path });
-      setImageData(imageData);
-
-      // Auto-fit or update dimensions based on saved state
-      if (!hasSavedState) {
-        fitToWindow(imageData.width, imageData.height);
-      } else {
-        updateImageDimensions(imageData.width, imageData.height);
-      }
-
-      // Add to preload cache
-      cache.preloaded.set(path, imageData);
-    } catch (error) {
-      console.error("Failed to load image:", error);
-      setImageError(error as Error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleContainerClick = useCallback(
     (e: React.MouseEvent) => {
