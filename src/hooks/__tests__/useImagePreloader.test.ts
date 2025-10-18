@@ -342,15 +342,17 @@ describe("useImagePreloader", () => {
       // Should not have called immediately
       expect(mockInvoke).not.toHaveBeenCalled();
 
-      // Fast-forward 400ms - still should not have called
+      // Fast-forward 499ms - still should not have called
       await act(async () => {
-        vi.advanceTimersByTime(400);
+        vi.advanceTimersByTime(499);
+        await Promise.resolve();
       });
       expect(mockInvoke).not.toHaveBeenCalled();
 
-      // Fast-forward remaining 100ms - now should have called
+      // Fast-forward remaining 1ms - now should have called
       await act(async () => {
-        vi.advanceTimersByTime(100);
+        vi.advanceTimersByTime(1);
+        await Promise.resolve();
       });
       expect(mockInvoke).toHaveBeenCalled();
     });

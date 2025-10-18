@@ -179,12 +179,19 @@ describe("ImageViewer", () => {
 
   describe("Image loading", () => {
     it("should load image on mount when path exists but no data", async () => {
+      vi.useFakeTimers();
       mockInvoke.mockResolvedValue(mockImageData);
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
 
       await act(async () => {
         render(<ImageViewer />);
+      });
+
+      // Advance past the 200ms debounce delay
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
       });
 
       expect(mockStore.setLoading).toHaveBeenCalledWith(true);
@@ -204,14 +211,23 @@ describe("ImageViewer", () => {
           expect(mockStore.setLoading).toHaveBeenCalledWith(false);
         });
       });
+
+      vi.useRealTimers();
     });
 
-    it("should use preloaded image if available", () => {
+    it("should use preloaded image if available", async () => {
+      vi.useFakeTimers();
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
       mockStore.cache.preloaded.set("/test/image.jpg", mockImageData);
 
       render(<ImageViewer />);
+
+      // Advance past the 200ms debounce delay
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+      });
 
       expect(mockStore.setImageData).toHaveBeenCalledWith(mockImageData);
       expect(mockStore.fitToWindow).toHaveBeenCalledWith(
@@ -219,9 +235,12 @@ describe("ImageViewer", () => {
         mockImageData.height,
       );
       expect(mockInvoke).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
     });
 
     it("should handle preloaded error images", async () => {
+      vi.useFakeTimers();
       const errorImage = { ...mockImageData, format: "error" as const };
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
@@ -231,9 +250,17 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
+      // Advance past the 200ms debounce delay
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+      });
+
       expect(mockStore.setLoading).toHaveBeenCalledWith(true);
       expect(mockStore.setImageError).toHaveBeenCalledWith(expect.any(Error));
       expect(mockStore.setLoading).toHaveBeenCalledWith(false);
+
+      vi.useRealTimers();
     });
 
     it("should handle image loading error", async () => {

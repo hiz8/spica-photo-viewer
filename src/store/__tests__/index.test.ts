@@ -38,6 +38,7 @@ describe("AppStore", () => {
         thumbnails: new Map(),
         preloaded: new Map(),
         imageViewStates: new Map(),
+        lastNavigationTime: 0,
       },
       ui: {
         isLoading: false,
@@ -306,24 +307,34 @@ describe("AppStore", () => {
       expect(state.view.panY).toBe(40);
     });
 
-    it("should handle multiple image navigations and preserve individual states", () => {
+    it("should handle multiple image navigations and preserve individual states", async () => {
       const { navigateToImage, setZoom, setPan, setCurrentImage } =
         useAppStore.getState();
+
+      // Helper to wait for rapid navigation timeout (500ms)
+      const waitForNavigationTimeout = () =>
+        new Promise((resolve) => setTimeout(resolve, 550));
 
       // Image 0: zoom 120, pan (10, 20)
       setCurrentImage(mockImageList[0].path, 0);
       setZoom(120);
       setPan(10, 20);
 
+      await waitForNavigationTimeout();
+
       // Navigate to image 1: zoom 150, pan (30, 40)
       navigateToImage(1);
       setZoom(150);
       setPan(30, 40);
 
+      await waitForNavigationTimeout();
+
       // Navigate to image 2: zoom 200, pan (50, 60)
       navigateToImage(2);
       setZoom(200);
       setPan(50, 60);
+
+      await waitForNavigationTimeout();
 
       // Go back to image 0
       navigateToImage(0);
@@ -332,12 +343,16 @@ describe("AppStore", () => {
       expect(state.view.panX).toBe(10);
       expect(state.view.panY).toBe(20);
 
+      await waitForNavigationTimeout();
+
       // Go to image 1
       navigateToImage(1);
       state = useAppStore.getState();
       expect(state.view.zoom).toBe(150);
       expect(state.view.panX).toBe(30);
       expect(state.view.panY).toBe(40);
+
+      await waitForNavigationTimeout();
 
       // Go to image 2
       navigateToImage(2);
