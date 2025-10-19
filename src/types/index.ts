@@ -47,6 +47,7 @@ export interface AppState {
     thumbnails: Map<string, string>;
     preloaded: Map<string, ImageData>;
     imageViewStates: Map<string, ImageViewState>;
+    lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation
   };
 
   ui: {
@@ -94,6 +95,7 @@ export interface CacheState {
   thumbnails: Map<string, string>;
   preloaded: Map<string, ImageData>;
   imageViewStates: Map<string, ImageViewState>;
+  lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation
 }
 
 export interface KeyboardShortcuts {

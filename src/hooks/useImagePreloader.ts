@@ -2,9 +2,11 @@ import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import type { ImageData } from "../types";
-
-const PRELOAD_RANGE = 20; // ±20 images
-const MAX_CONCURRENT_LOADS = 3;
+import {
+  PRELOAD_DELAY_MS,
+  PRELOAD_RANGE,
+  MAX_CONCURRENT_LOADS,
+} from "../constants/timing";
 
 export const useImagePreloader = () => {
   const {
@@ -147,8 +149,8 @@ export const useImagePreloader = () => {
   // Start preloading when current image changes
   useEffect(() => {
     if (currentImage.index !== -1 && folder.images.length > 0) {
-      // Delay preloading slightly to prioritize current image loading
-      const timeoutId = setTimeout(startPreloading, 500);
+      // Delay preloading to avoid interfering with rapid navigation
+      const timeoutId = setTimeout(startPreloading, PRELOAD_DELAY_MS);
       return () => clearTimeout(timeoutId);
     }
   }, [currentImage.index, folder.images.length, startPreloading]);

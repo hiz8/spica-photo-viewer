@@ -98,12 +98,14 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     panX: 0,
     panY: 0,
     isFullscreen: false,
+    isMaximized: false,
     thumbnailOpacity: 0.5,
   },
   cache: {
     thumbnails: new Map(),
     preloaded: new Map(),
     imageViewStates: new Map(),
+    lastNavigationTime: 0,
   },
   ui: {
     isLoading: false,

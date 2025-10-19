@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { mockImageData, mockImageList } from "../../utils/testUtils";
 import type { ImageInfo } from "../../types";
+import { PRELOAD_DELAY_MS } from "../../constants/timing";
 
 // Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
@@ -342,15 +343,17 @@ describe("useImagePreloader", () => {
       // Should not have called immediately
       expect(mockInvoke).not.toHaveBeenCalled();
 
-      // Fast-forward 400ms - still should not have called
+      // Fast-forward just before delay - still should not have called
       await act(async () => {
-        vi.advanceTimersByTime(400);
+        vi.advanceTimersByTime(PRELOAD_DELAY_MS - 1);
+        await Promise.resolve();
       });
       expect(mockInvoke).not.toHaveBeenCalled();
 
-      // Fast-forward remaining 100ms - now should have called
+      // Fast-forward remaining 1ms - now should have called
       await act(async () => {
-        vi.advanceTimersByTime(100);
+        vi.advanceTimersByTime(1);
+        await Promise.resolve();
       });
       expect(mockInvoke).toHaveBeenCalled();
     });

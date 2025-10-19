@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import type { ImageInfo } from "../types";
+import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
 
 const THUMBNAIL_SIZE = 20;
 
@@ -144,14 +145,19 @@ const ThumbnailBar: React.FC = () => {
         const scrollLeft = itemLeft - containerWidth / 2 + itemWidth / 2;
         container.scrollTo({
           left: scrollLeft,
-          behavior: "smooth",
+          behavior: "auto", // Instant scroll - syncs with ImageInfo
         });
       }
     }
   }, [currentImage.index]);
 
   useEffect(() => {
-    scrollToActiveItem();
+    // Debounce: skip intermediate scrolls during rapid navigation
+    const timeoutId = setTimeout(() => {
+      scrollToActiveItem();
+    }, THUMBNAIL_SCROLL_DEBOUNCE_MS);
+
+    return () => clearTimeout(timeoutId);
   }, [scrollToActiveItem]);
 
   useEffect(() => {

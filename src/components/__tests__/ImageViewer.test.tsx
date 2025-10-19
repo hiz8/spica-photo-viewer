@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { mockImageData } from "../../utils/testUtils";
 import type { ImageData as AppImageData } from "../../types";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
 
 // Mock the invoke function
 vi.mock("@tauri-apps/api/core", () => ({
@@ -42,11 +43,18 @@ const mockStore = {
   fitToWindow: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
+  setPreloadedImage: vi.fn(),
 };
 
-vi.mock("../../store", () => ({
-  useAppStore: vi.fn(() => mockStore),
-}));
+vi.mock("../../store", () => {
+  // Create mock function with getState method
+  const mockUseAppStore = vi.fn(() => mockStore);
+  mockUseAppStore.getState = () => mockStore;
+
+  return {
+    useAppStore: mockUseAppStore,
+  };
+});
 
 import ImageViewer from "../ImageViewer";
 import { invoke } from "@tauri-apps/api/core";
@@ -179,12 +187,19 @@ describe("ImageViewer", () => {
 
   describe("Image loading", () => {
     it("should load image on mount when path exists but no data", async () => {
+      vi.useFakeTimers();
       mockInvoke.mockResolvedValue(mockImageData);
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
 
       await act(async () => {
         render(<ImageViewer />);
+      });
+
+      // Advance past the debounce delay
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await Promise.resolve();
       });
 
       expect(mockStore.setLoading).toHaveBeenCalledWith(true);
@@ -204,14 +219,23 @@ describe("ImageViewer", () => {
           expect(mockStore.setLoading).toHaveBeenCalledWith(false);
         });
       });
+
+      vi.useRealTimers();
     });
 
-    it("should use preloaded image if available", () => {
+    it("should use preloaded image if available", async () => {
+      vi.useFakeTimers();
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
       mockStore.cache.preloaded.set("/test/image.jpg", mockImageData);
 
       render(<ImageViewer />);
+
+      // Advance past the debounce delay
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await Promise.resolve();
+      });
 
       expect(mockStore.setImageData).toHaveBeenCalledWith(mockImageData);
       expect(mockStore.fitToWindow).toHaveBeenCalledWith(
@@ -219,9 +243,12 @@ describe("ImageViewer", () => {
         mockImageData.height,
       );
       expect(mockInvoke).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
     });
 
     it("should handle preloaded error images", async () => {
+      vi.useFakeTimers();
       const errorImage = { ...mockImageData, format: "error" as const };
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
@@ -231,9 +258,18 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      expect(mockStore.setLoading).toHaveBeenCalledWith(true);
+      // Advance past the debounce delay
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await Promise.resolve();
+      });
+
+      // Cache hits (including errors) don't trigger loading state
+      expect(mockStore.setLoading).not.toHaveBeenCalledWith(true);
       expect(mockStore.setImageError).toHaveBeenCalledWith(expect.any(Error));
       expect(mockStore.setLoading).toHaveBeenCalledWith(false);
+
+      vi.useRealTimers();
     });
 
     it("should handle image loading error", async () => {

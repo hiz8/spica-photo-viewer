@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppState, ImageInfo, ImageData, ViewState } from "../types";
+import { RAPID_NAVIGATION_THRESHOLD_MS } from "../constants/timing";
 
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
@@ -68,6 +69,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     thumbnails: new Map(),
     preloaded: new Map(),
     imageViewStates: new Map(),
+    lastNavigationTime: 0,
   },
   ui: {
     isLoading: false,
@@ -207,13 +209,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (index >= 0 && index < images.length) {
       const image = images[index];
 
+      // Check if navigating quickly (within threshold of last navigation)
+      const now = Date.now();
+      const lastNavTime = state.cache.lastNavigationTime;
+      const isRapidNavigation =
+        now - lastNavTime < RAPID_NAVIGATION_THRESHOLD_MS;
+
       // Restore saved view state for the new image, or use default
       const savedViewState = state.cache.imageViewStates.get(image.path);
 
       set((state) => {
-        // Create new imageViewStates Map with current image's state saved
+        // Create new imageViewStates Map
         const newImageViewStates = new Map(state.cache.imageViewStates);
-        if (state.currentImage.path) {
+
+        // Only save current image's view state if NOT in rapid navigation mode
+        if (state.currentImage.path && !isRapidNavigation) {
           newImageViewStates.set(state.currentImage.path, {
             zoom: state.view.zoom,
             panX: state.view.panX,
@@ -226,7 +236,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             ...state.currentImage,
             path: image.path,
             index,
-            data: null,
+            data: null, // Always set to null; ImageViewer will load from cache if available
             error: null,
           },
           view: {
@@ -238,6 +248,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           cache: {
             ...state.cache,
             imageViewStates: newImageViewStates,
+            lastNavigationTime: now,
           },
         };
       });

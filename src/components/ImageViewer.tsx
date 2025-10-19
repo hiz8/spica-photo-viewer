@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { useImagePreloader } from "../hooks/useImagePreloader";
 import type { ImageData } from "../types";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 
 interface ImageViewerProps {
   className?: string;
@@ -13,7 +14,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const {
     currentImage,
     view,
-    cache,
     setImageData,
     setImageError,
     setLoading,
@@ -22,6 +22,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     fitToWindow,
     updateImageDimensions,
     resizeToImage,
+    setPreloadedImage,
   } = useAppStore();
 
   useImagePreloader();
@@ -30,13 +31,126 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const activeLoadPathRef = useRef<string | null>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: The 'currentImage.data' dependency is intentionally omitted to avoid infinite loops.
+  const loadImage = useCallback(
+    async (path: string, signal: AbortSignal) => {
+      // Mark this path as actively loading
+      activeLoadPathRef.current = path;
+
+      try {
+        // Get fresh cache state to avoid dependency on volatile Maps
+        const { cache: currentCache } = useAppStore.getState();
+
+        // Check if this image has saved view state
+        const hasSavedState = currentCache.imageViewStates.has(path);
+
+        // Check if image is already preloaded
+        const preloadedImage = currentCache.preloaded.get(path);
+        if (preloadedImage) {
+          if (preloadedImage.format === "error") {
+            throw new Error("Image failed to load previously");
+          }
+
+          // Check if loading was cancelled or navigation changed
+          if (signal.aborted || activeLoadPathRef.current !== path) {
+            return;
+          }
+
+          setImageData(preloadedImage);
+
+          // Auto-fit or update dimensions based on saved state
+          if (!hasSavedState) {
+            fitToWindow(preloadedImage.width, preloadedImage.height);
+          } else {
+            updateImageDimensions(preloadedImage.width, preloadedImage.height);
+          }
+          return;
+        }
+
+        // Image not preloaded - set loading state before invoking backend
+        setLoading(true);
+        setImageError(null);
+
+        // Load image if not preloaded
+        // Note: invoke() cannot be cancelled - AbortController only gates post-invoke handling
+        const imageData = await invoke<ImageData>("load_image", { path });
+
+        // Check if loading was cancelled or navigation changed while waiting for invoke
+        if (signal.aborted || activeLoadPathRef.current !== path) {
+          return;
+        }
+
+        // Check if imageData is valid
+        if (!imageData) {
+          throw new Error("Failed to load image: No data returned");
+        }
+
+        setImageData(imageData);
+
+        // Auto-fit or update dimensions based on saved state
+        if (!hasSavedState) {
+          fitToWindow(imageData.width, imageData.height);
+        } else {
+          updateImageDimensions(imageData.width, imageData.height);
+        }
+
+        // Add to preload cache using store action
+        setPreloadedImage(path, imageData);
+      } catch (error) {
+        // Don't log errors if the load was cancelled or navigation changed
+        if (!signal.aborted && activeLoadPathRef.current === path) {
+          console.error("Failed to load image:", error);
+          setImageError(error as Error);
+        }
+      } finally {
+        // Only clear loading if this request is still active
+        // This prevents older requests from clearing loading state of newer requests
+        if (activeLoadPathRef.current === path) {
+          setLoading(false);
+        }
+      }
+    },
+    [
+      setLoading,
+      setImageError,
+      setImageData,
+      setPreloadedImage,
+      fitToWindow,
+      updateImageDimensions,
+    ],
+  );
+
+  // Load image with debounce to handle rapid navigation
   useEffect(() => {
-    if (currentImage.path && !currentImage.data) {
-      loadImage(currentImage.path);
+    // Cancel any pending image load
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
-  }, [currentImage.path]);
+
+    if (!currentImage.path) return;
+
+    // Debounce image loading to avoid loading intermediate images during rapid navigation
+    const timeoutId = setTimeout(async () => {
+      // Create new AbortController for this load
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+
+      if (signal.aborted) return;
+
+      // Load the image with the specific signal for this request
+      await loadImage(currentImage.path, signal);
+    }, IMAGE_LOAD_DEBOUNCE_MS);
+
+    return () => {
+      // Clear the timeout and abort any ongoing load when path changes
+      clearTimeout(timeoutId);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [currentImage.path, loadImage]);
 
   // Handle window resize to re-fit image
   useEffect(() => {
@@ -49,52 +163,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [currentImage.data, fitToWindow]);
-
-  const loadImage = async (path: string) => {
-    try {
-      setLoading(true);
-      setImageError(null);
-
-      // Check if this image has saved view state
-      const hasSavedState = cache.imageViewStates.has(path);
-
-      // Check if image is already preloaded
-      const preloadedImage = cache.preloaded.get(path);
-      if (preloadedImage) {
-        if (preloadedImage.format === "error") {
-          throw new Error("Image failed to load previously");
-        }
-        setImageData(preloadedImage);
-
-        // Auto-fit or update dimensions based on saved state
-        if (!hasSavedState) {
-          fitToWindow(preloadedImage.width, preloadedImage.height);
-        } else {
-          updateImageDimensions(preloadedImage.width, preloadedImage.height);
-        }
-        return;
-      }
-
-      // Load image if not preloaded
-      const imageData = await invoke<ImageData>("load_image", { path });
-      setImageData(imageData);
-
-      // Auto-fit or update dimensions based on saved state
-      if (!hasSavedState) {
-        fitToWindow(imageData.width, imageData.height);
-      } else {
-        updateImageDimensions(imageData.width, imageData.height);
-      }
-
-      // Add to preload cache
-      cache.preloaded.set(path, imageData);
-    } catch (error) {
-      console.error("Failed to load image:", error);
-      setImageError(error as Error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleContainerClick = useCallback(
     (e: React.MouseEvent) => {
