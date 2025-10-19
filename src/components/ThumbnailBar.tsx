@@ -180,8 +180,15 @@ const ThumbnailBar: React.FC = () => {
       return null;
     }
     const image = folder.images[currentImage.index];
-    return `${image.filename} (${image.width} × ${image.height})`;
-  }, [currentImage.path, currentImage.index, folder.images]);
+
+    // Show dimensions if full image is loaded
+    if (currentImage.data?.width && currentImage.data.height) {
+      return `${image.filename} (${currentImage.data.width} × ${currentImage.data.height})`;
+    }
+
+    // Show filename only while loading or preview
+    return image.filename;
+  }, [currentImage.path, currentImage.index, currentImage.data, folder.images]);
 
   if (!folder.images.length) {
     return null;

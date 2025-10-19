@@ -1,11 +1,11 @@
 import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import type { ImageData } from "../types";
 import {
   PRELOAD_DELAY_MS,
   PRELOAD_RANGE,
   MAX_CONCURRENT_LOADS,
+  PREVIEW_THUMBNAIL_SIZE,
 } from "../constants/timing";
 
 export const useImagePreloader = () => {
@@ -13,44 +13,42 @@ export const useImagePreloader = () => {
     folder,
     currentImage,
     cache,
-    setPreloadedImage,
-    removePreloadedImage,
+    setCachedThumbnail,
+    removeCachedThumbnail,
   } = useAppStore();
 
   const preloadImage = useCallback(
     async (imagePath: string): Promise<void> => {
-      // Check if already preloaded or currently loading
-      if (cache.preloaded.has(imagePath)) {
+      // Check if already cached
+      if (cache.thumbnails.has(imagePath)) {
         return;
       }
 
       try {
-        const imageData = await invoke<ImageData>("load_image", {
-          path: imagePath,
-        });
+        // Generate thumbnail for preloading
+        const thumbnailBase64 = await invoke<string>(
+          "generate_image_thumbnail",
+          {
+            path: imagePath,
+            size: PREVIEW_THUMBNAIL_SIZE,
+          },
+        );
 
         // Update cache in store using proper action
-        setPreloadedImage(imagePath, imageData);
+        setCachedThumbnail(imagePath, thumbnailBase64);
 
         console.log(`Preloaded: ${imagePath.split(/[\\/]/).pop()}`);
       } catch (error) {
         console.warn(
-          `Failed to preload image: ${imagePath.split(/[\\/]/).pop()}`,
+          `Failed to preload thumbnail: ${imagePath.split(/[\\/]/).pop()}`,
           error,
         );
 
-        // Mark as failed in cache to avoid retry
-        const errorPlaceholder: ImageData = {
-          path: imagePath,
-          base64: "",
-          width: 0,
-          height: 0,
-          format: "error",
-        };
-        setPreloadedImage(imagePath, errorPlaceholder);
+        // Mark as failed in cache to avoid retry (empty string)
+        setCachedThumbnail(imagePath, "");
       }
     },
-    [cache.preloaded, setPreloadedImage],
+    [cache.thumbnails, setCachedThumbnail],
   );
 
   const getPreloadQueue = useCallback(() => {
@@ -71,7 +69,7 @@ export const useImagePreloader = () => {
       const nextIndex = currentIndex + range;
       if (nextIndex < folder.images.length) {
         const nextPath = folder.images[nextIndex].path;
-        if (!cache.preloaded.has(nextPath)) {
+        if (!cache.thumbnails.has(nextPath)) {
           queue.push(nextPath);
         }
       }
@@ -80,14 +78,14 @@ export const useImagePreloader = () => {
       const prevIndex = currentIndex - range;
       if (prevIndex >= 0) {
         const prevPath = folder.images[prevIndex].path;
-        if (!cache.preloaded.has(prevPath)) {
+        if (!cache.thumbnails.has(prevPath)) {
           queue.push(prevPath);
         }
       }
     }
 
     return queue;
-  }, [currentImage.index, folder.images, cache.preloaded]);
+  }, [currentImage.index, folder.images, cache.thumbnails]);
 
   const cleanupCache = useCallback(() => {
     if (currentImage.index === -1 || !folder.images.length) {
@@ -106,23 +104,23 @@ export const useImagePreloader = () => {
       imagesToKeep.add(folder.images[i].path);
     }
 
-    // Remove images outside the range
+    // Remove thumbnails outside the range
     const keysToRemove: string[] = [];
-    cache.preloaded.forEach((_, path) => {
+    cache.thumbnails.forEach((_, path) => {
       if (!imagesToKeep.has(path)) {
         keysToRemove.push(path);
       }
     });
 
     keysToRemove.forEach((path) => {
-      removePreloadedImage(path);
+      removeCachedThumbnail(path);
       console.log(`Cleaned from cache: ${path.split(/[\\/]/).pop()}`);
     });
   }, [
     currentImage.index,
     folder.images,
-    cache.preloaded,
-    removePreloadedImage,
+    cache.thumbnails,
+    removeCachedThumbnail,
   ]);
 
   const startPreloading = useCallback(async () => {

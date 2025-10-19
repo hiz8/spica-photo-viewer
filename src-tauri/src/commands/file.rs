@@ -3,6 +3,7 @@ use crate::utils::image::{
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -10,12 +11,14 @@ use walkdir::WalkDir;
 #[cfg(target_os = "windows")]
 const MAX_PATH_EXTENDED: usize = 32768;
 
+// Image validation constants
+// 64 bytes is sufficient for all common image formats including TIFF and modern formats
+const IMAGE_HEADER_BUFFER_SIZE: usize = 64;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
     pub filename: String,
-    pub width: u32,
-    pub height: u32,
     pub size: u64,
     pub modified: u64,
     pub format: String,
@@ -28,6 +31,13 @@ pub struct ImageData {
     pub width: u32,
     pub height: u32,
     pub format: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThumbnailWithDimensions {
+    pub thumbnail_base64: String,
+    pub original_width: u32,
+    pub original_height: u32,
 }
 
 #[tauri::command]
@@ -146,6 +156,37 @@ pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result
         .map_err(|e| format!("Failed to generate thumbnail: {}", e))
 }
 
+/// Generate thumbnail and return original image dimensions
+#[tauri::command]
+pub async fn generate_thumbnail_with_dimensions(
+    path: String,
+    size: u32,
+) -> Result<ThumbnailWithDimensions, String> {
+    let image_path = Path::new(&path);
+
+    if !image_path.exists() || !image_path.is_file() {
+        return Err("File not found".to_string());
+    }
+
+    if !is_supported_image(image_path) {
+        return Err("Unsupported file format".to_string());
+    }
+
+    // Get original image dimensions
+    let (original_width, original_height) = get_image_dimensions(image_path)
+        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
+
+    // Generate thumbnail
+    let thumbnail_base64 = generate_thumbnail(image_path, size)
+        .map_err(|e| format!("Failed to generate thumbnail: {}", e))?;
+
+    Ok(ThumbnailWithDimensions {
+        thumbnail_base64,
+        original_width,
+        original_height,
+    })
+}
+
 /// Validates the file path and converts it to a short path name (8.3 format) for Windows.
 ///
 /// This function handles special characters (parentheses, spaces, Japanese characters, etc.)
@@ -239,12 +280,35 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
     }
 }
 
+/// Validates an image file by checking its header for valid format magic numbers.
+/// This is a lightweight check that doesn't require full image decoding.
+///
+/// # Arguments
+/// * `path` - Path to the image file to validate
+///
+/// # Returns
+/// * `Ok(())` if the file has a valid image format header
+/// * `Err(String)` with error description if validation fails
+fn validate_image_header(path: &Path) -> Result<(), String> {
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("Failed to open image file: {}", e))?;
+
+    let mut buffer = [0u8; IMAGE_HEADER_BUFFER_SIZE];
+    let bytes_read = file
+        .read(&mut buffer)
+        .map_err(|e| format!("Failed to read image header: {}", e))?;
+
+    // Detect format from header magic numbers using only the bytes actually read
+    // This handles both small files and proper validation for larger headers
+    image::guess_format(&buffer[..bytes_read])
+        .map_err(|e| format!("Failed to detect valid image format: {}", e))?;
+
+    Ok(())
+}
+
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
     let metadata =
         fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
-
-    let (width, height) =
-        get_image_dimensions(path).map_err(|e| format!("Failed to get image dimensions: {}", e))?;
 
     let filename = path
         .file_name()
@@ -265,11 +329,12 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         .map_err(|e| format!("Failed to convert time: {}", e))?
         .as_secs();
 
+    // Validate image header to ensure the file is not corrupted
+    validate_image_header(path)?;
+
     Ok(ImageInfo {
         path: path.to_string_lossy().to_string(),
         filename,
-        width,
-        height,
         size: metadata.len(),
         modified,
         format,
@@ -704,7 +769,10 @@ mod tests {
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
-            assert!(result.is_ok(), "Should handle Japanese characters in filename");
+            assert!(
+                result.is_ok(),
+                "Should handle Japanese characters in filename"
+            );
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -713,4 +781,5 @@ mod tests {
             assert!(result.unwrap_err().contains("only supported on Windows"));
         }
     }
+
 }

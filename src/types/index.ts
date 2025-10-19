@@ -1,8 +1,6 @@
 export interface ImageInfo {
   path: string;
   filename: string;
-  width: number;
-  height: number;
   size: number;
   modified: number;
   format: "jpeg" | "png" | "webp" | "gif";
@@ -16,6 +14,19 @@ export interface ImageData {
   format: string;
 }
 
+export interface ProgressiveImageData {
+  path: string;
+  preview: ImageData | null;
+  full: ImageData;
+  is_high_resolution: boolean;
+}
+
+export interface ThumbnailWithDimensions {
+  thumbnail_base64: string;
+  original_width: number;
+  original_height: number;
+}
+
 export interface AppState {
   currentImage: {
     path: string;
@@ -27,6 +38,7 @@ export interface AppState {
   folder: {
     path: string;
     images: ImageInfo[];
+    imagesByPath: Map<string, ImageInfo>;
     sortOrder: "name" | "date";
   };
 

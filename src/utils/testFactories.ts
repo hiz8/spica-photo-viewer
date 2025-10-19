@@ -19,8 +19,6 @@ export const createImageInfo = (
 ): ImageInfo => ({
   path: "/test/image.jpg",
   filename: "image.jpg",
-  width: 800,
-  height: 600,
   size: 1024,
   modified: Date.now(),
   format: "jpeg",

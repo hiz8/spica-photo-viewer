@@ -36,6 +36,8 @@ interface AppActions {
   openImageFromPath: (imagePath: string) => Promise<void>;
   setPreloadedImage: (path: string, data: ImageData) => void;
   removePreloadedImage: (path: string) => void;
+  setCachedThumbnail: (path: string, base64: string) => void;
+  removeCachedThumbnail: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
   openFileDialog: () => Promise<void>;
@@ -55,6 +57,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   folder: {
     path: "",
     images: [],
+    imagesByPath: new Map(),
     sortOrder: "name",
   },
   view: {
@@ -111,6 +114,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       folder: {
         path,
         images,
+        // Build imagesByPath Map for O(1) lookup performance
+        imagesByPath: new Map(images.map((img) => [img.path, img])),
         sortOrder: "name",
       },
       cache: {
@@ -489,6 +494,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
         cache: {
           ...state.cache,
           preloaded: newPreloaded,
+        },
+      };
+    }),
+
+  setCachedThumbnail: (path, base64) =>
+    set((state) => {
+      const newThumbnails = new Map(state.cache.thumbnails);
+      newThumbnails.set(path, base64);
+      return {
+        cache: {
+          ...state.cache,
+          thumbnails: newThumbnails,
+        },
+      };
+    }),
+
+  removeCachedThumbnail: (path) =>
+    set((state) => {
+      const newThumbnails = new Map(state.cache.thumbnails);
+      newThumbnails.delete(path);
+      return {
+        cache: {
+          ...state.cache,
+          thumbnails: newThumbnails,
         },
       };
     }),

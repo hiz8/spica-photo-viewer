@@ -3,8 +3,14 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { useImagePreloader } from "../hooks/useImagePreloader";
-import type { ImageData } from "../types";
-import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
+import type {
+  ImageData as AppImageData,
+  ThumbnailWithDimensions,
+} from "../types";
+import {
+  IMAGE_LOAD_DEBOUNCE_MS,
+  PREVIEW_THUMBNAIL_SIZE,
+} from "../constants/timing";
 
 interface ImageViewerProps {
   className?: string;
@@ -41,7 +47,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
       try {
         // Get fresh cache state to avoid dependency on volatile Maps
-        const { cache: currentCache } = useAppStore.getState();
+        const { cache: currentCache, folder } = useAppStore.getState();
 
         // Check if this image has saved view state
         const hasSavedState = currentCache.imageViewStates.has(path);
@@ -73,31 +79,107 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         setLoading(true);
         setImageError(null);
 
-        // Load image if not preloaded
-        // Note: invoke() cannot be cancelled - AbortController only gates post-invoke handling
-        const imageData = await invoke<ImageData>("load_image", { path });
+        // Get image info from folder to determine format (O(1) lookup)
+        const imageInfo = folder.imagesByPath.get(path);
 
-        // Check if loading was cancelled or navigation changed while waiting for invoke
-        if (signal.aborted || activeLoadPathRef.current !== path) {
-          return;
-        }
+        // Use two-phase loading for all images except GIFs (to preserve animation)
+        const skipProgressive = imageInfo?.format === "gif";
 
-        // Check if imageData is valid
-        if (!imageData) {
-          throw new Error("Failed to load image: No data returned");
-        }
+        // Two-phase loading for non-GIF images
+        if (!skipProgressive) {
+          // Phase 1: Load and display preview immediately
+          try {
+            const thumbnailData = await invoke<ThumbnailWithDimensions>(
+              "generate_thumbnail_with_dimensions",
+              {
+                path,
+                size: PREVIEW_THUMBNAIL_SIZE,
+              },
+            );
 
-        setImageData(imageData);
+            // Check if loading was cancelled
+            if (signal.aborted || activeLoadPathRef.current !== path) {
+              return;
+            }
 
-        // Auto-fit or update dimensions based on saved state
-        if (!hasSavedState) {
-          fitToWindow(imageData.width, imageData.height);
+            // Display preview with original image dimensions
+            const previewData = {
+              path,
+              base64: thumbnailData.thumbnail_base64,
+              width: thumbnailData.original_width,
+              height: thumbnailData.original_height,
+              format: "jpeg",
+            };
+
+            setImageData(previewData);
+
+            // Fit to window using original dimensions
+            if (!hasSavedState) {
+              fitToWindow(
+                thumbnailData.original_width,
+                thumbnailData.original_height,
+              );
+            } else {
+              updateImageDimensions(
+                thumbnailData.original_width,
+                thumbnailData.original_height,
+              );
+            }
+
+            // Check again if loading was cancelled before starting full image load
+            if (signal.aborted || activeLoadPathRef.current !== path) {
+              return;
+            }
+          } catch (previewError) {
+            console.warn(
+              "Failed to load preview, continuing with full image:",
+              previewError,
+            );
+          }
+
+          // Phase 2: Load full resolution image (in parallel with preview display)
+          const fullImageData = await invoke<AppImageData>("load_image", {
+            path,
+          });
+
+          // Check if loading was cancelled
+          if (signal.aborted || activeLoadPathRef.current !== path) {
+            return;
+          }
+
+          // Replace preview with full resolution
+          setImageData(fullImageData);
+
+          // Don't re-fit window, just update dimensions
+          updateImageDimensions(fullImageData.width, fullImageData.height);
+
+          // Add to preload cache
+          setPreloadedImage(path, fullImageData);
         } else {
-          updateImageDimensions(imageData.width, imageData.height);
-        }
+          // GIF files - use direct loading to preserve animation
+          const imageData = await invoke<AppImageData>("load_image", { path });
 
-        // Add to preload cache using store action
-        setPreloadedImage(path, imageData);
+          // Check if loading was cancelled
+          if (signal.aborted || activeLoadPathRef.current !== path) {
+            return;
+          }
+
+          if (!imageData) {
+            throw new Error("Failed to load image: No data returned");
+          }
+
+          setImageData(imageData);
+
+          // Auto-fit or update dimensions based on saved state
+          if (!hasSavedState) {
+            fitToWindow(imageData.width, imageData.height);
+          } else {
+            updateImageDimensions(imageData.width, imageData.height);
+          }
+
+          // Add to preload cache
+          setPreloadedImage(path, imageData);
+        }
       } catch (error) {
         // Don't log errors if the load was cancelled or navigation changed
         if (!signal.aborted && activeLoadPathRef.current === path) {
@@ -106,7 +188,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         }
       } finally {
         // Only clear loading if this request is still active
-        // This prevents older requests from clearing loading state of newer requests
         if (activeLoadPathRef.current === path) {
           setLoading(false);
         }
