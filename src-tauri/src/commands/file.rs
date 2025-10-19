@@ -1,8 +1,11 @@
+use crate::commands::cache::{get_cached_thumbnail, set_cached_thumbnail};
 use crate::utils::image::{
-    generate_thumbnail, get_image_dimensions, is_supported_image, load_image_as_base64,
+    generate_preview_image, generate_thumbnail, get_image_dimensions, is_supported_image,
+    load_image_as_base64,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -10,12 +13,13 @@ use walkdir::WalkDir;
 #[cfg(target_os = "windows")]
 const MAX_PATH_EXTENDED: usize = 32768;
 
+// Image validation constants
+const IMAGE_HEADER_BUFFER_SIZE: usize = 16;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
     pub filename: String,
-    pub width: u32,
-    pub height: u32,
     pub size: u64,
     pub modified: u64,
     pub format: String,
@@ -28,6 +32,21 @@ pub struct ImageData {
     pub width: u32,
     pub height: u32,
     pub format: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThumbnailWithDimensions {
+    pub thumbnail_base64: String,
+    pub original_width: u32,
+    pub original_height: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProgressiveImageData {
+    pub path: String,
+    pub preview: Option<ImageData>,
+    pub full: ImageData,
+    pub is_high_resolution: bool,
 }
 
 #[tauri::command]
@@ -92,6 +111,107 @@ pub async fn load_image(path: String) -> Result<ImageData, String> {
     })
 }
 
+/// Load image with progressive loading support
+/// Returns preview image (if high resolution) and full resolution image
+#[tauri::command]
+pub async fn load_image_progressive(path: String) -> Result<ProgressiveImageData, String> {
+    let image_path = Path::new(&path);
+
+    if !image_path.exists() || !image_path.is_file() {
+        return Err("File not found".to_string());
+    }
+
+    if !is_supported_image(image_path) {
+        return Err("Unsupported file format".to_string());
+    }
+
+    // Get image dimensions first to determine if preview is needed
+    let (width, height) = get_image_dimensions(image_path)
+        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
+
+    let format = image_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_lowercase();
+
+    // High resolution threshold: 2000x2000 pixels
+    const HIGH_RES_THRESHOLD: u32 = 2000;
+    let is_high_resolution = width >= HIGH_RES_THRESHOLD || height >= HIGH_RES_THRESHOLD;
+
+    // For GIF files, skip progressive loading to preserve animation
+    let skip_progressive = format == "gif";
+
+    // Generate preview for high resolution images (except GIF)
+    let preview = if is_high_resolution && !skip_progressive {
+        const PREVIEW_SIZE: u32 = 400;
+
+        // Try to get cached thumbnail first for faster loading
+        let preview_base64 = match get_cached_thumbnail(path.clone(), Some(PREVIEW_SIZE)).await {
+            Ok(Some(cached)) => {
+                // Cache hit - use cached thumbnail
+                Some(cached)
+            }
+            _ => {
+                // Cache miss - generate new preview
+                match generate_preview_image(image_path, PREVIEW_SIZE) {
+                    Ok(base64) => {
+                        // Cache the generated preview for future use
+                        let _ =
+                            set_cached_thumbnail(path.clone(), base64.clone(), Some(PREVIEW_SIZE))
+                                .await;
+                        Some(base64)
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to generate preview: {}", e);
+                        None
+                    }
+                }
+            }
+        };
+
+        preview_base64.map(|base64| {
+            // Calculate preview dimensions maintaining aspect ratio
+            let (preview_width, preview_height) = if width > height {
+                let ratio = PREVIEW_SIZE as f64 / width as f64;
+                (PREVIEW_SIZE, (height as f64 * ratio) as u32)
+            } else {
+                let ratio = PREVIEW_SIZE as f64 / height as f64;
+                ((width as f64 * ratio) as u32, PREVIEW_SIZE)
+            };
+
+            ImageData {
+                path: path.clone(),
+                base64,
+                width: preview_width,
+                height: preview_height,
+                format: "jpeg".to_string(), // Preview is always JPEG
+            }
+        })
+    } else {
+        None
+    };
+
+    // Load full resolution image
+    let base64_data =
+        load_image_as_base64(image_path).map_err(|e| format!("Failed to load image: {}", e))?;
+
+    let full = ImageData {
+        path: path.clone(),
+        base64: base64_data,
+        width,
+        height,
+        format,
+    };
+
+    Ok(ProgressiveImageData {
+        path,
+        preview,
+        full,
+        is_high_resolution: is_high_resolution && !skip_progressive,
+    })
+}
+
 #[tauri::command]
 pub async fn handle_dropped_file(path: String) -> Result<ImageInfo, String> {
     let file_path = Path::new(&path);
@@ -144,6 +264,37 @@ pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result
 
     generate_thumbnail(image_path, thumbnail_size)
         .map_err(|e| format!("Failed to generate thumbnail: {}", e))
+}
+
+/// Generate thumbnail and return original image dimensions
+#[tauri::command]
+pub async fn generate_thumbnail_with_dimensions(
+    path: String,
+    size: u32,
+) -> Result<ThumbnailWithDimensions, String> {
+    let image_path = Path::new(&path);
+
+    if !image_path.exists() || !image_path.is_file() {
+        return Err("File not found".to_string());
+    }
+
+    if !is_supported_image(image_path) {
+        return Err("Unsupported file format".to_string());
+    }
+
+    // Get original image dimensions
+    let (original_width, original_height) = get_image_dimensions(image_path)
+        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
+
+    // Generate thumbnail
+    let thumbnail_base64 = generate_thumbnail(image_path, size)
+        .map_err(|e| format!("Failed to generate thumbnail: {}", e))?;
+
+    Ok(ThumbnailWithDimensions {
+        thumbnail_base64,
+        original_width,
+        original_height,
+    })
 }
 
 /// Validates the file path and converts it to a short path name (8.3 format) for Windows.
@@ -239,12 +390,33 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
     }
 }
 
+/// Validates an image file by checking its header for valid format magic numbers.
+/// This is a lightweight check that doesn't require full image decoding.
+///
+/// # Arguments
+/// * `path` - Path to the image file to validate
+///
+/// # Returns
+/// * `Ok(())` if the file has a valid image format header
+/// * `Err(String)` with error description if validation fails
+fn validate_image_header(path: &Path) -> Result<(), String> {
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("Failed to open image file: {}", e))?;
+
+    let mut buffer = [0u8; IMAGE_HEADER_BUFFER_SIZE];
+    file.read(&mut buffer)
+        .map_err(|e| format!("Failed to read image header: {}", e))?;
+
+    // Detect format from header magic numbers
+    image::guess_format(&buffer)
+        .map_err(|e| format!("Failed to detect valid image format: {}", e))?;
+
+    Ok(())
+}
+
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
     let metadata =
         fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
-
-    let (width, height) =
-        get_image_dimensions(path).map_err(|e| format!("Failed to get image dimensions: {}", e))?;
 
     let filename = path
         .file_name()
@@ -265,11 +437,12 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         .map_err(|e| format!("Failed to convert time: {}", e))?
         .as_secs();
 
+    // Validate image header to ensure the file is not corrupted
+    validate_image_header(path)?;
+
     Ok(ImageInfo {
         path: path.to_string_lossy().to_string(),
         filename,
-        width,
-        height,
         size: metadata.len(),
         modified,
         format,
@@ -704,7 +877,10 @@ mod tests {
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
-            assert!(result.is_ok(), "Should handle Japanese characters in filename");
+            assert!(
+                result.is_ok(),
+                "Should handle Japanese characters in filename"
+            );
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -712,5 +888,40 @@ mod tests {
             assert!(result.is_err());
             assert!(result.unwrap_err().contains("only supported on Windows"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_load_image_progressive_with_low_resolution() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "low_res.jpg");
+
+        let result = load_image_progressive(image_path.to_string_lossy().to_string()).await;
+        assert!(result.is_ok());
+
+        let data = result.unwrap();
+        assert_eq!(data.path, image_path.to_string_lossy().to_string());
+        assert!(data.preview.is_none()); // Low resolution image should not have preview
+        assert!(!data.is_high_resolution);
+        assert!(!data.full.base64.is_empty());
+        assert_eq!(data.full.width, 1);
+        assert_eq!(data.full.height, 1);
+    }
+
+    #[tokio::test]
+    async fn test_load_image_progressive_with_nonexistent_file() {
+        let result = load_image_progressive("/nonexistent/image.jpg".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("File not found"));
+    }
+
+    #[tokio::test]
+    async fn test_load_image_progressive_with_unsupported_format() {
+        let temp_dir = create_temp_dir();
+        let text_file = temp_dir.path().join("test.txt");
+        fs::write(&text_file, "not an image").unwrap();
+
+        let result = load_image_progressive(text_file.to_string_lossy().to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported file format"));
     }
 }

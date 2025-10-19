@@ -23,8 +23,6 @@ export const mockImageData: ImageData = {
 export const mockImageInfo: ImageInfo = {
   path: "/test/image.jpg",
   filename: "image.jpg",
-  width: 800,
-  height: 600,
   size: 1024,
   modified: Date.now(),
   format: "jpeg",
@@ -34,8 +32,6 @@ export const mockImageList: ImageInfo[] = [
   {
     path: "/test/image1.jpg",
     filename: "image1.jpg",
-    width: 800,
-    height: 600,
     size: 1024,
     modified: Date.now() - 3000,
     format: "jpeg",
@@ -43,8 +39,6 @@ export const mockImageList: ImageInfo[] = [
   {
     path: "/test/image2.png",
     filename: "image2.png",
-    width: 1024,
-    height: 768,
     size: 2048,
     modified: Date.now() - 2000,
     format: "png",
@@ -52,8 +46,6 @@ export const mockImageList: ImageInfo[] = [
   {
     path: "/test/image3.gif",
     filename: "image3.gif",
-    width: 400,
-    height: 300,
     size: 512,
     modified: Date.now() - 1000,
     format: "gif",

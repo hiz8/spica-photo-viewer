@@ -3,7 +3,10 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { mockImageData } from "../../utils/testUtils";
 import type { ImageData as AppImageData } from "../../types";
-import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
+import {
+  IMAGE_LOAD_DEBOUNCE_MS,
+  PREVIEW_THUMBNAIL_SIZE,
+} from "../../constants/timing";
 
 // Mock the invoke function
 vi.mock("@tauri-apps/api/core", () => ({
@@ -30,6 +33,11 @@ const mockStore = {
     imageTop: 0 as number | undefined,
     imageWidth: 0 as number | undefined,
     imageHeight: 0 as number | undefined,
+  },
+  folder: {
+    path: "",
+    images: [],
+    sortOrder: "name" as const,
   },
   cache: {
     preloaded: new Map(),
@@ -75,6 +83,7 @@ describe("ImageViewer", () => {
     mockStore.view.imageTop = 0;
     mockStore.view.imageWidth = 0;
     mockStore.view.imageHeight = 0;
+    mockStore.folder.images = [];
     mockStore.cache.preloaded = new Map();
   });
 
@@ -188,7 +197,20 @@ describe("ImageViewer", () => {
   describe("Image loading", () => {
     it("should load image on mount when path exists but no data", async () => {
       vi.useFakeTimers();
-      mockInvoke.mockResolvedValue(mockImageData);
+      // Mock two-phase loading
+      mockInvoke.mockImplementation((cmd) => {
+        if (cmd === "generate_thumbnail_with_dimensions") {
+          return Promise.resolve({
+            thumbnail_base64: "thumbnail_data",
+            original_width: mockImageData.width,
+            original_height: mockImageData.height,
+          });
+        }
+        if (cmd === "load_image") {
+          return Promise.resolve(mockImageData);
+        }
+        return Promise.reject(new Error(`Unexpected command: ${cmd}`));
+      });
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
 
@@ -208,10 +230,20 @@ describe("ImageViewer", () => {
       // Wait for async operation
       await act(async () => {
         await vi.waitFor(() => {
+          // Should call generate_thumbnail_with_dimensions for preview
+          expect(mockInvoke).toHaveBeenCalledWith(
+            "generate_thumbnail_with_dimensions",
+            {
+              path: "/test/image.jpg",
+              size: PREVIEW_THUMBNAIL_SIZE,
+            },
+          );
+          // Should call load_image for full resolution
           expect(mockInvoke).toHaveBeenCalledWith("load_image", {
             path: "/test/image.jpg",
           });
-          expect(mockStore.setImageData).toHaveBeenCalledWith(mockImageData);
+          // Should set image data twice (preview + full)
+          expect(mockStore.setImageData).toHaveBeenCalled();
           expect(mockStore.fitToWindow).toHaveBeenCalledWith(
             mockImageData.width,
             mockImageData.height,

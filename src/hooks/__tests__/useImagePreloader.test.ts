@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { mockImageData, mockImageList } from "../../utils/testUtils";
 import type { ImageInfo } from "../../types";
-import { PRELOAD_DELAY_MS } from "../../constants/timing";
+import {
+  PRELOAD_DELAY_MS,
+  PREVIEW_THUMBNAIL_SIZE,
+} from "../../constants/timing";
 
 // Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
@@ -11,8 +14,6 @@ const createMockImageInfo = (
 ): ImageInfo => ({
   path: `/test/image${index}.jpg`,
   filename: `image${index}.jpg`,
-  width: 800,
-  height: 600,
   size: 1024,
   modified: Date.now() - index * 1000,
   format: "jpeg",
@@ -43,10 +44,10 @@ const mockStore = {
     index: -1,
   },
   cache: {
-    preloaded: new Map(),
+    thumbnails: new Map(),
   },
-  setPreloadedImage: vi.fn(),
-  removePreloadedImage: vi.fn(),
+  setCachedThumbnail: vi.fn(),
+  removeCachedThumbnail: vi.fn(),
 };
 
 vi.mock("../../store", () => ({
@@ -63,7 +64,7 @@ describe("useImagePreloader", () => {
     vi.clearAllMocks();
     mockStore.folder.images = [] as ImageInfo[];
     mockStore.currentImage.index = -1;
-    mockStore.cache.preloaded = new Map();
+    mockStore.cache.thumbnails = new Map();
     mockInvoke.mockClear();
 
     // Clear console spy to avoid interference between tests
@@ -77,7 +78,8 @@ describe("useImagePreloader", () => {
 
   describe("preloadImage", () => {
     it("should preload image successfully", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      const mockThumbnail = "thumbnail_base64_data";
+      mockInvoke.mockResolvedValue(mockThumbnail);
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -85,18 +87,19 @@ describe("useImagePreloader", () => {
         await result.current.preloadImage("/test/image.jpg");
       });
 
-      expect(mockInvoke).toHaveBeenCalledWith("load_image", {
+      expect(mockInvoke).toHaveBeenCalledWith("generate_image_thumbnail", {
         path: "/test/image.jpg",
+        size: PREVIEW_THUMBNAIL_SIZE,
       });
-      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+      expect(mockStore.setCachedThumbnail).toHaveBeenCalledWith(
         "/test/image.jpg",
-        mockImageData,
+        mockThumbnail,
       );
     });
 
     it("should not preload if image already in cache", async () => {
-      // Setup cache with existing image
-      mockStore.cache.preloaded.set("/test/image.jpg", mockImageData);
+      // Setup cache with existing thumbnail
+      mockStore.cache.thumbnails.set("/test/image.jpg", "cached_thumbnail");
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -105,14 +108,14 @@ describe("useImagePreloader", () => {
       });
 
       expect(mockInvoke).not.toHaveBeenCalled();
-      expect(mockStore.setPreloadedImage).not.toHaveBeenCalled();
+      expect(mockStore.setCachedThumbnail).not.toHaveBeenCalled();
     });
 
     it("should handle preload error gracefully", async () => {
       const consoleWarnSpy = vi
         .spyOn(console, "warn")
         .mockImplementation(() => {});
-      mockInvoke.mockRejectedValue(new Error("Failed to load image"));
+      mockInvoke.mockRejectedValue(new Error("Failed to load thumbnail"));
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -120,21 +123,19 @@ describe("useImagePreloader", () => {
         await result.current.preloadImage("/test/failed-image.jpg");
       });
 
-      expect(mockInvoke).toHaveBeenCalledWith("load_image", {
+      expect(mockInvoke).toHaveBeenCalledWith("generate_image_thumbnail", {
         path: "/test/failed-image.jpg",
+        size: PREVIEW_THUMBNAIL_SIZE,
       });
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        "Failed to preload image: failed-image.jpg",
+        "Failed to preload thumbnail: failed-image.jpg",
         expect.any(Error),
       );
 
-      // Should mark as error in cache
-      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+      // Should mark as failed in cache (empty string)
+      expect(mockStore.setCachedThumbnail).toHaveBeenCalledWith(
         "/test/failed-image.jpg",
-        expect.objectContaining({
-          format: "error",
-          path: "/test/failed-image.jpg",
-        }),
+        "",
       );
 
       consoleWarnSpy.mockRestore();
@@ -170,7 +171,8 @@ describe("useImagePreloader", () => {
     });
 
     it("should prioritize next and previous images", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      const mockThumbnail = "thumbnail_data";
+      mockInvoke.mockResolvedValue(mockThumbnail);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1; // Middle image
 
@@ -185,12 +187,13 @@ describe("useImagePreloader", () => {
     });
 
     it("should skip already cached images in queue", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      const mockThumbnail = "thumbnail_data";
+      mockInvoke.mockResolvedValue(mockThumbnail);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
       // Mark first image as already cached
-      mockStore.cache.preloaded.set(mockImageList[0].path, mockImageData);
+      mockStore.cache.thumbnails.set(mockImageList[0].path, mockThumbnail);
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -220,10 +223,10 @@ describe("useImagePreloader", () => {
       mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 25; // Middle position
 
-      // Add images to cache that are outside range
-      mockStore.cache.preloaded.set("/test/image0.jpg", mockImageData); // Far from current
-      mockStore.cache.preloaded.set("/test/image49.jpg", mockImageData); // Far from current
-      mockStore.cache.preloaded.set("/test/image25.jpg", mockImageData); // Current image
+      // Add thumbnails to cache that are outside range
+      mockStore.cache.thumbnails.set("/test/image0.jpg", "thumbnail"); // Far from current
+      mockStore.cache.thumbnails.set("/test/image49.jpg", "thumbnail"); // Far from current
+      mockStore.cache.thumbnails.set("/test/image25.jpg", "thumbnail"); // Current image
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -231,15 +234,15 @@ describe("useImagePreloader", () => {
         result.current.cleanupCache();
       });
 
-      // Should remove images outside ±20 range
-      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      // Should remove images outside ±5 range
+      expect(mockStore.removeCachedThumbnail).toHaveBeenCalledWith(
         "/test/image0.jpg",
       );
-      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      expect(mockStore.removeCachedThumbnail).toHaveBeenCalledWith(
         "/test/image49.jpg",
       );
       // Should not remove current image
-      expect(mockStore.removePreloadedImage).not.toHaveBeenCalledWith(
+      expect(mockStore.removeCachedThumbnail).not.toHaveBeenCalledWith(
         "/test/image25.jpg",
       );
 
@@ -256,13 +259,14 @@ describe("useImagePreloader", () => {
       });
 
       // Should not remove anything
-      expect(mockStore.removePreloadedImage).not.toHaveBeenCalled();
+      expect(mockStore.removeCachedThumbnail).not.toHaveBeenCalled();
     });
   });
 
   describe("startPreloading", () => {
     it("should process preload queue with concurrent limit", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      const mockThumbnail = "thumbnail_data";
+      mockInvoke.mockResolvedValue(mockThumbnail);
 
       // Setup many images to exceed concurrent limit
       const manyImages = Array.from({ length: 10 }, (_, i) =>
@@ -280,7 +284,7 @@ describe("useImagePreloader", () => {
 
       // Should have been called for multiple images
       expect(mockInvoke).toHaveBeenCalled();
-      expect(mockStore.setPreloadedImage).toHaveBeenCalled();
+      expect(mockStore.setCachedThumbnail).toHaveBeenCalled();
     });
 
     it("should handle partial failures in concurrent loading", async () => {
@@ -288,9 +292,10 @@ describe("useImagePreloader", () => {
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
+      const mockThumbnail = "thumbnail_data";
       // Mock some successful and some failed loads
       mockInvoke
-        .mockResolvedValueOnce(mockImageData) // First call succeeds
+        .mockResolvedValueOnce(mockThumbnail) // First call succeeds
         .mockRejectedValueOnce(new Error("Failed")); // Second call fails
 
       mockStore.folder.images = mockImageList as ImageInfo[];
@@ -312,7 +317,8 @@ describe("useImagePreloader", () => {
 
   describe("useEffect integration", () => {
     it("should start preloading when current image changes", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      const mockThumbnail = "thumbnail_data";
+      mockInvoke.mockResolvedValue(mockThumbnail);
       mockStore.folder.images = mockImageList as ImageInfo[];
 
       const { rerender } = renderHook(() => useImagePreloader());
@@ -402,7 +408,7 @@ describe("useImagePreloader", () => {
       mockStore.currentImage.index = 0;
 
       // Add an image that will be cleaned up
-      mockStore.cache.preloaded.set("/test/old-image.jpg", mockImageData);
+      mockStore.cache.thumbnails.set("/test/old-image.jpg", "thumbnail_data");
 
       const { result } = renderHook(() => useImagePreloader());
 

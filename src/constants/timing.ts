@@ -31,10 +31,22 @@ export const RAPID_NAVIGATION_THRESHOLD_MS = 500;
  * Number of images to preload in each direction (±N)
  * Total preloaded images = PRELOAD_RANGE * 2
  */
-export const PRELOAD_RANGE = 20;
+export const PRELOAD_RANGE = 5;
 
 /**
  * Maximum number of concurrent image loads
  * Prevents overwhelming the backend with too many simultaneous requests
  */
 export const MAX_CONCURRENT_LOADS = 3;
+
+/**
+ * Size (in pixels) for preview thumbnails in two-phase loading
+ * Used to generate quick preview before loading full resolution
+ */
+export const PREVIEW_THUMBNAIL_SIZE = 400;
+
+/**
+ * Delay (in milliseconds) to ensure preview is rendered before loading full image
+ * Short delay allows React to update the DOM with preview data
+ */
+export const PREVIEW_RENDER_DELAY_MS = 10;

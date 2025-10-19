@@ -1,8 +1,6 @@
 export interface ImageInfo {
   path: string;
   filename: string;
-  width: number;
-  height: number;
   size: number;
   modified: number;
   format: "jpeg" | "png" | "webp" | "gif";
@@ -14,6 +12,19 @@ export interface ImageData {
   width: number;
   height: number;
   format: string;
+}
+
+export interface ProgressiveImageData {
+  path: string;
+  preview: ImageData | null;
+  full: ImageData;
+  is_high_resolution: boolean;
+}
+
+export interface ThumbnailWithDimensions {
+  thumbnail_base64: string;
+  original_width: number;
+  original_height: number;
 }
 
 export interface AppState {

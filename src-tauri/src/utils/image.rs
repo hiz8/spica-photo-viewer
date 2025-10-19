@@ -62,6 +62,21 @@ pub fn generate_thumbnail(path: &Path, size: u32) -> Result<String, ImageError> 
     Ok(general_purpose::STANDARD.encode(&buffer))
 }
 
+/// Generate a preview image for progressive loading
+/// Returns a base64-encoded JPEG image resized to fit within the specified dimensions
+pub fn generate_preview_image(path: &Path, max_size: u32) -> Result<String, ImageError> {
+    let img = image::open(path)?;
+
+    // Use thumbnail for fast resizing with aspect ratio preservation
+    let preview = img.thumbnail(max_size, max_size);
+
+    let mut buffer = Vec::new();
+    // Use JPEG format with good quality for preview
+    preview.write_to(&mut std::io::Cursor::new(&mut buffer), ImageFormat::Jpeg)?;
+
+    Ok(general_purpose::STANDARD.encode(&buffer))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
