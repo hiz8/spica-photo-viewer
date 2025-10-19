@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { mockImageData } from "../../utils/testUtils";
 import type { ImageData as AppImageData } from "../../types";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
 
 // Mock the invoke function
 vi.mock("@tauri-apps/api/core", () => ({
@@ -195,9 +196,9 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Advance past the 200ms debounce delay
+      // Advance past the debounce delay
       await act(async () => {
-        vi.advanceTimersByTime(200);
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
@@ -230,9 +231,9 @@ describe("ImageViewer", () => {
 
       render(<ImageViewer />);
 
-      // Advance past the 200ms debounce delay
+      // Advance past the debounce delay
       await act(async () => {
-        vi.advanceTimersByTime(200);
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
@@ -257,9 +258,9 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Advance past the 200ms debounce delay
+      // Advance past the debounce delay
       await act(async () => {
-        vi.advanceTimersByTime(200);
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
       });
 

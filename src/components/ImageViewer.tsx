@@ -105,11 +105,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         }
       } finally {
         // Only clear loading if this request is still active
-        // This prevents aborted requests from clearing loading state of newer requests
-        if (
-          activeLoadPathRef.current === path &&
-          !abortControllerRef.current?.signal.aborted
-        ) {
+        // This prevents older requests from clearing loading state of newer requests
+        if (activeLoadPathRef.current === path) {
           setLoading(false);
         }
       }
