@@ -362,6 +362,44 @@ describe("AppStore", () => {
       expect(state.view.panY).toBe(60);
     });
 
+    it("should not save view state during rapid navigation", async () => {
+      const { navigateToImage, setZoom, setPan, setCurrentImage } =
+        useAppStore.getState();
+
+      // Helper to wait for rapid navigation timeout (500ms)
+      const waitForNavigationTimeout = () =>
+        new Promise((resolve) => setTimeout(resolve, 550));
+
+      // Image 0: zoom 120, pan (10, 20)
+      setCurrentImage(mockImageList[0].path, 0);
+      setZoom(120);
+      setPan(10, 20);
+
+      // Wait for navigation timeout to save image 0's state
+      await waitForNavigationTimeout();
+
+      // Navigate to image 1: zoom 150, pan (30, 40)
+      navigateToImage(1);
+      setZoom(150);
+      setPan(30, 40);
+
+      // Immediately navigate to image 2 (within 500ms) - this is rapid navigation
+      // Image 1's view state should NOT be saved
+      navigateToImage(2);
+
+      const state = useAppStore.getState();
+
+      // Image 0's state should be saved (we waited 550ms before navigating away)
+      expect(state.cache.imageViewStates.has(mockImageList[0].path)).toBe(true);
+      const image0State = state.cache.imageViewStates.get(mockImageList[0].path);
+      expect(image0State?.zoom).toBe(120);
+      expect(image0State?.panX).toBe(10);
+      expect(image0State?.panY).toBe(20);
+
+      // Image 1's state should NOT be saved (rapid navigation - navigated away within 500ms)
+      expect(state.cache.imageViewStates.has(mockImageList[1].path)).toBe(false);
+    });
+
     it("should not navigate to invalid index", () => {
       const { navigateToImage } = useAppStore.getState();
       const initialState = useAppStore.getState().currentImage;
