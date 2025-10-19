@@ -42,6 +42,7 @@ const mockStore = {
   fitToWindow: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
+  setPreloadedImage: vi.fn(),
 };
 
 vi.mock("../../store", () => ({

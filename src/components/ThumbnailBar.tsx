@@ -158,7 +158,7 @@ const ThumbnailBar: React.FC = () => {
     }, THUMBNAIL_SCROLL_DEBOUNCE_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [currentImage.index, scrollToActiveItem]);
+  }, [scrollToActiveItem]);
 
   useEffect(() => {
     const thumbnailBar = thumbnailBarRef.current;

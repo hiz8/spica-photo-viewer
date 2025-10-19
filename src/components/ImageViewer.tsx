@@ -23,6 +23,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     fitToWindow,
     updateImageDimensions,
     resizeToImage,
+    setPreloadedImage,
   } = useAppStore();
 
   useImagePreloader();
@@ -87,8 +88,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           updateImageDimensions(imageData.width, imageData.height);
         }
 
-        // Add to preload cache
-        cache.preloaded.set(path, imageData);
+        // Add to preload cache using store action
+        setPreloadedImage(path, imageData);
       } catch (error) {
         // Don't log errors if the load was cancelled
         if (!abortControllerRef.current?.signal.aborted) {
@@ -96,10 +97,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setImageError(error as Error);
         }
       } finally {
-        // Only clear loading state if not cancelled
-        if (!abortControllerRef.current?.signal.aborted) {
-          setLoading(false);
-        }
+        // Always clear loading state, even if cancelled
+        setLoading(false);
       }
     },
     [
@@ -108,6 +107,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       setLoading,
       setImageError,
       setImageData,
+      setPreloadedImage,
       fitToWindow,
       updateImageDimensions,
     ],
