@@ -44,9 +44,3 @@ export const MAX_CONCURRENT_LOADS = 3;
  * Used to generate quick preview before loading full resolution
  */
 export const PREVIEW_THUMBNAIL_SIZE = 400;
-
-/**
- * Delay (in milliseconds) to ensure preview is rendered before loading full image
- * Short delay allows React to update the DOM with preview data
- */
-export const PREVIEW_RENDER_DELAY_MS = 10;

@@ -12,7 +12,8 @@ use walkdir::WalkDir;
 const MAX_PATH_EXTENDED: usize = 32768;
 
 // Image validation constants
-const IMAGE_HEADER_BUFFER_SIZE: usize = 16;
+// 64 bytes is sufficient for all common image formats including TIFF and modern formats
+const IMAGE_HEADER_BUFFER_SIZE: usize = 64;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
@@ -293,11 +294,13 @@ fn validate_image_header(path: &Path) -> Result<(), String> {
         fs::File::open(path).map_err(|e| format!("Failed to open image file: {}", e))?;
 
     let mut buffer = [0u8; IMAGE_HEADER_BUFFER_SIZE];
-    file.read_exact(&mut buffer)
+    let bytes_read = file
+        .read(&mut buffer)
         .map_err(|e| format!("Failed to read image header: {}", e))?;
 
-    // Detect format from header magic numbers
-    image::guess_format(&buffer)
+    // Detect format from header magic numbers using only the bytes actually read
+    // This handles both small files and proper validation for larger headers
+    image::guess_format(&buffer[..bytes_read])
         .map_err(|e| format!("Failed to detect valid image format: {}", e))?;
 
     Ok(())

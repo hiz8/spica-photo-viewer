@@ -10,7 +10,6 @@ import type {
 import {
   IMAGE_LOAD_DEBOUNCE_MS,
   PREVIEW_THUMBNAIL_SIZE,
-  PREVIEW_RENDER_DELAY_MS,
 } from "../constants/timing";
 
 interface ImageViewerProps {
@@ -127,12 +126,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               );
             }
 
-            // Small delay to ensure preview is rendered
-            await new Promise((resolve) =>
-              setTimeout(resolve, PREVIEW_RENDER_DELAY_MS),
-            );
-
-            // Check again if loading was cancelled
+            // Check again if loading was cancelled before starting full image load
             if (signal.aborted || activeLoadPathRef.current !== path) {
               return;
             }
