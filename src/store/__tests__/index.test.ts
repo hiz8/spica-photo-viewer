@@ -25,6 +25,7 @@ describe("AppStore", () => {
       folder: {
         path: "",
         images: [],
+        imagesByPath: new Map(),
         sortOrder: "name",
       },
       view: {

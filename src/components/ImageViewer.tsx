@@ -80,8 +80,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         setLoading(true);
         setImageError(null);
 
-        // Get image info from folder to determine format
-        const imageInfo = folder.images.find((img) => img.path === path);
+        // Get image info from folder to determine format (O(1) lookup)
+        const imageInfo = folder.imagesByPath.get(path);
 
         // Use two-phase loading for all images except GIFs (to preserve animation)
         const skipProgressive = imageInfo?.format === "gif";

@@ -37,6 +37,7 @@ const mockStore = {
   folder: {
     path: "",
     images: [],
+    imagesByPath: new Map(),
     sortOrder: "name" as const,
   },
   cache: {

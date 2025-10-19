@@ -1,7 +1,5 @@
-use crate::commands::cache::{get_cached_thumbnail, set_cached_thumbnail};
 use crate::utils::image::{
-    generate_preview_image, generate_thumbnail, get_image_dimensions, is_supported_image,
-    load_image_as_base64,
+    generate_thumbnail, get_image_dimensions, is_supported_image, load_image_as_base64,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -39,14 +37,6 @@ pub struct ThumbnailWithDimensions {
     pub thumbnail_base64: String,
     pub original_width: u32,
     pub original_height: u32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProgressiveImageData {
-    pub path: String,
-    pub preview: Option<ImageData>,
-    pub full: ImageData,
-    pub is_high_resolution: bool,
 }
 
 #[tauri::command]
@@ -108,107 +98,6 @@ pub async fn load_image(path: String) -> Result<ImageData, String> {
         width,
         height,
         format,
-    })
-}
-
-/// Load image with progressive loading support
-/// Returns preview image (if high resolution) and full resolution image
-#[tauri::command]
-pub async fn load_image_progressive(path: String) -> Result<ProgressiveImageData, String> {
-    let image_path = Path::new(&path);
-
-    if !image_path.exists() || !image_path.is_file() {
-        return Err("File not found".to_string());
-    }
-
-    if !is_supported_image(image_path) {
-        return Err("Unsupported file format".to_string());
-    }
-
-    // Get image dimensions first to determine if preview is needed
-    let (width, height) = get_image_dimensions(image_path)
-        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
-
-    let format = image_path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_lowercase();
-
-    // High resolution threshold: 2000x2000 pixels
-    const HIGH_RES_THRESHOLD: u32 = 2000;
-    let is_high_resolution = width >= HIGH_RES_THRESHOLD || height >= HIGH_RES_THRESHOLD;
-
-    // For GIF files, skip progressive loading to preserve animation
-    let skip_progressive = format == "gif";
-
-    // Generate preview for high resolution images (except GIF)
-    let preview = if is_high_resolution && !skip_progressive {
-        const PREVIEW_SIZE: u32 = 400;
-
-        // Try to get cached thumbnail first for faster loading
-        let preview_base64 = match get_cached_thumbnail(path.clone(), Some(PREVIEW_SIZE)).await {
-            Ok(Some(cached)) => {
-                // Cache hit - use cached thumbnail
-                Some(cached)
-            }
-            _ => {
-                // Cache miss - generate new preview
-                match generate_preview_image(image_path, PREVIEW_SIZE) {
-                    Ok(base64) => {
-                        // Cache the generated preview for future use
-                        let _ =
-                            set_cached_thumbnail(path.clone(), base64.clone(), Some(PREVIEW_SIZE))
-                                .await;
-                        Some(base64)
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to generate preview: {}", e);
-                        None
-                    }
-                }
-            }
-        };
-
-        preview_base64.map(|base64| {
-            // Calculate preview dimensions maintaining aspect ratio
-            let (preview_width, preview_height) = if width > height {
-                let ratio = PREVIEW_SIZE as f64 / width as f64;
-                (PREVIEW_SIZE, (height as f64 * ratio) as u32)
-            } else {
-                let ratio = PREVIEW_SIZE as f64 / height as f64;
-                ((width as f64 * ratio) as u32, PREVIEW_SIZE)
-            };
-
-            ImageData {
-                path: path.clone(),
-                base64,
-                width: preview_width,
-                height: preview_height,
-                format: "jpeg".to_string(), // Preview is always JPEG
-            }
-        })
-    } else {
-        None
-    };
-
-    // Load full resolution image
-    let base64_data =
-        load_image_as_base64(image_path).map_err(|e| format!("Failed to load image: {}", e))?;
-
-    let full = ImageData {
-        path: path.clone(),
-        base64: base64_data,
-        width,
-        height,
-        format,
-    };
-
-    Ok(ProgressiveImageData {
-        path,
-        preview,
-        full,
-        is_high_resolution: is_high_resolution && !skip_progressive,
     })
 }
 
@@ -890,38 +779,4 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_load_image_progressive_with_low_resolution() {
-        let temp_dir = create_temp_dir();
-        let image_path = create_test_jpeg(temp_dir.path(), "low_res.jpg");
-
-        let result = load_image_progressive(image_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-
-        let data = result.unwrap();
-        assert_eq!(data.path, image_path.to_string_lossy().to_string());
-        assert!(data.preview.is_none()); // Low resolution image should not have preview
-        assert!(!data.is_high_resolution);
-        assert!(!data.full.base64.is_empty());
-        assert_eq!(data.full.width, 1);
-        assert_eq!(data.full.height, 1);
-    }
-
-    #[tokio::test]
-    async fn test_load_image_progressive_with_nonexistent_file() {
-        let result = load_image_progressive("/nonexistent/image.jpg".to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("File not found"));
-    }
-
-    #[tokio::test]
-    async fn test_load_image_progressive_with_unsupported_format() {
-        let temp_dir = create_temp_dir();
-        let text_file = temp_dir.path().join("test.txt");
-        fs::write(&text_file, "not an image").unwrap();
-
-        let result = load_image_progressive(text_file.to_string_lossy().to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported file format"));
-    }
 }

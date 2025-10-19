@@ -9,8 +9,7 @@ use commands::cache::{
 };
 use commands::file::{
     generate_image_thumbnail, generate_thumbnail_with_dimensions, get_folder_images,
-    get_startup_file, handle_dropped_file, load_image, load_image_progressive, open_with_dialog,
-    validate_image_file,
+    get_startup_file, handle_dropped_file, load_image, open_with_dialog, validate_image_file,
 };
 use commands::window::{
     get_window_position, get_window_state, maximize_window, resize_window_to_image,
@@ -24,7 +23,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_folder_images,
             load_image,
-            load_image_progressive,
             handle_dropped_file,
             validate_image_file,
             generate_image_thumbnail,

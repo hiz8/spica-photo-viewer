@@ -57,6 +57,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   folder: {
     path: "",
     images: [],
+    imagesByPath: new Map(),
     sortOrder: "name",
   },
   view: {
@@ -108,11 +109,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
     })),
 
-  setFolderImages: (path, images) =>
-    set((state) => ({
+  setFolderImages: (path, images) => {
+    // Build imagesByPath Map for O(1) lookup performance
+    const imagesByPath = new Map(images.map((img) => [img.path, img]));
+
+    return set((state) => ({
       folder: {
         path,
         images,
+        imagesByPath,
         sortOrder: "name",
       },
       cache: {
@@ -120,7 +125,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         imageViewStates:
           state.folder.path !== path ? new Map() : state.cache.imageViewStates,
       },
-    })),
+    }));
+  },
 
   setView: (viewUpdate) =>
     set((state) => ({

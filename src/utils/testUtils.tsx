@@ -83,6 +83,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   folder: {
     path: "",
     images: [],
+    imagesByPath: new Map(),
     sortOrder: "name" as const,
   },
   view: {

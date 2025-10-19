@@ -38,6 +38,7 @@ export interface AppState {
   folder: {
     path: string;
     images: ImageInfo[];
+    imagesByPath: Map<string, ImageInfo>;
     sortOrder: "name" | "date";
   };
 
