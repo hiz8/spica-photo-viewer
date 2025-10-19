@@ -35,7 +35,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const activeLoadPathRef = useRef<string | null>(null);
 
   const loadImage = useCallback(
-    async (path: string) => {
+    async (path: string, signal: AbortSignal) => {
       // Mark this path as actively loading
       activeLoadPathRef.current = path;
 
@@ -56,8 +56,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             throw new Error("Image failed to load previously");
           }
 
-          // Check if loading was cancelled before setting data
-          if (abortControllerRef.current?.signal.aborted) {
+          // Check if loading was cancelled or navigation changed
+          if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
           }
 
@@ -76,8 +76,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         // Note: invoke() cannot be cancelled - AbortController only gates post-invoke handling
         const imageData = await invoke<ImageData>("load_image", { path });
 
-        // Check if loading was cancelled while waiting for invoke
-        if (abortControllerRef.current?.signal.aborted) {
+        // Check if loading was cancelled or navigation changed while waiting for invoke
+        if (signal.aborted || activeLoadPathRef.current !== path) {
           return;
         }
 
@@ -98,8 +98,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         // Add to preload cache using store action
         setPreloadedImage(path, imageData);
       } catch (error) {
-        // Don't log errors if the load was cancelled
-        if (!abortControllerRef.current?.signal.aborted) {
+        // Don't log errors if the load was cancelled or navigation changed
+        if (!signal.aborted && activeLoadPathRef.current === path) {
           console.error("Failed to load image:", error);
           setImageError(error as Error);
         }
@@ -138,8 +138,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
       if (signal.aborted) return;
 
-      // Load the image
-      await loadImage(currentImage.path);
+      // Load the image with the specific signal for this request
+      await loadImage(currentImage.path, signal);
     }, IMAGE_LOAD_DEBOUNCE_MS);
 
     return () => {
