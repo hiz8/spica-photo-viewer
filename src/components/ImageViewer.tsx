@@ -40,9 +40,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       activeLoadPathRef.current = path;
 
       try {
-        setLoading(true);
-        setImageError(null);
-
         // Get fresh cache state to avoid dependency on volatile Maps
         const { cache: currentCache } = useAppStore.getState();
 
@@ -71,6 +68,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           }
           return;
         }
+
+        // Image not preloaded - set loading state before invoking backend
+        setLoading(true);
+        setImageError(null);
 
         // Load image if not preloaded
         // Note: invoke() cannot be cancelled - AbortController only gates post-invoke handling

@@ -264,7 +264,8 @@ describe("ImageViewer", () => {
         await Promise.resolve();
       });
 
-      expect(mockStore.setLoading).toHaveBeenCalledWith(true);
+      // Cache hits (including errors) don't trigger loading state
+      expect(mockStore.setLoading).not.toHaveBeenCalledWith(true);
       expect(mockStore.setImageError).toHaveBeenCalledWith(expect.any(Error));
       expect(mockStore.setLoading).toHaveBeenCalledWith(false);
 
