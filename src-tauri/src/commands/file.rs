@@ -293,7 +293,7 @@ fn validate_image_header(path: &Path) -> Result<(), String> {
         fs::File::open(path).map_err(|e| format!("Failed to open image file: {}", e))?;
 
     let mut buffer = [0u8; IMAGE_HEADER_BUFFER_SIZE];
-    file.read(&mut buffer)
+    file.read_exact(&mut buffer)
         .map_err(|e| format!("Failed to read image header: {}", e))?;
 
     // Detect format from header magic numbers
