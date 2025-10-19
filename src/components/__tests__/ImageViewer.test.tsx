@@ -45,9 +45,15 @@ const mockStore = {
   setPreloadedImage: vi.fn(),
 };
 
-vi.mock("../../store", () => ({
-  useAppStore: vi.fn(() => mockStore),
-}));
+vi.mock("../../store", () => {
+  // Create mock function with getState method
+  const mockUseAppStore = vi.fn(() => mockStore);
+  mockUseAppStore.getState = () => mockStore;
+
+  return {
+    useAppStore: mockUseAppStore,
+  };
+});
 
 import ImageViewer from "../ImageViewer";
 import { invoke } from "@tauri-apps/api/core";

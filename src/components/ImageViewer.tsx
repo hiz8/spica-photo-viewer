@@ -14,7 +14,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const {
     currentImage,
     view,
-    cache,
     setImageData,
     setImageError,
     setLoading,
@@ -33,18 +32,25 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const activeLoadPathRef = useRef<string | null>(null);
 
   const loadImage = useCallback(
     async (path: string) => {
+      // Mark this path as actively loading
+      activeLoadPathRef.current = path;
+
       try {
         setLoading(true);
         setImageError(null);
 
+        // Get fresh cache state to avoid dependency on volatile Maps
+        const { cache: currentCache } = useAppStore.getState();
+
         // Check if this image has saved view state
-        const hasSavedState = cache.imageViewStates.has(path);
+        const hasSavedState = currentCache.imageViewStates.has(path);
 
         // Check if image is already preloaded
-        const preloadedImage = cache.preloaded.get(path);
+        const preloadedImage = currentCache.preloaded.get(path);
         if (preloadedImage) {
           if (preloadedImage.format === "error") {
             throw new Error("Image failed to load previously");
@@ -67,6 +73,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         }
 
         // Load image if not preloaded
+        // Note: invoke() cannot be cancelled - AbortController only gates post-invoke handling
         const imageData = await invoke<ImageData>("load_image", { path });
 
         // Check if loading was cancelled while waiting for invoke
@@ -97,13 +104,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setImageError(error as Error);
         }
       } finally {
-        // Always clear loading state, even if cancelled
-        setLoading(false);
+        // Only clear loading if this request is still active
+        // This prevents aborted requests from clearing loading state of newer requests
+        if (
+          activeLoadPathRef.current === path &&
+          !abortControllerRef.current?.signal.aborted
+        ) {
+          setLoading(false);
+        }
       }
     },
     [
-      cache.imageViewStates,
-      cache.preloaded,
       setLoading,
       setImageError,
       setImageData,
