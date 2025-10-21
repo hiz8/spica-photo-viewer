@@ -23,7 +23,8 @@ tauri-plugin-opener = "2.0"
 tauri-plugin-dialog = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-image = "0.25"
+# Optimize image crate by enabling only the formats we actually use
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 base64 = "0.22"
 walkdir = "2"
 
@@ -34,4 +35,32 @@ windows = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Fou
 tempfile = "3.8"
 tokio-test = "0.4"
 tokio = { version = "1", features = ["macros", "rt"] }
+
+# Optimize build profiles for faster development and smaller release binaries
+[profile.dev]
+# Enable minimal optimization for dev builds (0-3, default is 0)
+# Level 1 provides faster runtime with minimal compile time impact
+opt-level = 1
+# Keep debug info for better debugging experience
+debug = true
+# Enable incremental compilation (default for dev, but explicit here)
+incremental = true
+
+# Optimize dependencies even in dev mode for faster runtime
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+# Maximum optimization for release builds
+opt-level = 3
+# Enable Link-Time Optimization for better optimization across crates
+# "thin" LTO provides good balance between compile time and optimization
+lto = "thin"
+# Reduce number of codegen units for better optimization (default is 16)
+# Lower values = better optimization but slower compile time
+codegen-units = 1
+# Strip debug symbols to reduce binary size
+strip = true
+# Panic strategy: "abort" produces smaller binaries
+panic = "abort"
 
