@@ -6,26 +6,28 @@ import {
   PRELOAD_RANGE,
   MAX_CONCURRENT_LOADS,
   PREVIEW_THUMBNAIL_SIZE,
+  SMALL_THUMBNAIL_SIZE,
 } from "../constants/timing";
 
 export const useImagePreloader = () => {
-  const {
-    folder,
-    currentImage,
-    cache,
-    setCachedThumbnail,
-    removeCachedThumbnail,
-  } = useAppStore();
+  const { folder, currentImage } = useAppStore();
 
   const preloadImage = useCallback(
     async (imagePath: string): Promise<void> => {
+      // Get fresh cache state to avoid stale closure
+      const {
+        cache: currentCache,
+        setCachedThumbnail: setCachedThumb,
+        setCachedSmallThumbnail: setSmallThumb,
+      } = useAppStore.getState();
+
       // Check if already cached
-      if (cache.thumbnails.has(imagePath)) {
+      if (currentCache.thumbnails.has(imagePath)) {
         return;
       }
 
       try {
-        // Generate thumbnail for preloading
+        // Generate 400px preview thumbnail for preloading
         const thumbnailBase64 = await invoke<string>(
           "generate_image_thumbnail",
           {
@@ -35,7 +37,26 @@ export const useImagePreloader = () => {
         );
 
         // Update cache in store using proper action
-        setCachedThumbnail(imagePath, thumbnailBase64);
+        setCachedThumb(imagePath, thumbnailBase64);
+
+        // Also generate 20px small thumbnail for thumbnail bar
+        const smallThumbnailBase64 = await invoke<string>(
+          "generate_image_thumbnail",
+          {
+            path: imagePath,
+            size: SMALL_THUMBNAIL_SIZE,
+          },
+        );
+
+        // Save to disk cache for persistence
+        await invoke("set_cached_thumbnail", {
+          path: imagePath,
+          thumbnail: smallThumbnailBase64,
+          size: SMALL_THUMBNAIL_SIZE,
+        });
+
+        // Update memory cache
+        setSmallThumb(imagePath, smallThumbnailBase64);
 
         console.log(`Preloaded: ${imagePath.split(/[\\/]/).pop()}`);
       } catch (error) {
@@ -45,19 +66,23 @@ export const useImagePreloader = () => {
         );
 
         // Mark as failed in cache to avoid retry (empty string)
-        setCachedThumbnail(imagePath, "");
+        setCachedThumb(imagePath, "");
       }
     },
-    [cache.thumbnails, setCachedThumbnail],
+    [], // No dependencies - always use fresh state from getState()
   );
 
   const getPreloadQueue = useCallback(() => {
-    if (currentImage.index === -1 || !folder.images.length) {
+    // Get fresh state to avoid stale closure
+    const { currentImage: current, folder: currentFolder, cache: currentCache } =
+      useAppStore.getState();
+
+    if (current.index === -1 || !currentFolder.images.length) {
       return [];
     }
 
     const queue: string[] = [];
-    const currentIndex = currentImage.index;
+    const currentIndex = current.index;
 
     // Add images in order of priority:
     // 1. Next image (most likely to be viewed)
@@ -67,9 +92,9 @@ export const useImagePreloader = () => {
     for (let range = 1; range <= PRELOAD_RANGE; range++) {
       // Add next image
       const nextIndex = currentIndex + range;
-      if (nextIndex < folder.images.length) {
-        const nextPath = folder.images[nextIndex].path;
-        if (!cache.thumbnails.has(nextPath)) {
+      if (nextIndex < currentFolder.images.length) {
+        const nextPath = currentFolder.images[nextIndex].path;
+        if (!currentCache.thumbnails.has(nextPath)) {
           queue.push(nextPath);
         }
       }
@@ -77,51 +102,126 @@ export const useImagePreloader = () => {
       // Add previous image
       const prevIndex = currentIndex - range;
       if (prevIndex >= 0) {
-        const prevPath = folder.images[prevIndex].path;
-        if (!cache.thumbnails.has(prevPath)) {
+        const prevPath = currentFolder.images[prevIndex].path;
+        if (!currentCache.thumbnails.has(prevPath)) {
           queue.push(prevPath);
         }
       }
     }
 
     return queue;
-  }, [currentImage.index, folder.images, cache.thumbnails]);
+  }, []); // No dependencies - always use fresh state from getState()
 
   const cleanupCache = useCallback(() => {
-    if (currentImage.index === -1 || !folder.images.length) {
+    // Get fresh state to avoid stale closure
+    const {
+      currentImage: current,
+      folder: currentFolder,
+      cache: currentCache,
+      removeCachedThumbnail: removeThumb,
+      removeCachedSmallThumbnail: removeSmallThumb,
+    } = useAppStore.getState();
+
+    if (current.index === -1 || !currentFolder.images.length) {
       return;
     }
 
-    const currentIndex = currentImage.index;
+    const currentIndex = current.index;
     const imagesToKeep = new Set<string>();
 
     // Keep current image and ±PRELOAD_RANGE images
     for (
       let i = Math.max(0, currentIndex - PRELOAD_RANGE);
-      i <= Math.min(folder.images.length - 1, currentIndex + PRELOAD_RANGE);
+      i <= Math.min(currentFolder.images.length - 1, currentIndex + PRELOAD_RANGE);
       i++
     ) {
-      imagesToKeep.add(folder.images[i].path);
+      imagesToKeep.add(currentFolder.images[i].path);
     }
 
-    // Remove thumbnails outside the range
+    // Remove 400px preview thumbnails outside the range
     const keysToRemove: string[] = [];
-    cache.thumbnails.forEach((_, path) => {
+    currentCache.thumbnails.forEach((_, path) => {
       if (!imagesToKeep.has(path)) {
         keysToRemove.push(path);
       }
     });
 
     keysToRemove.forEach((path) => {
-      removeCachedThumbnail(path);
+      removeThumb(path);
       console.log(`Cleaned from cache: ${path.split(/[\\/]/).pop()}`);
     });
-  }, [
-    currentImage.index,
-    folder.images,
-    cache.thumbnails,
-    removeCachedThumbnail,
-  ]);
+
+    // Remove 20px small thumbnails outside the range
+    const smallKeysToRemove: string[] = [];
+    currentCache.smallThumbnails.forEach((_, path) => {
+      if (!imagesToKeep.has(path)) {
+        smallKeysToRemove.push(path);
+      }
+    });
+
+    smallKeysToRemove.forEach((path) => {
+      removeSmallThumb(path);
+      console.log(`Cleaned small thumbnail from cache: ${path.split(/[\\/]/).pop()}`);
+    });
+  }, []); // No dependencies - always use fresh state from getState()
+
+  const loadCurrentImageThumbnail = useCallback(
+    async (imagePath: string): Promise<void> => {
+      // Get fresh cache state to avoid stale closure
+      const { cache: currentCache, setCachedSmallThumbnail: setSmallThumb } =
+        useAppStore.getState();
+
+      // Check if already cached
+      if (currentCache.smallThumbnails.has(imagePath)) {
+        return;
+      }
+
+      try {
+        // Check disk cache first
+        const cachedThumbnail = await invoke<string | null>(
+          "get_cached_thumbnail",
+          {
+            path: imagePath,
+            size: SMALL_THUMBNAIL_SIZE,
+          },
+        );
+
+        if (cachedThumbnail) {
+          setSmallThumb(imagePath, cachedThumbnail);
+          return;
+        }
+
+        // Generate 20px small thumbnail for current image
+        const smallThumbnailBase64 = await invoke<string>(
+          "generate_image_thumbnail",
+          {
+            path: imagePath,
+            size: SMALL_THUMBNAIL_SIZE,
+          },
+        );
+
+        // Save to disk cache for persistence
+        await invoke("set_cached_thumbnail", {
+          path: imagePath,
+          thumbnail: smallThumbnailBase64,
+          size: SMALL_THUMBNAIL_SIZE,
+        });
+
+        // Update memory cache
+        setSmallThumb(imagePath, smallThumbnailBase64);
+
+        console.log(
+          `Generated thumbnail for current image: ${imagePath.split(/[\\/]/).pop()}`,
+        );
+      } catch (error) {
+        console.warn(
+          `Failed to generate thumbnail for current image: ${imagePath.split(/[\\/]/).pop()}`,
+          error,
+        );
+      }
+    },
+    [], // No dependencies - always use fresh state from getState()
+  );
 
   const startPreloading = useCallback(async () => {
     const queue = getPreloadQueue();
@@ -145,17 +245,26 @@ export const useImagePreloader = () => {
   }, [getPreloadQueue, cleanupCache, preloadImage]);
 
   // Start preloading when current image changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Functions use getState() for fresh data
   useEffect(() => {
     if (currentImage.index !== -1 && folder.images.length > 0) {
+      // Immediately load thumbnail for current image
+      const currentImagePath = folder.images[currentImage.index]?.path;
+      if (currentImagePath) {
+        loadCurrentImageThumbnail(currentImagePath);
+      }
+
       // Delay preloading to avoid interfering with rapid navigation
       const timeoutId = setTimeout(startPreloading, PRELOAD_DELAY_MS);
       return () => clearTimeout(timeoutId);
     }
-  }, [currentImage.index, folder.images.length, startPreloading]);
+  }, [currentImage.index, folder.images.length]);
 
   return {
     preloadImage,
     startPreloading,
     cleanupCache,
+    loadCurrentImageThumbnail,
+    getPreloadQueue,
   };
 };

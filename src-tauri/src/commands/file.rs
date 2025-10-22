@@ -3,17 +3,12 @@ use crate::utils::image::{
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Read;
 use std::path::Path;
 use walkdir::WalkDir;
 
 // Windows API constants
 #[cfg(target_os = "windows")]
 const MAX_PATH_EXTENDED: usize = 32768;
-
-// Image validation constants
-// 64 bytes is sufficient for all common image formats including TIFF and modern formats
-const IMAGE_HEADER_BUFFER_SIZE: usize = 64;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ImageInfo {
@@ -280,32 +275,6 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
     }
 }
 
-/// Validates an image file by checking its header for valid format magic numbers.
-/// This is a lightweight check that doesn't require full image decoding.
-///
-/// # Arguments
-/// * `path` - Path to the image file to validate
-///
-/// # Returns
-/// * `Ok(())` if the file has a valid image format header
-/// * `Err(String)` with error description if validation fails
-fn validate_image_header(path: &Path) -> Result<(), String> {
-    let mut file =
-        fs::File::open(path).map_err(|e| format!("Failed to open image file: {}", e))?;
-
-    let mut buffer = [0u8; IMAGE_HEADER_BUFFER_SIZE];
-    let bytes_read = file
-        .read(&mut buffer)
-        .map_err(|e| format!("Failed to read image header: {}", e))?;
-
-    // Detect format from header magic numbers using only the bytes actually read
-    // This handles both small files and proper validation for larger headers
-    image::guess_format(&buffer[..bytes_read])
-        .map_err(|e| format!("Failed to detect valid image format: {}", e))?;
-
-    Ok(())
-}
-
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
     let metadata =
         fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
@@ -328,9 +297,6 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("Failed to convert time: {}", e))?
         .as_secs();
-
-    // Validate image header to ensure the file is not corrupted
-    validate_image_header(path)?;
 
     Ok(ImageInfo {
         path: path.to_string_lossy().to_string(),
@@ -405,7 +371,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_folder_images_skips_corrupted_images() {
+    async fn test_get_folder_images_includes_corrupted_images() {
         let temp_dir = create_temp_dir();
 
         // Create valid and corrupted images
@@ -416,8 +382,10 @@ mod tests {
         assert!(result.is_ok());
 
         let images = result.unwrap();
-        assert_eq!(images.len(), 1); // Only valid image
-        assert_eq!(images[0].filename, "valid.jpg");
+        // Both images are included in folder scan (validation happens during load)
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[0].filename, "corrupted.jpg");
+        assert_eq!(images[1].filename, "valid.jpg");
     }
 
     #[tokio::test]
@@ -560,8 +528,13 @@ mod tests {
         let temp_dir = create_temp_dir();
         let corrupted_path = create_fake_image(temp_dir.path(), "corrupted.jpg");
 
+        // Corrupted image passes initial file info check (validation happens during load)
         let result = handle_dropped_file(corrupted_path.to_string_lossy().to_string()).await;
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        // But it should fail when actually loaded
+        let load_result = load_image(corrupted_path.to_string_lossy().to_string()).await;
+        assert!(load_result.is_err());
     }
 
     #[test]

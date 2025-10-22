@@ -38,6 +38,8 @@ interface AppActions {
   removePreloadedImage: (path: string) => void;
   setCachedThumbnail: (path: string, base64: string) => void;
   removeCachedThumbnail: (path: string) => void;
+  setCachedSmallThumbnail: (path: string, base64: string) => void;
+  removeCachedSmallThumbnail: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
   openFileDialog: () => Promise<void>;
@@ -70,6 +72,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   cache: {
     thumbnails: new Map(),
+    smallThumbnails: new Map(),
     preloaded: new Map(),
     imageViewStates: new Map(),
     lastNavigationTime: 0,
@@ -518,6 +521,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
         cache: {
           ...state.cache,
           thumbnails: newThumbnails,
+        },
+      };
+    }),
+
+  setCachedSmallThumbnail: (path, base64) =>
+    set((state) => {
+      const newSmallThumbnails = new Map(state.cache.smallThumbnails);
+      newSmallThumbnails.set(path, base64);
+      return {
+        cache: {
+          ...state.cache,
+          smallThumbnails: newSmallThumbnails,
+        },
+      };
+    }),
+
+  removeCachedSmallThumbnail: (path) =>
+    set((state) => {
+      const newSmallThumbnails = new Map(state.cache.smallThumbnails);
+      newSmallThumbnails.delete(path);
+      return {
+        cache: {
+          ...state.cache,
+          smallThumbnails: newSmallThumbnails,
         },
       };
     }),

@@ -44,3 +44,9 @@ export const MAX_CONCURRENT_LOADS = 3;
  * Used to generate quick preview before loading full resolution
  */
 export const PREVIEW_THUMBNAIL_SIZE = 400;
+
+/**
+ * Size (in pixels) for small thumbnails in the thumbnail bar
+ * Used for the horizontal navigation strip at the bottom
+ */
+export const SMALL_THUMBNAIL_SIZE = 20;

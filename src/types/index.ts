@@ -56,7 +56,8 @@ export interface AppState {
   };
 
   cache: {
-    thumbnails: Map<string, string>;
+    thumbnails: Map<string, string>; // 400px preview thumbnails for preloading
+    smallThumbnails: Map<string, string>; // 20px thumbnails for thumbnail bar
     preloaded: Map<string, ImageData>;
     imageViewStates: Map<string, ImageViewState>;
     lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation
@@ -104,7 +105,8 @@ export interface UIState {
 }
 
 export interface CacheState {
-  thumbnails: Map<string, string>;
+  thumbnails: Map<string, string>; // 400px preview thumbnails for preloading
+  smallThumbnails: Map<string, string>; // 20px thumbnails for thumbnail bar
   preloaded: Map<string, ImageData>;
   imageViewStates: Map<string, ImageViewState>;
   lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation

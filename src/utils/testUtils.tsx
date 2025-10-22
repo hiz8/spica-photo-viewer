@@ -96,6 +96,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   },
   cache: {
     thumbnails: new Map(),
+    smallThumbnails: new Map(),
     preloaded: new Map(),
     imageViewStates: new Map(),
     lastNavigationTime: 0,
@@ -131,6 +132,10 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   openImageFromPath: vi.fn(),
   setPreloadedImage: vi.fn(),
   removePreloadedImage: vi.fn(),
+  setCachedThumbnail: vi.fn(),
+  removeCachedThumbnail: vi.fn(),
+  setCachedSmallThumbnail: vi.fn(),
+  removeCachedSmallThumbnail: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
   openFileDialog: vi.fn(),
