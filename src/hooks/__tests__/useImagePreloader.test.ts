@@ -54,9 +54,12 @@ const mockStore = {
 };
 
 vi.mock("../../store", () => ({
-  useAppStore: Object.assign(vi.fn(() => mockStore), {
-    getState: () => mockStore,
-  }),
+  useAppStore: Object.assign(
+    vi.fn(() => mockStore),
+    {
+      getState: () => mockStore,
+    },
+  ),
 }));
 
 import { useImagePreloader } from "../useImagePreloader";
@@ -235,7 +238,7 @@ describe("useImagePreloader", () => {
   });
 
   describe("cleanupCache", () => {
-    it("should remove images outside preload range", () => {
+    it("should remove 400px preview thumbnails outside preload range", () => {
       const consoleLogSpy = vi
         .spyOn(console, "log")
         .mockImplementation(() => {});
@@ -248,7 +251,7 @@ describe("useImagePreloader", () => {
       mockStore.folder.images = manyImages as ImageInfo[];
       mockStore.currentImage.index = 25; // Middle position
 
-      // Add thumbnails to cache that are outside range
+      // Add 400px thumbnails to cache that are outside range
       mockStore.cache.thumbnails.set("/test/image0.jpg", "thumbnail"); // Far from current
       mockStore.cache.thumbnails.set("/test/image49.jpg", "thumbnail"); // Far from current
       mockStore.cache.thumbnails.set("/test/image25.jpg", "thumbnail"); // Current image
@@ -259,7 +262,7 @@ describe("useImagePreloader", () => {
         result.current.cleanupCache();
       });
 
-      // Should remove images outside ±5 range
+      // Should remove 400px thumbnails outside ±5 range
       expect(mockStore.removeCachedThumbnail).toHaveBeenCalledWith(
         "/test/image0.jpg",
       );
@@ -270,6 +273,45 @@ describe("useImagePreloader", () => {
       expect(mockStore.removeCachedThumbnail).not.toHaveBeenCalledWith(
         "/test/image25.jpg",
       );
+
+      consoleLogSpy.mockRestore();
+    });
+
+    it("should keep 20px small thumbnails permanently", () => {
+      const consoleLogSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => {});
+
+      // Setup cache with many images
+      const manyImages = Array.from({ length: 50 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+
+      mockStore.folder.images = manyImages as ImageInfo[];
+      mockStore.currentImage.index = 25; // Middle position
+
+      // Add 20px small thumbnails to cache that are outside range
+      mockStore.cache.smallThumbnails.set(
+        "/test/image0.jpg",
+        "small_thumbnail",
+      ); // Far from current
+      mockStore.cache.smallThumbnails.set(
+        "/test/image49.jpg",
+        "small_thumbnail",
+      ); // Far from current
+      mockStore.cache.smallThumbnails.set(
+        "/test/image25.jpg",
+        "small_thumbnail",
+      ); // Current image
+
+      const { result } = renderHook(() => useImagePreloader());
+
+      act(() => {
+        result.current.cleanupCache();
+      });
+
+      // Should NOT remove any 20px small thumbnails (kept permanently)
+      expect(mockStore.removeCachedSmallThumbnail).not.toHaveBeenCalled();
 
       consoleLogSpy.mockRestore();
     });
@@ -285,6 +327,7 @@ describe("useImagePreloader", () => {
 
       // Should not remove anything
       expect(mockStore.removeCachedThumbnail).not.toHaveBeenCalled();
+      expect(mockStore.removeCachedSmallThumbnail).not.toHaveBeenCalled();
     });
   });
 
@@ -443,7 +486,7 @@ describe("useImagePreloader", () => {
       consoleLogSpy.mockRestore();
     });
 
-    it("should log cleanup operations", () => {
+    it("should log cleanup operations for 400px thumbnails only", () => {
       const consoleLogSpy = vi
         .spyOn(console, "log")
         .mockImplementation(() => {});
@@ -451,8 +494,14 @@ describe("useImagePreloader", () => {
       mockStore.folder.images = [mockImageList[1]] as ImageInfo[]; // Only one image
       mockStore.currentImage.index = 0;
 
-      // Add an image that will be cleaned up
+      // Add a 400px thumbnail that will be cleaned up
       mockStore.cache.thumbnails.set("/test/old-image.jpg", "thumbnail_data");
+
+      // Add a 20px small thumbnail that should NOT be cleaned up
+      mockStore.cache.smallThumbnails.set(
+        "/test/old-small-image.jpg",
+        "small_thumbnail_data",
+      );
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -460,8 +509,14 @@ describe("useImagePreloader", () => {
         result.current.cleanupCache();
       });
 
+      // Should log cleanup for 400px thumbnail
       expect(consoleLogSpy).toHaveBeenCalledWith(
         "Cleaned from cache: old-image.jpg",
+      );
+
+      // Should NOT log cleanup for 20px small thumbnail
+      expect(consoleLogSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining("Cleaned small thumbnail"),
       );
 
       consoleLogSpy.mockRestore();

@@ -74,8 +74,11 @@ export const useImagePreloader = () => {
 
   const getPreloadQueue = useCallback(() => {
     // Get fresh state to avoid stale closure
-    const { currentImage: current, folder: currentFolder, cache: currentCache } =
-      useAppStore.getState();
+    const {
+      currentImage: current,
+      folder: currentFolder,
+      cache: currentCache,
+    } = useAppStore.getState();
 
     if (current.index === -1 || !currentFolder.images.length) {
       return [];
@@ -119,7 +122,6 @@ export const useImagePreloader = () => {
       folder: currentFolder,
       cache: currentCache,
       removeCachedThumbnail: removeThumb,
-      removeCachedSmallThumbnail: removeSmallThumb,
     } = useAppStore.getState();
 
     if (current.index === -1 || !currentFolder.images.length) {
@@ -132,7 +134,8 @@ export const useImagePreloader = () => {
     // Keep current image and ±PRELOAD_RANGE images
     for (
       let i = Math.max(0, currentIndex - PRELOAD_RANGE);
-      i <= Math.min(currentFolder.images.length - 1, currentIndex + PRELOAD_RANGE);
+      i <=
+      Math.min(currentFolder.images.length - 1, currentIndex + PRELOAD_RANGE);
       i++
     ) {
       imagesToKeep.add(currentFolder.images[i].path);
@@ -151,18 +154,8 @@ export const useImagePreloader = () => {
       console.log(`Cleaned from cache: ${path.split(/[\\/]/).pop()}`);
     });
 
-    // Remove 20px small thumbnails outside the range
-    const smallKeysToRemove: string[] = [];
-    currentCache.smallThumbnails.forEach((_, path) => {
-      if (!imagesToKeep.has(path)) {
-        smallKeysToRemove.push(path);
-      }
-    });
-
-    smallKeysToRemove.forEach((path) => {
-      removeSmallThumb(path);
-      console.log(`Cleaned small thumbnail from cache: ${path.split(/[\\/]/).pop()}`);
-    });
+    // Note: 20px small thumbnails are kept permanently for thumbnail bar display
+    // They are only cleared when changing folders or explicitly requested
   }, []); // No dependencies - always use fresh state from getState()
 
   const loadCurrentImageThumbnail = useCallback(
