@@ -1757,7 +1757,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.1",
 ]
 
 [[package]]
@@ -4017,7 +4017,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "walkdir",
- "windows 0.62.0",
+ "windows 0.62.1",
 ]
 
 [[package]]
@@ -5382,14 +5382,13 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.62.0"
+version = "0.62.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9579d0e6970fd5250aa29aba5994052385ff55cf7b28a059e484bb79ea842e42"
+checksum = "49e6c4a1f363c8210c6f77ba24f645c61c6fb941eccf013da691f7e09515b8ac"
 dependencies = [
  "windows-collections 0.3.1",
  "windows-core 0.62.1",
  "windows-future 0.3.1",
- "windows-link 0.2.0",
  "windows-numerics 0.3.0",
 ]
 
