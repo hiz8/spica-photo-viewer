@@ -68,7 +68,9 @@ const AboutDialog: React.FC = () => {
 
         <div className="about-dialog-content">
           <div className="about-logo">
-            <div className="logo-icon">📸</div>
+            <div className="logo-icon">
+              <img src="/icon.svg" alt="Spica Logo" width={60} height={60} />
+            </div>
             <p className="version">Version {version}</p>
           </div>
 
