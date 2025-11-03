@@ -366,7 +366,7 @@ describe("AppStore", () => {
     });
 
     it("should not save view state during rapid navigation", () => {
-      vi.useFakeTimers();
+      vi.useFakeTimers({ now: 0 });
 
       const { navigateToImage, setZoom, setPan, setCurrentImage } =
         useAppStore.getState();
