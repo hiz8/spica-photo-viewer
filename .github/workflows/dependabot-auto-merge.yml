@@ -7,6 +7,7 @@ on:
       - completed
 
 permissions:
+  actions: read
   pull-requests: write
   contents: write
 
@@ -45,6 +46,7 @@ jobs:
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
+          pr-number: ${{ steps.pr.outputs.number }}
 
       - name: Determine if auto-merge is allowed
         id: auto-merge-decision
@@ -55,6 +57,10 @@ jobs:
           echo "Update type: $UPDATE_TYPE"
           echo "Dependency type: $DEPENDENCY_TYPE"
 
+          # Auto-merge policy:
+          # - Production dependencies: Only patch updates (conservative approach for stability)
+          # - Development dependencies: Patch and minor updates (less risk for dev tools)
+          # - Indirect dependencies: Treated like dev dependencies (patch and minor updates)
           SHOULD_MERGE=false
 
           # Production dependencies: only patch updates
@@ -65,30 +71,23 @@ jobs:
             else
               echo "✗ Production dependency $UPDATE_TYPE - requires manual review"
             fi
-          fi
-
           # Development dependencies: patch and minor updates
-          if [[ "$DEPENDENCY_TYPE" == "direct:development" ]]; then
+          elif [[ "$DEPENDENCY_TYPE" == "direct:development" ]]; then
             if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]] || [[ "$UPDATE_TYPE" == "version-update:semver-minor" ]]; then
               SHOULD_MERGE=true
               echo "✓ Development dependency $UPDATE_TYPE - will auto-merge"
             else
               echo "✗ Development dependency $UPDATE_TYPE - requires manual review"
             fi
-          fi
-
           # Indirect dependencies: patch and minor updates (treat like dev dependencies)
-          if [[ "$DEPENDENCY_TYPE" == "indirect" ]]; then
+          elif [[ "$DEPENDENCY_TYPE" == "indirect" ]]; then
             if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]] || [[ "$UPDATE_TYPE" == "version-update:semver-minor" ]]; then
               SHOULD_MERGE=true
               echo "✓ Indirect dependency $UPDATE_TYPE - will auto-merge"
             else
               echo "✗ Indirect dependency $UPDATE_TYPE - requires manual review"
             fi
-          fi
-
-          # Log unhandled dependency types
-          if [[ "$DEPENDENCY_TYPE" != "direct:production" && "$DEPENDENCY_TYPE" != "direct:development" && "$DEPENDENCY_TYPE" != "indirect" ]]; then
+          else
             echo "⚠️ Unhandled dependency type: $DEPENDENCY_TYPE - will not auto-merge"
           fi
 
