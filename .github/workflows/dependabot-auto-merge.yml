@@ -21,7 +21,6 @@ jobs:
     steps:
       - name: Get PR number
         id: pr
-        continue-on-error: false
         uses: actions/github-script@v7
         with:
           script: |
@@ -88,11 +87,16 @@ jobs:
             fi
           fi
 
+          # Log unhandled dependency types
+          if [[ "$DEPENDENCY_TYPE" != "direct:production" && "$DEPENDENCY_TYPE" != "direct:development" && "$DEPENDENCY_TYPE" != "indirect" ]]; then
+            echo "⚠️ Unhandled dependency type: $DEPENDENCY_TYPE - will not auto-merge"
+          fi
+
           echo "should_merge=$SHOULD_MERGE" >> $GITHUB_OUTPUT
 
       - name: Approve PR
         if: steps.auto-merge-decision.outputs.should_merge == 'true'
-        continue-on-error: true
+        continue-on-error: true  # Allow merge to proceed even if already approved (e.g., on workflow re-run)
         run: |
           gh pr review --approve "${{ steps.pr.outputs.number }}" --body "Auto-approving Dependabot PR after successful CI checks."
         env:
@@ -102,6 +106,7 @@ jobs:
       - name: Merge PR
         if: steps.auto-merge-decision.outputs.should_merge == 'true'
         run: |
+          # Use --merge to create merge commit (maintains Dependabot's commit history)
           if ! gh pr merge --merge "${{ steps.pr.outputs.number }}"; then
             echo "❌ Merge failed, posting comment on PR"
             gh pr comment "${{ steps.pr.outputs.number }}" --body "❌ Auto-merge failed. Please check for merge conflicts or branch protection rules."
