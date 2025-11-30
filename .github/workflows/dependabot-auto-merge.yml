@@ -1,124 +1,17 @@
 name: Dependabot Auto-Merge
-
-on:
-  workflow_run:
-    workflows: ["CI Tests"]
-    types:
-      - completed
-
-permissions:
-  actions: read
-  pull-requests: write
-  contents: write
-
+on: pull_request
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    # Only run on Dependabot PRs with successful CI
-    if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Get PR number
-        id: pr
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const pulls = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:${context.payload.workflow_run.head_branch}`,
-              state: 'open'
-            });
-
-            if (pulls.data.length === 0) {
-              core.setFailed('No open PR found for this branch');
-              throw new Error('No open PR found for this branch');
-            }
-
-            const pr = pulls.data[0];
-            core.setOutput('number', pr.number);
-            core.setOutput('title', pr.title);
-
-      - name: Fetch Dependabot metadata
-        id: metadata
+      - uses: actions/checkout@v4
+      - id: meta
         uses: dependabot/fetch-metadata@v2
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
-          pr-number: ${{ steps.pr.outputs.number }}
-
-      - name: Determine if auto-merge is allowed
-        id: auto-merge-decision
-        run: |
-          UPDATE_TYPE="${{ steps.metadata.outputs.update-type }}"
-          DEPENDENCY_TYPE="${{ steps.metadata.outputs.dependency-type }}"
-
-          echo "Update type: $UPDATE_TYPE"
-          echo "Dependency type: $DEPENDENCY_TYPE"
-
-          # Auto-merge policy:
-          # - Production dependencies: Only patch updates (conservative approach for stability)
-          # - Development dependencies: Patch and minor updates (less risk for dev tools)
-          # - Indirect dependencies: Treated like dev dependencies (patch and minor updates)
-          SHOULD_MERGE=false
-
-          # Production dependencies: only patch updates
-          if [[ "$DEPENDENCY_TYPE" == "direct:production" ]]; then
-            if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]]; then
-              SHOULD_MERGE=true
-              echo "✓ Production dependency patch update - will auto-merge"
-            else
-              echo "✗ Production dependency $UPDATE_TYPE - requires manual review"
-            fi
-          # Development dependencies: patch and minor updates
-          elif [[ "$DEPENDENCY_TYPE" == "direct:development" ]]; then
-            if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]] || [[ "$UPDATE_TYPE" == "version-update:semver-minor" ]]; then
-              SHOULD_MERGE=true
-              echo "✓ Development dependency $UPDATE_TYPE - will auto-merge"
-            else
-              echo "✗ Development dependency $UPDATE_TYPE - requires manual review"
-            fi
-          # Indirect dependencies: patch and minor updates (treat like dev dependencies)
-          elif [[ "$DEPENDENCY_TYPE" == "indirect" ]]; then
-            if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]] || [[ "$UPDATE_TYPE" == "version-update:semver-minor" ]]; then
-              SHOULD_MERGE=true
-              echo "✓ Indirect dependency $UPDATE_TYPE - will auto-merge"
-            else
-              echo "✗ Indirect dependency $UPDATE_TYPE - requires manual review"
-            fi
-          else
-            echo "⚠️ Unhandled dependency type: $DEPENDENCY_TYPE - will not auto-merge"
-          fi
-
-          echo "should_merge=$SHOULD_MERGE" >> $GITHUB_OUTPUT
-
-      - name: Approve PR
-        if: steps.auto-merge-decision.outputs.should_merge == 'true'
-        continue-on-error: true  # Allow merge to proceed even if already approved (e.g., on workflow re-run)
-        run: |
-          gh pr review --approve "${{ steps.pr.outputs.number }}" --body "Auto-approving Dependabot PR after successful CI checks."
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-
-      - name: Merge PR
-        if: steps.auto-merge-decision.outputs.should_merge == 'true'
-        run: |
-          # Use --merge to create merge commit (maintains Dependabot's commit history)
-          if ! gh pr merge --merge "${{ steps.pr.outputs.number }}"; then
-            echo "❌ Merge failed, posting comment on PR"
-            gh pr comment "${{ steps.pr.outputs.number }}" --body "❌ Auto-merge failed. Please check for merge conflicts or branch protection rules."
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-
-      - name: Comment on PR (skipped)
-        if: steps.auto-merge-decision.outputs.should_merge == 'false'
-        run: |
-          gh pr comment "${{ steps.pr.outputs.number }}" --body "⚠️ This PR requires manual review (update type: ${{ steps.metadata.outputs.update-type }}, dependency type: ${{ steps.metadata.outputs.dependency-type }})."
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
+      - if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' }}
+        run: gh pr merge "${GITHUB_HEAD_REF}" --merge --auto
