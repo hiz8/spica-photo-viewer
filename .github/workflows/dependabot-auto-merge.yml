@@ -10,7 +10,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: meta
         uses: dependabot/fetch-metadata@v2
       - if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' }}
