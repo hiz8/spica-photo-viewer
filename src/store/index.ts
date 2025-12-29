@@ -236,19 +236,54 @@ export const useAppStore = create<AppStore>((set, get) => ({
           });
         }
 
+        // Check if image is already preloaded in cache for instant display
+        const cachedImage = state.cache.preloaded.get(image.path);
+        const imageData =
+          cachedImage && cachedImage.format !== "error" ? cachedImage : null;
+
+        // Determine zoom value
+        let viewZoom = savedViewState?.zoom ?? 100;
+        if (imageData && !savedViewState) {
+          // Calculate fit zoom for cached images without saved state
+          const MARGIN = 20;
+          const availableWidth = window.innerWidth - MARGIN * 2;
+          const availableHeight =
+            window.innerHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2;
+          const scaleX = availableWidth / imageData.width;
+          const scaleY = availableHeight / imageData.height;
+          const fitScale = Math.min(scaleX, scaleY);
+          viewZoom = fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+        }
+
+        // Calculate image position for cached images
+        let viewImagePosition = {};
+        if (imageData) {
+          const containerWidth = window.innerWidth;
+          const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
+          const centerX = (containerWidth - imageData.width) / 2;
+          const centerY = (containerHeight - imageData.height) / 2;
+          viewImagePosition = {
+            imageLeft: centerX,
+            imageTop: centerY,
+            imageWidth: imageData.width,
+            imageHeight: imageData.height,
+          };
+        }
+
         return {
           currentImage: {
             ...state.currentImage,
             path: image.path,
             index,
-            data: null, // Always set to null; ImageViewer will load from cache if available
+            data: imageData, // Use cached data if available for instant display, otherwise null
             error: null,
           },
           view: {
             ...state.view,
-            zoom: savedViewState?.zoom ?? 100,
+            zoom: viewZoom,
             panX: savedViewState?.panX ?? 0,
             panY: savedViewState?.panY ?? 0,
+            ...viewImagePosition,
           },
           cache: {
             ...state.cache,
