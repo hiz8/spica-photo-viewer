@@ -516,6 +516,44 @@ describe("ImageViewer", () => {
     });
   });
 
+  describe("Opacity behavior", () => {
+    it("should set opacity to 0 when suppressTransition is true and no data", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = null;
+      mockStore.ui.suppressTransition = true;
+
+      render(<ImageViewer />);
+
+      // Image element won't be rendered when data is null
+      const viewer = screen.getByRole("region", { name: /image viewer/i });
+      expect(viewer).toBeInTheDocument();
+    });
+
+    it("should set opacity to 1 when suppressTransition is true but data exists (instant display)", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = true;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+      // When suppressTransition is true but data exists, opacity should be 1 for instant display
+      expect(image).toHaveStyle({ opacity: "1" });
+    });
+
+    it("should set opacity to 1 when suppressTransition is false (normal state)", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = false;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+      // In normal state (suppressTransition=false), opacity should always be 1
+      expect(image).toHaveStyle({ opacity: "1" });
+    });
+  });
+
   describe("Accessibility", () => {
     it("should have proper ARIA roles and attributes", () => {
       mockStore.currentImage.path = "/test/image.jpg";

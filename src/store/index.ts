@@ -342,7 +342,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
               }
               // Create new timeout that will reset suppressTransition after delay
               return setTimeout(() => {
-                get().setSuppressTransition(false);
+                const currentState = get();
+                set({
+                  ui: {
+                    ...currentState.ui,
+                    suppressTransition: false,
+                    suppressTransitionTimeoutId: null,
+                  },
+                });
               }, 100);
             })(),
           },
