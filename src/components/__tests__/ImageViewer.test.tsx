@@ -488,6 +488,32 @@ describe("ImageViewer", () => {
 
       expect(image).toHaveStyle({ transition: "none" });
     });
+
+    it("should enable transition in normal state (not dragging, not suppressed)", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = false;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+
+      // In normal state (not dragging, suppressTransition=false), transition should be enabled
+      expect(image).toHaveStyle({ transition: "transform 0.1s ease-out" });
+    });
+
+    it("should disable transition when suppressTransition is true", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = true;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+
+      // When suppressTransition is true, transition should be disabled
+      expect(image).toHaveStyle({ transition: "none" });
+    });
   });
 
   describe("Accessibility", () => {

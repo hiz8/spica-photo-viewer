@@ -353,6 +353,7 @@ interface AppState {
     isDragOver: boolean; // For drag & drop feedback
     error: Error | null;
     suppressTransition: boolean; // Suppress animations during navigation
+    suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null; // Timeout handle for suppressTransition
   };
 }
 ```
