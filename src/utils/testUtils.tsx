@@ -105,6 +105,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     showAbout: false,
     isDragOver: false,
     error: null,
+    suppressTransition: false,
   },
   // Mock functions
   setCurrentImage: vi.fn(),
@@ -120,6 +121,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   setDragOver: vi.fn(),
   setShowAbout: vi.fn(),
   setError: vi.fn(),
+  setSuppressTransition: vi.fn(),
   navigateToImage: vi.fn(),
   navigateNext: vi.fn(),
   navigatePrevious: vi.fn(),

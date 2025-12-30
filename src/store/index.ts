@@ -21,6 +21,7 @@ interface AppActions {
   setDragOver: (isDragOver: boolean) => void;
   setShowAbout: (showAbout: boolean) => void;
   setError: (error: Error | null) => void;
+  setSuppressTransition: (suppress: boolean) => void;
   navigateToImage: (index: number) => void;
   navigateNext: () => void;
   navigatePrevious: () => void;
@@ -79,6 +80,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     showAbout: false,
     isDragOver: false,
     error: null,
+    suppressTransition: false,
   },
 
   // Actions
@@ -208,6 +210,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
     })),
 
+  setSuppressTransition: (suppress) =>
+    set((state) => ({
+      ui: {
+        ...state.ui,
+        suppressTransition: suppress,
+      },
+    })),
+
   navigateToImage: (index) => {
     const state = get();
     const images = state.folder.images;
@@ -290,8 +300,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
             imageViewStates: newImageViewStates,
             lastNavigationTime: now,
           },
+          ui: {
+            ...state.ui,
+            suppressTransition: true,
+          },
         };
       });
+
+      // Reset suppressTransition after delay
+      setTimeout(() => {
+        get().setSuppressTransition(false);
+      }, 100);
     }
   },
 

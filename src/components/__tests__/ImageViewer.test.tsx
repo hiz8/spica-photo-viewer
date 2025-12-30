@@ -44,6 +44,9 @@ const mockStore = {
     preloaded: new Map(),
     imageViewStates: new Map(),
   },
+  ui: {
+    suppressTransition: false,
+  },
   setImageData: vi.fn(),
   setImageError: vi.fn(),
   setLoading: vi.fn(),

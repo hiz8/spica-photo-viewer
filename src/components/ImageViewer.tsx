@@ -20,6 +20,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const {
     currentImage,
     view,
+    ui,
     setImageData,
     setImageError,
     setLoading,
@@ -35,11 +36,12 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [suppressTransition, setSuppressTransition] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeLoadPathRef = useRef<string | null>(null);
+
+  const suppressTransition = ui.suppressTransition;
 
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
@@ -234,16 +236,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     };
   }, [currentImage.path, loadImage]);
 
-  // Suppress transition animation during image navigation
-  useEffect(() => {
-    if (currentImage.path) {
-      // Temporarily disable transition when image path changes
-      setSuppressTransition(true);
-      const timer = setTimeout(() => setSuppressTransition(false), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [currentImage.path]);
-
   // Handle window resize to re-fit image
   useEffect(() => {
     const handleResize = () => {
@@ -364,6 +356,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       cursor: isDragging ? "grabbing" : "grab",
       transition:
         isDragging || suppressTransition ? "none" : "transform 0.1s ease-out",
+      opacity: suppressTransition && !currentImage.data ? 0 : 1,
     };
   }, [
     view.zoom,
