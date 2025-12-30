@@ -56,9 +56,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           currentImage: current,
         } = useAppStore.getState();
 
-        // Check if navigateToImage already set this image's data and position
-        // If so, skip loading to prevent race condition that overwrites calculated position
-        // Use path comparison instead of reference equality to handle state updates
+        // Check if navigateToImage already set this image's data and position.
+        // If so, skip loading to prevent a race condition that would overwrite the
+        // calculated position. Use path comparison instead of reference equality to
+        // handle state updates, and also verify that current.data.path matches the
+        // requested path so we don't reuse stale data from a previous navigation.
         if (
           current.path === path &&
           current.data &&

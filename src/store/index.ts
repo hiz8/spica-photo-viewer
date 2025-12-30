@@ -12,13 +12,23 @@ const calculateFitToWindowZoom = (
   imageHeight: number,
 ): number => {
   const MARGIN = 20;
-  const availableWidth = window.innerWidth - MARGIN * 2;
-  const availableHeight =
-    window.innerHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2;
+  const MIN_DIMENSION = 1; // Minimum to prevent division by zero
+
+  // Validate window dimensions to prevent division by zero
+  const windowWidth = Math.max(MIN_DIMENSION, window.innerWidth);
+  const windowHeight = Math.max(MIN_DIMENSION, window.innerHeight);
+
+  const availableWidth = Math.max(MIN_DIMENSION, windowWidth - MARGIN * 2);
+  const availableHeight = Math.max(
+    MIN_DIMENSION,
+    windowHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2,
+  );
+
   const scaleX = availableWidth / imageWidth;
   const scaleY = availableHeight / imageHeight;
   const fitScale = Math.min(scaleX, scaleY);
   // Only scale down if image is larger than available space
+  // Clamp to minimum 10% for very large images or very small windows
   return fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
 };
 
@@ -229,17 +239,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSuppressTransition: (suppress) =>
     set((state) => {
-      // Clear existing timeout if setting to false
-      if (!suppress && state.ui.suppressTransitionTimeoutId !== null) {
+      // Always clear any existing timeout to avoid stale suppressTransition behavior
+      if (state.ui.suppressTransitionTimeoutId !== null) {
         clearTimeout(state.ui.suppressTransitionTimeoutId);
       }
       return {
         ui: {
           ...state.ui,
           suppressTransition: suppress,
-          suppressTransitionTimeoutId: suppress
-            ? state.ui.suppressTransitionTimeoutId
-            : null,
+          // Always set to null; callers (e.g., navigateToImage) will establish a fresh timeout if needed
+          suppressTransitionTimeoutId: null,
         },
       };
     }),
