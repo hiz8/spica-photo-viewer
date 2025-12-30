@@ -174,6 +174,35 @@ spica-photo-viewer/
 - **Retention**: 24 hours (clean on startup)
 - **Fallback**: Memory-only if file system fails
 
+#### Navigation Performance
+
+To ensure seamless image switching experience comparable to Picasa Photo Viewer:
+
+**Cached Image Display (0ms)**
+- When navigating to a cached image, display it instantly without any blank state
+- Pre-calculate image position, zoom, and dimensions atomically with image data
+- Suppress CSS transitions during navigation to prevent visual animations
+- Only show blank state when loading uncached images
+
+**Flicker Prevention**
+- Manage transition suppression in global store for atomic state updates
+- Set `suppressTransition` flag simultaneously with image data in `navigateToImage`
+- Apply `opacity: 0` only when both transition is suppressed AND image data is absent
+- This ensures cached images appear immediately while uncached images load smoothly
+
+**Implementation Details**
+- Store `suppressTransition` in UI state (not component-local state)
+- Calculate fit-to-window zoom for cached images without saved view state
+- Calculate center position based on container dimensions and image size
+- Reset `suppressTransition` after 100ms to re-enable smooth zoom/pan animations
+- Opacity condition: `suppressTransition && !imageData ? 0 : 1`
+
+**Performance Characteristics**
+- Cache hit: Instant display (0ms, no blank state)
+- Cache miss: Blank state during loading → display when ready
+- No position shift or size adjustment after initial display
+- No unwanted animations during navigation
+
 ### View State Persistence
 
 #### Per-Image State Management
@@ -319,6 +348,7 @@ interface AppState {
     showAbout: boolean;
     isDragOver: boolean; // For drag & drop feedback
     error: Error | null;
+    suppressTransition: boolean; // Suppress animations during navigation
   };
 }
 ```
