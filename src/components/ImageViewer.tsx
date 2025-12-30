@@ -50,12 +50,21 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
       try {
         // Get fresh cache state to avoid dependency on volatile Maps
-        const { cache: currentCache, folder, currentImage: current } = useAppStore.getState();
+        const {
+          cache: currentCache,
+          folder,
+          currentImage: current,
+        } = useAppStore.getState();
 
         // Check if navigateToImage already set this image's data and position
         // If so, skip loading to prevent race condition that overwrites calculated position
         const preloadedImage = currentCache.preloaded.get(path);
-        if (current.path === path && current.data && preloadedImage && current.data === preloadedImage) {
+        if (
+          current.path === path &&
+          current.data &&
+          preloadedImage &&
+          current.data === preloadedImage
+        ) {
           // Image already loaded by navigateToImage with position calculated - skip
           return;
         }
