@@ -58,12 +58,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
         // Check if navigateToImage already set this image's data and position
         // If so, skip loading to prevent race condition that overwrites calculated position
-        const preloadedImage = currentCache.preloaded.get(path);
+        // Use path comparison instead of reference equality to handle state updates
         if (
           current.path === path &&
           current.data &&
-          preloadedImage &&
-          current.data === preloadedImage
+          current.data.path === path
         ) {
           // Image already loaded by navigateToImage with position calculated - skip
           return;
@@ -73,6 +72,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         const hasSavedState = currentCache.imageViewStates.has(path);
 
         // Check if image is already preloaded
+        const preloadedImage = currentCache.preloaded.get(path);
         if (preloadedImage) {
           if (preloadedImage.format === "error") {
             throw new Error("Image failed to load previously");

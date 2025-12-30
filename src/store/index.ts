@@ -325,27 +325,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ui: {
             ...state.ui,
             suppressTransition: true,
-            // Clear old timeout if exists to prevent race conditions during rapid navigation
-            suppressTransitionTimeoutId:
-              state.ui.suppressTransitionTimeoutId !== null
-                ? (clearTimeout(state.ui.suppressTransitionTimeoutId), null)
-                : null,
+            // Atomically create new timeout and store ID to prevent race conditions
+            suppressTransitionTimeoutId: (() => {
+              // Clear old timeout if exists
+              if (state.ui.suppressTransitionTimeoutId !== null) {
+                clearTimeout(state.ui.suppressTransitionTimeoutId);
+              }
+              // Create new timeout that will reset suppressTransition after delay
+              return setTimeout(() => {
+                get().setSuppressTransition(false);
+              }, 100);
+            })(),
           },
         };
       });
-
-      // Reset suppressTransition after delay and store timeout ID
-      const timeoutId = setTimeout(() => {
-        get().setSuppressTransition(false);
-      }, 100);
-
-      // Store the timeout ID for cleanup
-      set((state) => ({
-        ui: {
-          ...state.ui,
-          suppressTransitionTimeoutId: timeoutId as unknown as number,
-        },
-      }));
     }
   },
 

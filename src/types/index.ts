@@ -33,7 +33,7 @@ export interface UIState {
   isDragOver: boolean;
   error: Error | null;
   suppressTransition: boolean;
-  suppressTransitionTimeoutId: number | null;
+  suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null;
 }
 
 export interface ImageViewState {
