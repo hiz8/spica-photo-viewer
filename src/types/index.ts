@@ -27,6 +27,21 @@ export interface ThumbnailWithDimensions {
   original_height: number;
 }
 
+export interface UIState {
+  isLoading: boolean;
+  showAbout: boolean;
+  isDragOver: boolean;
+  error: Error | null;
+  suppressTransition: boolean;
+  suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null;
+}
+
+export interface ImageViewState {
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
 export interface AppState {
   currentImage: {
     path: string;
@@ -62,12 +77,7 @@ export interface AppState {
     lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation
   };
 
-  ui: {
-    isLoading: boolean;
-    showAbout: boolean;
-    isDragOver: boolean;
-    error: Error | null;
-  };
+  ui: UIState;
 }
 
 export interface ViewState {
@@ -96,13 +106,6 @@ export interface CurrentImageState {
   error: Error | null;
 }
 
-export interface UIState {
-  isLoading: boolean;
-  showAbout: boolean;
-  isDragOver: boolean;
-  error: Error | null;
-}
-
 export interface CacheState {
   thumbnails: Map<string, string>;
   preloaded: Map<string, ImageData>;
@@ -127,12 +130,6 @@ export interface ZoomPanState {
   isDragging: boolean;
   lastMouseX: number;
   lastMouseY: number;
-}
-
-export interface ImageViewState {
-  zoom: number;
-  panX: number;
-  panY: number;
 }
 
 export interface WindowState {

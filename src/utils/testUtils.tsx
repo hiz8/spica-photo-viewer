@@ -105,6 +105,8 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     showAbout: false,
     isDragOver: false,
     error: null,
+    suppressTransition: false,
+    suppressTransitionTimeoutId: null,
   },
   // Mock functions
   setCurrentImage: vi.fn(),

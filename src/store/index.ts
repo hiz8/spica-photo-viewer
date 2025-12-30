@@ -6,6 +6,36 @@ import { RAPID_NAVIGATION_THRESHOLD_MS } from "../constants/timing";
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
 
+// Helper function to calculate fit-to-window zoom level
+const calculateFitToWindowZoom = (
+  imageWidth: number,
+  imageHeight: number,
+): number => {
+  const MARGIN = 20;
+  const MIN_DIMENSION = 1; // Minimum to prevent division by zero
+
+  // Validate image dimensions to prevent division by zero or invalid results
+  const validImageWidth = Math.max(MIN_DIMENSION, imageWidth);
+  const validImageHeight = Math.max(MIN_DIMENSION, imageHeight);
+
+  // Validate window dimensions to prevent division by zero
+  const windowWidth = Math.max(MIN_DIMENSION, window.innerWidth);
+  const windowHeight = Math.max(MIN_DIMENSION, window.innerHeight);
+
+  const availableWidth = Math.max(MIN_DIMENSION, windowWidth - MARGIN * 2);
+  const availableHeight = Math.max(
+    MIN_DIMENSION,
+    windowHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2,
+  );
+
+  const scaleX = availableWidth / validImageWidth;
+  const scaleY = availableHeight / validImageHeight;
+  const fitScale = Math.min(scaleX, scaleY);
+  // Only scale down if image is larger than available space
+  // Clamp to minimum 10% for very large images or very small windows
+  return fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+};
+
 interface AppActions {
   setCurrentImage: (path: string, index: number) => void;
   setImageData: (data: ImageData | null) => void;
@@ -79,6 +109,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     showAbout: false,
     isDragOver: false,
     error: null,
+    suppressTransition: false,
+    suppressTransitionTimeoutId: null,
   },
 
   // Actions
@@ -236,24 +268,77 @@ export const useAppStore = create<AppStore>((set, get) => ({
           });
         }
 
+        // Check if image is already preloaded in cache for instant display
+        const cachedImage = state.cache.preloaded.get(image.path);
+        const imageData =
+          cachedImage && cachedImage.format !== "error" ? cachedImage : null;
+
+        // Determine zoom value
+        let viewZoom = savedViewState?.zoom ?? 100;
+        if (imageData && !savedViewState) {
+          // Calculate fit zoom for cached images without saved state
+          viewZoom = calculateFitToWindowZoom(
+            imageData.width,
+            imageData.height,
+          );
+        }
+
+        // Calculate image position for cached images
+        let viewImagePosition = {};
+        if (imageData) {
+          const containerWidth = window.innerWidth;
+          const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
+          const centerX = (containerWidth - imageData.width) / 2;
+          const centerY = (containerHeight - imageData.height) / 2;
+          viewImagePosition = {
+            imageLeft: centerX,
+            imageTop: centerY,
+            imageWidth: imageData.width,
+            imageHeight: imageData.height,
+          };
+        }
+
         return {
           currentImage: {
             ...state.currentImage,
             path: image.path,
             index,
-            data: null, // Always set to null; ImageViewer will load from cache if available
+            data: imageData, // Use cached data if available for instant display, otherwise null
             error: null,
           },
           view: {
             ...state.view,
-            zoom: savedViewState?.zoom ?? 100,
+            zoom: viewZoom,
             panX: savedViewState?.panX ?? 0,
             panY: savedViewState?.panY ?? 0,
+            ...viewImagePosition,
           },
           cache: {
             ...state.cache,
             imageViewStates: newImageViewStates,
             lastNavigationTime: now,
+          },
+          ui: {
+            ...state.ui,
+            suppressTransition: true,
+            // Atomically create new timeout and store ID to prevent race conditions
+            suppressTransitionTimeoutId: (() => {
+              // Clear old timeout if exists
+              if (state.ui.suppressTransitionTimeoutId !== null) {
+                clearTimeout(state.ui.suppressTransitionTimeoutId);
+              }
+              // Create new timeout that will reset suppressTransition after delay
+              return setTimeout(() => {
+                const currentState = get();
+                set({
+                  ui: {
+                    ...currentState.ui,
+                    suppressTransition: false,
+                    suppressTransitionTimeoutId: null,
+                  },
+                });
+              }, 100);
+            })(),
           },
         };
       });
@@ -364,23 +449,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   fitToWindow: (imageWidth, imageHeight, preserveZoom = false) => {
-    const MARGIN = 20;
-
-    // Calculate available display area with proper margins
-    const availableWidth = window.innerWidth - MARGIN * 2;
-    const availableHeight =
-      window.innerHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2;
-
-    // Calculate scale factors for both dimensions
-    const scaleX = availableWidth / imageWidth;
-    const scaleY = availableHeight / imageHeight;
-
-    // Use the smaller scale to ensure both dimensions fit within available space
-    const fitScale = Math.min(scaleX, scaleY);
-
-    // Only scale down if the image is larger than available space (fitScale < 1)
-    // Keep images at 100% if they fit within the window (fitScale >= 1)
-    const fitZoom = fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+    // Calculate fit-to-window zoom level
+    const fitZoom = calculateFitToWindowZoom(imageWidth, imageHeight);
 
     // Calculate center position for the original image (before CSS scaling)
     // CSS transform will scale from the center (transform-origin: center)

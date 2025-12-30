@@ -20,6 +20,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const {
     currentImage,
     view,
+    ui,
     setImageData,
     setImageError,
     setLoading,
@@ -40,6 +41,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeLoadPathRef = useRef<string | null>(null);
 
+  const suppressTransition = ui.suppressTransition;
+
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
       // Mark this path as actively loading
@@ -47,7 +50,25 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
       try {
         // Get fresh cache state to avoid dependency on volatile Maps
-        const { cache: currentCache, folder } = useAppStore.getState();
+        const {
+          cache: currentCache,
+          folder,
+          currentImage: current,
+        } = useAppStore.getState();
+
+        // Check if navigateToImage already set this image's data and position.
+        // If so, skip loading to prevent a race condition that would overwrite the
+        // calculated position. Use path comparison instead of reference equality to
+        // handle state updates, and also verify that current.data.path matches the
+        // requested path so we don't reuse stale data from a previous navigation.
+        if (
+          current.path === path &&
+          current.data &&
+          current.data.path === path
+        ) {
+          // Image already loaded by navigateToImage with position calculated - skip
+          return;
+        }
 
         // Check if this image has saved view state
         const hasSavedState = currentCache.imageViewStates.has(path);
@@ -351,7 +372,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       height: imageHeight, // Original image height
       transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
       cursor: isDragging ? "grabbing" : "grab",
-      transition: isDragging ? "none" : "transform 0.1s ease-out",
+      transition:
+        isDragging || suppressTransition ? "none" : "transform 0.1s ease-out",
+      opacity: suppressTransition && currentImage.data === null ? 0 : 1,
     };
   }, [
     view.zoom,
@@ -361,6 +384,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     view.imageTop,
     currentImage.data,
     isDragging,
+    suppressTransition,
   ]);
 
   if (!currentImage.path) {

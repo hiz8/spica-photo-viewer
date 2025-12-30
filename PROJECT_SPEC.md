@@ -174,6 +174,43 @@ spica-photo-viewer/
 - **Retention**: 24 hours (clean on startup)
 - **Fallback**: Memory-only if file system fails
 
+#### Navigation Performance
+
+To ensure seamless image switching experience comparable to Picasa Photo Viewer:
+
+**Cached Image Display (0ms)**
+- When navigating to a cached image, display it instantly without any blank state
+- Pre-calculate image position, zoom, and dimensions atomically with image data
+- Suppress CSS transitions during navigation to prevent visual animations
+- Only show blank state when loading uncached images
+
+**Flicker Prevention**
+- Manage transition suppression in global store for atomic state updates
+- Set `suppressTransition` flag simultaneously with image data in `navigateToImage`
+- Apply `opacity: 0` only when both transition is suppressed AND image data is absent
+- This ensures cached images appear immediately while uncached images load smoothly
+
+**Implementation Details**
+- Store `suppressTransition` in UI state (not component-local state)
+- For first-time viewed images (no saved view state), use automatic fit-to-window zoom
+  - For cached images, pre-calculate fit-to-window zoom so they can display instantly with no size/position shift
+  - For uncached images, apply the same fit-to-window zoom after the image data has loaded
+- Calculate center position based on container dimensions and image size
+- Reset `suppressTransition` after 100ms to re-enable smooth zoom/pan animations
+- Image rendering behavior:
+  - Image element only renders when `currentImage.data` is present
+  - Opacity condition: `suppressTransition && currentImage.data === null ? 0 : 1`
+  - Actual behavior in practice:
+    1. No `currentImage.data` → image element not rendered (no opacity applied)
+    2. `suppressTransition = true` and `currentImage.data` present → instant display with opacity 1, no transitions
+    3. `suppressTransition = false` and `currentImage.data` present → normal display with opacity 1 and smooth transitions
+
+**Performance Characteristics**
+- Cache hit: Instant display (0ms, no blank state)
+- Cache miss: Blank state during loading → display when ready
+- No position shift or size adjustment after initial display
+- No unwanted animations during navigation
+
 ### View State Persistence
 
 #### Per-Image State Management
@@ -319,6 +356,8 @@ interface AppState {
     showAbout: boolean;
     isDragOver: boolean; // For drag & drop feedback
     error: Error | null;
+    suppressTransition: boolean; // Suppress animations during navigation
+    suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null; // Timeout handle for suppressTransition
   };
 }
 ```

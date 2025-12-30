@@ -44,6 +44,10 @@ const mockStore = {
     preloaded: new Map(),
     imageViewStates: new Map(),
   },
+  ui: {
+    suppressTransition: false,
+    suppressTransitionTimeoutId: null,
+  },
   setImageData: vi.fn(),
   setImageError: vi.fn(),
   setLoading: vi.fn(),
@@ -471,12 +475,10 @@ describe("ImageViewer", () => {
   });
 
   describe("Transition effects", () => {
-    beforeEach(() => {
+    it("should disable transition during drag", () => {
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
-    });
 
-    it("should disable transition during drag", () => {
       render(<ImageViewer />);
 
       const image = screen.getByRole("img");
@@ -487,12 +489,69 @@ describe("ImageViewer", () => {
       expect(image).toHaveStyle({ transition: "none" });
     });
 
-    it("should enable transition when not dragging", () => {
+    it("should enable transition in normal state (not dragging, not suppressed)", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = false;
+
       render(<ImageViewer />);
 
       const image = screen.getByRole("img");
 
+      // In normal state (not dragging, suppressTransition=false), transition should be enabled
       expect(image).toHaveStyle({ transition: "transform 0.1s ease-out" });
+    });
+
+    it("should disable transition when suppressTransition is true", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = true;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+
+      // When suppressTransition is true, transition should be disabled
+      expect(image).toHaveStyle({ transition: "none" });
+    });
+  });
+
+  describe("Opacity behavior", () => {
+    it("should not render image element when suppressTransition is true and no data", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = null;
+      mockStore.ui.suppressTransition = true;
+
+      render(<ImageViewer />);
+
+      // Image element won't be rendered when data is null
+      const viewer = screen.getByRole("region", { name: /image viewer/i });
+      expect(viewer).toBeInTheDocument();
+      // Note: Cannot test opacity value since image element is not rendered when data is null
+    });
+
+    it("should set opacity to 1 when suppressTransition is true but data exists (instant display)", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = true;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+      // When suppressTransition is true but data exists, opacity should be 1 for instant display
+      expect(image).toHaveStyle({ opacity: "1" });
+    });
+
+    it("should set opacity to 1 when suppressTransition is false (normal state)", () => {
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = mockImageData as AppImageData | null;
+      mockStore.ui.suppressTransition = false;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+      // In normal state (suppressTransition=false), opacity should always be 1
+      expect(image).toHaveStyle({ opacity: "1" });
     });
   });
 
