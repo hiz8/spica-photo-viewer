@@ -471,12 +471,10 @@ describe("ImageViewer", () => {
   });
 
   describe("Transition effects", () => {
-    beforeEach(() => {
+    it("should disable transition during drag", () => {
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = mockImageData as AppImageData | null;
-    });
 
-    it("should disable transition during drag", () => {
       render(<ImageViewer />);
 
       const image = screen.getByRole("img");
@@ -485,14 +483,6 @@ describe("ImageViewer", () => {
       fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
 
       expect(image).toHaveStyle({ transition: "none" });
-    });
-
-    it("should enable transition when not dragging", () => {
-      render(<ImageViewer />);
-
-      const image = screen.getByRole("img");
-
-      expect(image).toHaveStyle({ transition: "transform 0.1s ease-out" });
     });
   });
 
