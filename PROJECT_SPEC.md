@@ -197,11 +197,13 @@ To ensure seamless image switching experience comparable to Picasa Photo Viewer:
   - For uncached images, apply the same fit-to-window zoom after the image data has loaded
 - Calculate center position based on container dimensions and image size
 - Reset `suppressTransition` after 100ms to re-enable smooth zoom/pan animations
-- Opacity condition (using `currentImage.data`): `suppressTransition && !currentImage.data ? 0 : 1`
-  - This creates three states:
-    1. `suppressTransition = true` and no `currentImage.data` → hidden (opacity 0)
-    2. `suppressTransition = true` and `currentImage.data` present → instant display (opacity 1)
-    3. `suppressTransition = false` (regardless of `currentImage.data`) → normal display with transitions (opacity 1)
+- Image rendering behavior:
+  - Image element only renders when `currentImage.data` is present
+  - Opacity condition: `suppressTransition && currentImage.data === null ? 0 : 1`
+  - Actual behavior in practice:
+    1. No `currentImage.data` → image element not rendered (no opacity applied)
+    2. `suppressTransition = true` and `currentImage.data` present → instant display with opacity 1, no transitions
+    3. `suppressTransition = false` and `currentImage.data` present → normal display with opacity 1 and smooth transitions
 
 **Performance Characteristics**
 - Cache hit: Instant display (0ms, no blank state)
