@@ -1039,9 +1039,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
       });
 
@@ -1059,9 +1057,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
       });
 
@@ -1084,9 +1080,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
       });
 
@@ -1094,7 +1088,8 @@ describe("AppStore", () => {
 
       // First navigation
       navigateToImage(0);
-      const firstTimeoutId = useAppStore.getState().ui.suppressTransitionTimeoutId;
+      const firstTimeoutId =
+        useAppStore.getState().ui.suppressTransitionTimeoutId;
       expect(firstTimeoutId).not.toBeNull();
 
       // Fast-forward time by 50ms (halfway through timeout)
@@ -1102,7 +1097,8 @@ describe("AppStore", () => {
 
       // Second navigation before first timeout completes
       navigateToImage(1);
-      const secondTimeoutId = useAppStore.getState().ui.suppressTransitionTimeoutId;
+      const secondTimeoutId =
+        useAppStore.getState().ui.suppressTransitionTimeoutId;
 
       // Should have a new timeout ID
       expect(secondTimeoutId).not.toBeNull();
@@ -1122,9 +1118,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
       });
 
@@ -1166,9 +1160,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
         cache: {
           ...initialState.cache,
@@ -1197,9 +1189,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
         cache: {
           ...initialState.cache,
@@ -1230,9 +1220,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
         cache: {
           ...initialState.cache,
@@ -1270,9 +1258,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
         cache: {
           ...initialState.cache,
@@ -1297,9 +1283,7 @@ describe("AppStore", () => {
         folder: {
           ...initialState.folder,
           images: mockImageList,
-          imagesByPath: new Map(
-            mockImageList.map((img) => [img.path, img]),
-          ),
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
         },
         cache: {
           ...initialState.cache,
