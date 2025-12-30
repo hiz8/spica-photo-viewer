@@ -517,7 +517,7 @@ describe("ImageViewer", () => {
   });
 
   describe("Opacity behavior", () => {
-    it("should set opacity to 0 when suppressTransition is true and no data", () => {
+    it("should not render image element when suppressTransition is true and no data", () => {
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
       mockStore.ui.suppressTransition = true;
@@ -527,6 +527,7 @@ describe("ImageViewer", () => {
       // Image element won't be rendered when data is null
       const viewer = screen.getByRole("region", { name: /image viewer/i });
       expect(viewer).toBeInTheDocument();
+      // Note: Cannot test opacity value since image element is not rendered when data is null
     });
 
     it("should set opacity to 1 when suppressTransition is true but data exists (instant display)", () => {

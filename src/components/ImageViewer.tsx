@@ -374,7 +374,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       cursor: isDragging ? "grabbing" : "grab",
       transition:
         isDragging || suppressTransition ? "none" : "transform 0.1s ease-out",
-      opacity: suppressTransition && !currentImage.data ? 0 : 1,
+      opacity: suppressTransition && currentImage.data === null ? 0 : 1,
     };
   }, [
     view.zoom,

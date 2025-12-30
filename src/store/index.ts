@@ -14,6 +14,10 @@ const calculateFitToWindowZoom = (
   const MARGIN = 20;
   const MIN_DIMENSION = 1; // Minimum to prevent division by zero
 
+  // Validate image dimensions to prevent division by zero or invalid results
+  const validImageWidth = Math.max(MIN_DIMENSION, imageWidth);
+  const validImageHeight = Math.max(MIN_DIMENSION, imageHeight);
+
   // Validate window dimensions to prevent division by zero
   const windowWidth = Math.max(MIN_DIMENSION, window.innerWidth);
   const windowHeight = Math.max(MIN_DIMENSION, window.innerHeight);
@@ -24,8 +28,8 @@ const calculateFitToWindowZoom = (
     windowHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2,
   );
 
-  const scaleX = availableWidth / imageWidth;
-  const scaleY = availableHeight / imageHeight;
+  const scaleX = availableWidth / validImageWidth;
+  const scaleY = availableHeight / validImageHeight;
   const fitScale = Math.min(scaleX, scaleY);
   // Only scale down if image is larger than available space
   // Clamp to minimum 10% for very large images or very small windows
@@ -47,7 +51,6 @@ interface AppActions {
   setDragOver: (isDragOver: boolean) => void;
   setShowAbout: (showAbout: boolean) => void;
   setError: (error: Error | null) => void;
-  setSuppressTransition: (suppress: boolean) => void;
   navigateToImage: (index: number) => void;
   navigateNext: () => void;
   navigatePrevious: () => void;
@@ -236,22 +239,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         error,
       },
     })),
-
-  setSuppressTransition: (suppress) =>
-    set((state) => {
-      // Always clear any existing timeout to avoid stale suppressTransition behavior
-      if (state.ui.suppressTransitionTimeoutId !== null) {
-        clearTimeout(state.ui.suppressTransitionTimeoutId);
-      }
-      return {
-        ui: {
-          ...state.ui,
-          suppressTransition: suppress,
-          // Always set to null; callers (e.g., navigateToImage) will establish a fresh timeout if needed
-          suppressTransitionTimeoutId: null,
-        },
-      };
-    }),
 
   navigateToImage: (index) => {
     const state = get();

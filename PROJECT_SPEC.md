@@ -192,7 +192,9 @@ To ensure seamless image switching experience comparable to Picasa Photo Viewer:
 
 **Implementation Details**
 - Store `suppressTransition` in UI state (not component-local state)
-- Calculate fit-to-window zoom for cached images without saved view state
+- For first-time viewed images (no saved view state), use automatic fit-to-window zoom
+  - For cached images, pre-calculate fit-to-window zoom so they can display instantly with no size/position shift
+  - For uncached images, apply the same fit-to-window zoom after the image data has loaded
 - Calculate center position based on container dimensions and image size
 - Reset `suppressTransition` after 100ms to re-enable smooth zoom/pan animations
 - Opacity condition (using `currentImage.data`): `suppressTransition && !currentImage.data ? 0 : 1`
