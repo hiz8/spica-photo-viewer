@@ -46,6 +46,7 @@ const mockStore = {
   },
   ui: {
     suppressTransition: false,
+    suppressTransitionTimeoutId: null,
   },
   setImageData: vi.fn(),
   setImageError: vi.fn(),

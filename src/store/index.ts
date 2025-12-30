@@ -6,6 +6,18 @@ import { RAPID_NAVIGATION_THRESHOLD_MS } from "../constants/timing";
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
 
+// Helper function to calculate fit-to-window zoom level
+const calculateFitToWindowZoom = (imageWidth: number, imageHeight: number): number => {
+  const MARGIN = 20;
+  const availableWidth = window.innerWidth - MARGIN * 2;
+  const availableHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2;
+  const scaleX = availableWidth / imageWidth;
+  const scaleY = availableHeight / imageHeight;
+  const fitScale = Math.min(scaleX, scaleY);
+  // Only scale down if image is larger than available space
+  return fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+};
+
 interface AppActions {
   setCurrentImage: (path: string, index: number) => void;
   setImageData: (data: ImageData | null) => void;
@@ -81,6 +93,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     isDragOver: false,
     error: null,
     suppressTransition: false,
+    suppressTransitionTimeoutId: null,
   },
 
   // Actions
@@ -211,12 +224,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   setSuppressTransition: (suppress) =>
-    set((state) => ({
-      ui: {
-        ...state.ui,
-        suppressTransition: suppress,
-      },
-    })),
+    set((state) => {
+      // Clear existing timeout if setting to false
+      if (!suppress && state.ui.suppressTransitionTimeoutId !== null) {
+        clearTimeout(state.ui.suppressTransitionTimeoutId);
+      }
+      return {
+        ui: {
+          ...state.ui,
+          suppressTransition: suppress,
+          suppressTransitionTimeoutId: suppress ? state.ui.suppressTransitionTimeoutId : null,
+        },
+      };
+    }),
 
   navigateToImage: (index) => {
     const state = get();
@@ -255,14 +275,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         let viewZoom = savedViewState?.zoom ?? 100;
         if (imageData && !savedViewState) {
           // Calculate fit zoom for cached images without saved state
-          const MARGIN = 20;
-          const availableWidth = window.innerWidth - MARGIN * 2;
-          const availableHeight =
-            window.innerHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2;
-          const scaleX = availableWidth / imageData.width;
-          const scaleY = availableHeight / imageData.height;
-          const fitScale = Math.min(scaleX, scaleY);
-          viewZoom = fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+          viewZoom = calculateFitToWindowZoom(imageData.width, imageData.height);
         }
 
         // Calculate image position for cached images
@@ -303,14 +316,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ui: {
             ...state.ui,
             suppressTransition: true,
+            // Clear old timeout if exists to prevent race conditions during rapid navigation
+            suppressTransitionTimeoutId: state.ui.suppressTransitionTimeoutId !== null
+              ? (clearTimeout(state.ui.suppressTransitionTimeoutId), null)
+              : null,
           },
         };
       });
 
-      // Reset suppressTransition after delay
-      setTimeout(() => {
+      // Reset suppressTransition after delay and store timeout ID
+      const timeoutId = setTimeout(() => {
         get().setSuppressTransition(false);
       }, 100);
+
+      // Store the timeout ID for cleanup
+      set((state) => ({
+        ui: {
+          ...state.ui,
+          suppressTransitionTimeoutId: timeoutId as unknown as number,
+        },
+      }));
     }
   },
 
@@ -418,23 +443,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   fitToWindow: (imageWidth, imageHeight, preserveZoom = false) => {
-    const MARGIN = 20;
-
-    // Calculate available display area with proper margins
-    const availableWidth = window.innerWidth - MARGIN * 2;
-    const availableHeight =
-      window.innerHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2;
-
-    // Calculate scale factors for both dimensions
-    const scaleX = availableWidth / imageWidth;
-    const scaleY = availableHeight / imageHeight;
-
-    // Use the smaller scale to ensure both dimensions fit within available space
-    const fitScale = Math.min(scaleX, scaleY);
-
-    // Only scale down if the image is larger than available space (fitScale < 1)
-    // Keep images at 100% if they fit within the window (fitScale >= 1)
-    const fitZoom = fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+    // Calculate fit-to-window zoom level
+    const fitZoom = calculateFitToWindowZoom(imageWidth, imageHeight);
 
     // Calculate center position for the original image (before CSS scaling)
     // CSS transform will scale from the center (transform-origin: center)
