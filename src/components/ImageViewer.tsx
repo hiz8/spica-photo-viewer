@@ -307,7 +307,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         abortControllerRef.current.abort();
       }
     };
-  }, [currentImage.path, loadImage, ui.thumbnailDisplayed]);
+  }, [currentImage.path, loadImage]);
 
   // Handle window resize to re-fit image
   useEffect(() => {

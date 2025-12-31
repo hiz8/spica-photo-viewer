@@ -5,7 +5,6 @@ import { mockImageData } from "../../utils/testUtils";
 import type { ImageData as AppImageData } from "../../types";
 import {
   IMAGE_LOAD_DEBOUNCE_MS,
-  PREVIEW_THUMBNAIL_SIZE,
 } from "../../constants/timing";
 
 // Mock the invoke function
