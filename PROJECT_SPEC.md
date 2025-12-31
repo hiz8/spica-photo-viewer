@@ -19,7 +19,7 @@
 ### Key Features
 
 1. **Image Display**: Central image viewer with automatic fit-to-window
-2. **Thumbnail Bar**: Horizontal thumbnail strip at bottom (30×30px)
+2. **Thumbnail Bar**: Horizontal thumbnail strip at bottom (20×20px)
 3. **Navigation**: Keyboard and mouse controls for browsing
 4. **Zoom & Pan**: Smooth zoom (10%-2000%) with drag-to-pan capability
 5. **View State Persistence**: Per-image zoom and pan positions remembered within session
@@ -184,33 +184,38 @@ spica-photo-viewer/
 To ensure seamless image switching experience comparable to Picasa Photo Viewer:
 
 **Display Priority (3 levels)**
+
 1. **Cached full-resolution image** (0ms) - Display instantly if image is preloaded in cache
 2. **Thumbnail fallback** (0ms) - Display thumbnail immediately if full image not cached but thumbnail exists
 3. **Loading state** - Show loading indicator if neither cached image nor thumbnail is available
 
 **Cached Image Display (0ms)**
+
 - When navigating to a cached image, display it instantly without any blank state
 - Pre-calculate image position, zoom, and dimensions atomically with image data
 - Suppress CSS transitions during navigation to prevent visual animations
 
 **Thumbnail Fallback**
+
 - If full-resolution image is not cached but thumbnail exists, display thumbnail first
 - Replace with full-resolution image once loaded
 - Provides instant visual feedback while maintaining perceived performance
 
 **Flicker Prevention**
+
 - Manage transition suppression in global store for atomic state updates
 - Set `suppressTransition` flag simultaneously with image data in `navigateToImage`
 - Apply `opacity: 0` only when both transition is suppressed AND image data is absent
 - This ensures cached images appear immediately while uncached images load smoothly
 
 **Implementation Details**
+
 - Store `suppressTransition` in UI state (not component-local state)
 - For first-time viewed images (no saved view state), use automatic fit-to-window zoom
   - For cached images, pre-calculate fit-to-window zoom so they can display instantly with no size/position shift
   - For uncached images, apply the same fit-to-window zoom after the image data has loaded
 - Calculate center position based on container dimensions and image size
-- Reset `suppressTransition` after 100ms to re-enable smooth zoom/pan animations
+- Reset `suppressTransition` after 300ms to re-enable smooth zoom/pan animations
 - Image rendering behavior:
   - Image element only renders when `currentImage.data` is present
   - Opacity condition: `suppressTransition && currentImage.data === null ? 0 : 1`
@@ -220,6 +225,7 @@ To ensure seamless image switching experience comparable to Picasa Photo Viewer:
     3. `suppressTransition = false` and `currentImage.data` present → normal display with opacity 1 and smooth transitions
 
 **Performance Characteristics**
+
 - **Cached image**: Instant display (0ms, no blank state)
 - **Thumbnail available**: Instant thumbnail display (0ms) → upgrade to full image when loaded
 - **Neither cached**: Loading indicator → display when ready
@@ -308,13 +314,21 @@ fn get_startup_file() -> Result<Option<String>, String>
 
 // Thumbnail operations
 #[tauri::command]
-async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result<String, String>
+async fn generate_thumbnail_with_dimensions(path: String, size: Option<u32>)
+  -> Result<ThumbnailWithDimensions, String>
 
 #[tauri::command]
-async fn get_cached_thumbnail(path: String, size: Option<u32>) -> Result<Option<String>, String>
+async fn get_cached_thumbnail(path: String, size: Option<u32>)
+  -> Result<Option<(String, Option<u32>, Option<u32>)>, String>
 
 #[tauri::command]
-async fn set_cached_thumbnail(path: String, thumbnail: String, size: Option<u32>) -> Result<(), String>
+async fn set_cached_thumbnail(
+  path: String,
+  thumbnail: String,
+  size: Option<u32>,
+  width: Option<u32>,
+  height: Option<u32>
+) -> Result<(), String>
 
 // Cache management
 #[tauri::command]
@@ -360,9 +374,10 @@ interface AppState {
 
   // Cache state
   cache: {
-    thumbnails: Map<string, string>; // path -> base64
+    thumbnails: Map<string, { base64: string; width: number; height: number } | "error">; // path -> thumbnail data with dimensions
     preloaded: Map<string, ImageData>; // path -> data
     imageViewStates: Map<string, ImageViewState>; // path -> view state
+    lastNavigationTime: number; // timestamp of last navigation
   };
 
   // UI state

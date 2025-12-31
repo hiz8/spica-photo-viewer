@@ -1,56 +1,73 @@
 import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
+import type { ImageData } from "../types";
 import {
   PRELOAD_DELAY_MS,
   PRELOAD_RANGE,
   MAX_CONCURRENT_LOADS,
-  PREVIEW_THUMBNAIL_SIZE,
 } from "../constants/timing";
 
+/**
+ * Hook for preloading full-resolution images
+ * Only starts after all thumbnails are generated
+ * Preloads up to ±5 images around current position
+ */
 export const useImagePreloader = () => {
   const {
     folder,
     currentImage,
     cache,
-    setCachedThumbnail,
-    removeCachedThumbnail,
+    thumbnailGeneration,
+    setPreloadedImage,
+    removePreloadedImage,
   } = useAppStore();
 
+  /**
+   * Preload full-resolution image
+   */
   const preloadImage = useCallback(
     async (imagePath: string): Promise<void> => {
-      // Check if already cached
-      if (cache.thumbnails.has(imagePath)) {
+      // Check if already preloaded
+      if (cache.preloaded.has(imagePath)) {
         return;
       }
 
       try {
-        // Generate thumbnail for preloading
-        const thumbnailBase64 = await invoke<string>(
-          "generate_image_thumbnail",
-          {
-            path: imagePath,
-            size: PREVIEW_THUMBNAIL_SIZE,
-          },
+        // Load full-resolution image
+        const imageData = await invoke<ImageData>("load_image", {
+          path: imagePath,
+        });
+
+        // Store in preload cache
+        setPreloadedImage(imagePath, imageData);
+
+        console.log(
+          `Preloaded full image: ${imagePath.split(/[\\/]/).pop()}`,
         );
-
-        // Update cache in store using proper action
-        setCachedThumbnail(imagePath, thumbnailBase64);
-
-        console.log(`Preloaded: ${imagePath.split(/[\\/]/).pop()}`);
       } catch (error) {
         console.warn(
-          `Failed to preload thumbnail: ${imagePath.split(/[\\/]/).pop()}`,
+          `Failed to preload image: ${imagePath.split(/[\\/]/).pop()}`,
           error,
         );
 
-        // Mark as failed in cache to avoid retry (empty string)
-        setCachedThumbnail(imagePath, "");
+        // Mark as error in cache to avoid retry
+        const errorData: ImageData = {
+          path: imagePath,
+          base64: "",
+          width: 0,
+          height: 0,
+          format: "error",
+        };
+        setPreloadedImage(imagePath, errorData);
       }
     },
-    [cache.thumbnails, setCachedThumbnail],
+    [cache.preloaded, setPreloadedImage],
   );
 
+  /**
+   * Build preload queue: ±1, ±2, ±3... up to ±PRELOAD_RANGE
+   */
   const getPreloadQueue = useCallback(() => {
     if (currentImage.index === -1 || !folder.images.length) {
       return [];
@@ -60,33 +77,34 @@ export const useImagePreloader = () => {
     const currentIndex = currentImage.index;
 
     // Add images in order of priority:
-    // 1. Next image (most likely to be viewed)
-    // 2. Previous image
-    // 3. Gradually expand range ±1, ±2, ±3... up to ±PRELOAD_RANGE
+    // ±1, ±2, ±3... up to ±PRELOAD_RANGE
 
     for (let range = 1; range <= PRELOAD_RANGE; range++) {
-      // Add next image
+      // Add next image (+range)
       const nextIndex = currentIndex + range;
       if (nextIndex < folder.images.length) {
         const nextPath = folder.images[nextIndex].path;
-        if (!cache.thumbnails.has(nextPath)) {
+        if (!cache.preloaded.has(nextPath)) {
           queue.push(nextPath);
         }
       }
 
-      // Add previous image
+      // Add previous image (-range)
       const prevIndex = currentIndex - range;
       if (prevIndex >= 0) {
         const prevPath = folder.images[prevIndex].path;
-        if (!cache.thumbnails.has(prevPath)) {
+        if (!cache.preloaded.has(prevPath)) {
           queue.push(prevPath);
         }
       }
     }
 
     return queue;
-  }, [currentImage.index, folder.images, cache.thumbnails]);
+  }, [currentImage.index, folder.images, cache.preloaded]);
 
+  /**
+   * Clean up preloaded images outside the range
+   */
   const cleanupCache = useCallback(() => {
     if (currentImage.index === -1 || !folder.images.length) {
       return;
@@ -104,31 +122,41 @@ export const useImagePreloader = () => {
       imagesToKeep.add(folder.images[i].path);
     }
 
-    // Remove thumbnails outside the range
+    // Remove preloaded images outside the range
     const keysToRemove: string[] = [];
-    cache.thumbnails.forEach((_, path) => {
+    cache.preloaded.forEach((_, path) => {
       if (!imagesToKeep.has(path)) {
         keysToRemove.push(path);
       }
     });
 
     keysToRemove.forEach((path) => {
-      removeCachedThumbnail(path);
-      console.log(`Cleaned from cache: ${path.split(/[\\/]/).pop()}`);
+      removePreloadedImage(path);
+      console.log(
+        `Cleaned from preload cache: ${path.split(/[\\/]/).pop()}`,
+      );
     });
-  }, [
-    currentImage.index,
-    folder.images,
-    cache.thumbnails,
-    removeCachedThumbnail,
-  ]);
+  }, [currentImage.index, folder.images, cache.preloaded, removePreloadedImage]);
 
+  /**
+   * Start preloading full-resolution images
+   */
   const startPreloading = useCallback(async () => {
+    // Only start if all thumbnails are generated
+    if (!thumbnailGeneration.allGenerated) {
+      console.log(
+        "Waiting for thumbnail generation to complete before preloading...",
+      );
+      return;
+    }
+
     const queue = getPreloadQueue();
 
     if (queue.length === 0) {
       return;
     }
+
+    console.log(`Starting preload of ${queue.length} images...`);
 
     // Clean up cache before preloading new images
     cleanupCache();
@@ -142,16 +170,32 @@ export const useImagePreloader = () => {
     for (const chunk of chunks) {
       await Promise.allSettled(chunk.map(preloadImage));
     }
-  }, [getPreloadQueue, cleanupCache, preloadImage]);
 
-  // Start preloading when current image changes
+    console.log("Preloading complete");
+  }, [
+    thumbnailGeneration.allGenerated,
+    getPreloadQueue,
+    cleanupCache,
+    preloadImage,
+  ]);
+
+  // Start preloading when current image changes or all thumbnails are generated
   useEffect(() => {
-    if (currentImage.index !== -1 && folder.images.length > 0) {
+    if (
+      currentImage.index !== -1 &&
+      folder.images.length > 0 &&
+      thumbnailGeneration.allGenerated
+    ) {
       // Delay preloading to avoid interfering with rapid navigation
       const timeoutId = setTimeout(startPreloading, PRELOAD_DELAY_MS);
       return () => clearTimeout(timeoutId);
     }
-  }, [currentImage.index, folder.images.length, startPreloading]);
+  }, [
+    currentImage.index,
+    folder.images.length,
+    thumbnailGeneration.allGenerated,
+    startPreloading,
+  ]);
 
   return {
     preloadImage,

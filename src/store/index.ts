@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppState, ImageInfo, ImageData, ViewState } from "../types";
+import type {
+  AppState,
+  ImageInfo,
+  ImageData,
+  ViewState,
+  ThumbnailGenerationState,
+} from "../types";
 import { RAPID_NAVIGATION_THRESHOLD_MS } from "../constants/timing";
 
 // Constants
@@ -36,6 +42,21 @@ const calculateFitToWindowZoom = (
   return fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
 };
 
+/**
+ * Convert thumbnail cache to ImageData format
+ * Uses actual image dimensions from the thumbnail cache
+ */
+const thumbnailToImageData = (
+  path: string,
+  thumbnailCache: { base64: string; width: number; height: number },
+): ImageData => ({
+  path,
+  base64: thumbnailCache.base64,
+  width: thumbnailCache.width,
+  height: thumbnailCache.height,
+  format: "jpeg", // Thumbnails are always JPEG
+});
+
 interface AppActions {
   setCurrentImage: (path: string, index: number) => void;
   setImageData: (data: ImageData | null) => void;
@@ -66,12 +87,13 @@ interface AppActions {
   openImageFromPath: (imagePath: string) => Promise<void>;
   setPreloadedImage: (path: string, data: ImageData) => void;
   removePreloadedImage: (path: string) => void;
-  setCachedThumbnail: (path: string, base64: string) => void;
+  setCachedThumbnail: (path: string, thumbnail: { base64: string; width: number; height: number } | "error") => void;
   removeCachedThumbnail: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
   openFileDialog: () => Promise<void>;
   openWithDialog: () => Promise<void>;
+  setThumbnailGeneration: (state: Partial<ThumbnailGenerationState>) => void;
 }
 
 type AppStore = AppState & AppActions;
@@ -104,6 +126,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     imageViewStates: new Map(),
     lastNavigationTime: 0,
   },
+  thumbnailGeneration: {
+    isGenerating: false,
+    allGenerated: false,
+    currentGeneratingPath: null,
+  },
   ui: {
     isLoading: false,
     showAbout: false,
@@ -111,6 +138,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     error: null,
     suppressTransition: false,
     suppressTransitionTimeoutId: null,
+    thumbnailDisplayed: false,
   },
 
   // Actions
@@ -268,24 +296,38 @@ export const useAppStore = create<AppStore>((set, get) => ({
           });
         }
 
-        // Check if image is already preloaded in cache for instant display
+        // Priority 1: Check if image is already preloaded (full resolution)
         const cachedImage = state.cache.preloaded.get(image.path);
-        const imageData =
-          cachedImage && cachedImage.format !== "error" ? cachedImage : null;
+        let imageData: ImageData | null = null;
+        let thumbnailDisplayed = false;
+
+        if (cachedImage && cachedImage.format !== "error") {
+          // Full resolution available - use it
+          imageData = cachedImage;
+        } else {
+          // Priority 2: Check if thumbnail is available for instant display
+          const cachedThumbnail = state.cache.thumbnails.get(image.path);
+          if (cachedThumbnail && cachedThumbnail !== "error") {
+            // Display thumbnail immediately with actual image dimensions
+            imageData = thumbnailToImageData(image.path, cachedThumbnail);
+            thumbnailDisplayed = true;
+            console.log(`Displaying cached thumbnail instantly: ${image.path.split(/[\\/]/).pop()}`);
+          }
+        }
 
         // Determine zoom value
         let viewZoom = savedViewState?.zoom ?? 100;
-        if (imageData && !savedViewState) {
-          // Calculate fit zoom for cached images without saved state
+        if (imageData && imageData.width > 0 && !savedViewState) {
+          // Calculate fit zoom for cached images with valid dimensions
           viewZoom = calculateFitToWindowZoom(
             imageData.width,
             imageData.height,
           );
         }
 
-        // Calculate image position for cached images
+        // Calculate image position for cached images with valid dimensions
         let viewImagePosition = {};
-        if (imageData) {
+        if (imageData && imageData.width > 0) {
           const containerWidth = window.innerWidth;
           const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
           const centerX = (containerWidth - imageData.width) / 2;
@@ -321,6 +363,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ui: {
             ...state.ui,
             suppressTransition: true,
+            thumbnailDisplayed, // Set thumbnail display flag
             // Atomically create new timeout and store ID to prevent race conditions
             suppressTransitionTimeoutId: (() => {
               // Clear old timeout if exists
@@ -337,7 +380,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
                     suppressTransitionTimeoutId: null,
                   },
                 });
-              }, 100);
+              }, 300);
             })(),
           },
         };
@@ -568,10 +611,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     }),
 
-  setCachedThumbnail: (path, base64) =>
+  setCachedThumbnail: (path, thumbnail) =>
     set((state) => {
       const newThumbnails = new Map(state.cache.thumbnails);
-      newThumbnails.set(path, base64);
+      newThumbnails.set(path, thumbnail);
       return {
         cache: {
           ...state.cache,
@@ -743,4 +786,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }));
     }
   },
+
+  setThumbnailGeneration: (thumbnailGenerationUpdate) =>
+    set((state) => ({
+      thumbnailGeneration: {
+        ...state.thumbnailGeneration,
+        ...thumbnailGenerationUpdate,
+      },
+    })),
 }));

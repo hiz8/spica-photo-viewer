@@ -8,6 +8,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct CacheEntry {
     pub thumbnail: String,
     pub created: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
 }
 
 const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
@@ -62,7 +66,7 @@ fn get_cache_key(path: &str, size: u32) -> String {
 pub async fn get_cached_thumbnail(
     path: String,
     size: Option<u32>,
-) -> Result<Option<String>, String> {
+) -> Result<Option<(String, Option<u32>, Option<u32>)>, String> {
     let cache_dir = get_cache_dir()?;
     let thumbnail_size = size.unwrap_or(30);
     let cache_key = get_cache_key(&path, thumbnail_size);
@@ -90,7 +94,7 @@ pub async fn get_cached_thumbnail(
         return Ok(None);
     }
 
-    Ok(Some(cache_entry.thumbnail))
+    Ok(Some((cache_entry.thumbnail, cache_entry.width, cache_entry.height)))
 }
 
 #[tauri::command]
@@ -98,6 +102,8 @@ pub async fn set_cached_thumbnail(
     path: String,
     thumbnail: String,
     size: Option<u32>,
+    width: Option<u32>,
+    height: Option<u32>,
 ) -> Result<(), String> {
     let cache_dir = get_cache_dir()?;
     let thumbnail_size = size.unwrap_or(30);
@@ -112,6 +118,8 @@ pub async fn set_cached_thumbnail(
     let cache_entry = CacheEntry {
         thumbnail,
         created: current_time,
+        width,
+        height,
     };
 
     let cache_content = serde_json::to_string(&cache_entry)
@@ -237,6 +245,8 @@ mod tests {
             "/test/unique_001.jpg".to_string(),
             "test_data".to_string(),
             Some(30),
+            Some(800),
+            Some(600),
         )
         .await;
         assert!(result.is_ok());
@@ -256,6 +266,8 @@ mod tests {
             "/test/default_size.jpg".to_string(),
             "default_data".to_string(),
             None,
+            Some(1024),
+            Some(768),
         )
         .await;
         assert!(result.is_ok());
@@ -315,6 +327,8 @@ mod tests {
         let entry = CacheEntry {
             thumbnail: "test_thumbnail_data".to_string(),
             created: 1234567890,
+            width: Some(800),
+            height: Some(600),
         };
 
         let serialized = serde_json::to_string(&entry);
@@ -326,5 +340,7 @@ mod tests {
         let deserialized_entry = deserialized.unwrap();
         assert_eq!(entry.thumbnail, deserialized_entry.thumbnail);
         assert_eq!(entry.created, deserialized_entry.created);
+        assert_eq!(entry.width, deserialized_entry.width);
+        assert_eq!(entry.height, deserialized_entry.height);
     }
 }

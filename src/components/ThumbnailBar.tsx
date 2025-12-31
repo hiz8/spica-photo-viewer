@@ -1,75 +1,21 @@
 import type React from "react";
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import type { ImageInfo } from "../types";
 import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
-
-const THUMBNAIL_SIZE = 20;
 
 interface ThumbnailItemProps {
   image: ImageInfo;
   index: number;
   isActive: boolean;
   onClick: (index: number) => void;
+  thumbnailData: string | null;
 }
 
 const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
-  ({ image, index, isActive, onClick }) => {
-    const [thumbnailData, setThumbnailData] = useState<string | null>(null);
-    const [error, setError] = useState<boolean>(false);
-
-    // biome-ignore lint/correctness/useExhaustiveDependencies: The 'image.filename' dependency is used only in error message, so it's omitted from dependencies.
-    useEffect(() => {
-      const loadThumbnail = async () => {
-        try {
-          // First, try to get from cache
-          const cachedThumbnail = await invoke<string | null>(
-            "get_cached_thumbnail",
-            {
-              path: image.path,
-              size: THUMBNAIL_SIZE,
-            },
-          );
-
-          if (cachedThumbnail) {
-            setThumbnailData(cachedThumbnail);
-            return;
-          }
-
-          // If not cached, generate new thumbnail
-          const thumbnail = await invoke<string>("generate_image_thumbnail", {
-            path: image.path,
-            size: THUMBNAIL_SIZE,
-          });
-
-          // Cache the generated thumbnail
-          await invoke("set_cached_thumbnail", {
-            path: image.path,
-            thumbnail,
-            size: THUMBNAIL_SIZE,
-          });
-
-          setThumbnailData(thumbnail);
-        } catch (err) {
-          console.warn(`Failed to load thumbnail for ${image.filename}:`, err);
-          setError(true);
-
-          // Cache the error to avoid retrying
-          try {
-            await invoke("set_cached_thumbnail", {
-              path: image.path,
-              thumbnail: "error",
-              size: THUMBNAIL_SIZE,
-            });
-          } catch (cacheErr) {
-            console.warn("Failed to cache thumbnail error:", cacheErr);
-          }
-        }
-      };
-
-      loadThumbnail();
-    }, [image.path]);
+  ({ image, index, isActive, onClick, thumbnailData }) => {
+    const isError = thumbnailData === "error";
+    const hasData = thumbnailData && !isError;
 
     return (
       <button
@@ -78,14 +24,14 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
         onClick={() => onClick(index)}
         title={image.filename}
       >
-        {thumbnailData && !error ? (
+        {hasData ? (
           <img
             src={`data:image/jpeg;base64,${thumbnailData}`}
             alt={image.filename}
             className="thumbnail-image"
           />
         ) : (
-          <div className="thumbnail-placeholder">{error ? "❌" : "⏳"}</div>
+          <div className="thumbnail-placeholder">{isError ? "❌" : "⏳"}</div>
         )}
       </button>
     );
@@ -93,10 +39,22 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
 );
 
 const ThumbnailBar: React.FC = () => {
-  const { folder, currentImage, navigateToImage } = useAppStore();
+  const { folder, currentImage, cache, navigateToImage } = useAppStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const thumbnailBarRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
+
+  // Get thumbnail data from cache
+  const getThumbnailData = useCallback(
+    (imagePath: string): string | null => {
+      const thumbnail = cache.thumbnails.get(imagePath);
+      if (!thumbnail || thumbnail === "error") {
+        return null;
+      }
+      return thumbnail.base64;
+    },
+    [cache.thumbnails],
+  );
 
   const handleThumbnailClick = useCallback(
     (index: number) => {
@@ -211,6 +169,7 @@ const ThumbnailBar: React.FC = () => {
             index={index}
             isActive={index === currentImage.index}
             onClick={handleThumbnailClick}
+            thumbnailData={getThumbnailData(image.path)}
           />
         ))}
       </div>

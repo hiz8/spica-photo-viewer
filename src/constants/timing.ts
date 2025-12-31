@@ -7,7 +7,7 @@
  * Debounce delay for image loading in ImageViewer
  * Prevents loading intermediate images during rapid navigation
  */
-export const IMAGE_LOAD_DEBOUNCE_MS = 200;
+export const IMAGE_LOAD_DEBOUNCE_MS = 50;
 
 /**
  * Debounce delay for thumbnail scrolling in ThumbnailBar
@@ -44,3 +44,9 @@ export const MAX_CONCURRENT_LOADS = 3;
  * Used to generate quick preview before loading full resolution
  */
 export const PREVIEW_THUMBNAIL_SIZE = 400;
+
+/**
+ * Debounce delay for thumbnail generation
+ * Prevents starting thumbnail generation during rapid navigation
+ */
+export const THUMBNAIL_GENERATION_DEBOUNCE_MS = 500;

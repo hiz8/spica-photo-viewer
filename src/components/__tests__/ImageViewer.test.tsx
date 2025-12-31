@@ -13,6 +13,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+// Mock the useThumbnailGenerator hook
+vi.mock("../../hooks/useThumbnailGenerator", () => ({
+  useThumbnailGenerator: vi.fn(),
+}));
+
 // Mock the useImagePreloader hook
 vi.mock("../../hooks/useImagePreloader", () => ({
   useImagePreloader: vi.fn(),
@@ -41,6 +46,7 @@ const mockStore = {
     sortOrder: "name" as const,
   },
   cache: {
+    thumbnails: new Map(),
     preloaded: new Map(),
     imageViewStates: new Map(),
   },
@@ -89,6 +95,7 @@ describe("ImageViewer", () => {
     mockStore.view.imageWidth = 0;
     mockStore.view.imageHeight = 0;
     mockStore.folder.images = [];
+    mockStore.cache.thumbnails = new Map();
     mockStore.cache.preloaded = new Map();
   });
 
@@ -202,22 +209,12 @@ describe("ImageViewer", () => {
   describe("Image loading", () => {
     it("should load image on mount when path exists but no data", async () => {
       vi.useFakeTimers();
-      // Mock two-phase loading
-      mockInvoke.mockImplementation((cmd) => {
-        if (cmd === "generate_thumbnail_with_dimensions") {
-          return Promise.resolve({
-            thumbnail_base64: "thumbnail_data",
-            original_width: mockImageData.width,
-            original_height: mockImageData.height,
-          });
-        }
-        if (cmd === "load_image") {
-          return Promise.resolve(mockImageData);
-        }
-        return Promise.reject(new Error(`Unexpected command: ${cmd}`));
-      });
+      // Mock image loading (no thumbnail in cache, so direct load)
+      mockInvoke.mockResolvedValue(mockImageData);
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
+      // No thumbnail in cache
+      mockStore.cache.thumbnails = new Map();
 
       await act(async () => {
         render(<ImageViewer />);
@@ -235,19 +232,11 @@ describe("ImageViewer", () => {
       // Wait for async operation
       await act(async () => {
         await vi.waitFor(() => {
-          // Should call generate_thumbnail_with_dimensions for preview
-          expect(mockInvoke).toHaveBeenCalledWith(
-            "generate_thumbnail_with_dimensions",
-            {
-              path: "/test/image.jpg",
-              size: PREVIEW_THUMBNAIL_SIZE,
-            },
-          );
-          // Should call load_image for full resolution
+          // Should call load_image for full resolution (no thumbnail cached)
           expect(mockInvoke).toHaveBeenCalledWith("load_image", {
             path: "/test/image.jpg",
           });
-          // Should set image data twice (preview + full)
+          // Should set image data
           expect(mockStore.setImageData).toHaveBeenCalled();
           expect(mockStore.fitToWindow).toHaveBeenCalledWith(
             mockImageData.width,
