@@ -59,7 +59,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           current.path === path &&
           current.data &&
           current.data.path === path &&
-          current.data.width > 0 && // Thumbnails have width=0 initially
+          current.data.width > 0 && // Full resolution images have actual dimensions
           !currentUi.thumbnailDisplayed; // Not just a thumbnail display
 
         if (hasFullResolution) {

@@ -182,24 +182,6 @@ pub async fn generate_thumbnail_with_dimensions(
     })
 }
 
-/// Get image dimensions without loading full image data
-/// This is a lightweight operation that only reads image headers
-#[tauri::command]
-pub async fn get_image_dimensions_only(path: String) -> Result<(u32, u32), String> {
-    let image_path = Path::new(&path);
-
-    if !image_path.exists() || !image_path.is_file() {
-        return Err("File not found".to_string());
-    }
-
-    if !is_supported_image(image_path) {
-        return Err("Unsupported file format".to_string());
-    }
-
-    get_image_dimensions(image_path)
-        .map_err(|e| format!("Failed to get image dimensions: {}", e))
-}
-
 /// Validates the file path and converts it to a short path name (8.3 format) for Windows.
 ///
 /// This function handles special characters (parentheses, spaces, Japanese characters, etc.)

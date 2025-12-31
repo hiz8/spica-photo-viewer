@@ -48,8 +48,11 @@ const ThumbnailBar: React.FC = () => {
   const getThumbnailData = useCallback(
     (imagePath: string): string | null => {
       const thumbnail = cache.thumbnails.get(imagePath);
-      if (!thumbnail || thumbnail === "error") {
+      if (!thumbnail) {
         return null;
+      }
+      if (thumbnail === "error") {
+        return "error";
       }
       return thumbnail.base64;
     },
