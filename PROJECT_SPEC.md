@@ -156,16 +156,21 @@ spica-photo-viewer/
 
 #### Thumbnail Generation
 
-1. Start with current image thumbnail
-2. Generate thumbnails for ±10 images from current
-3. Progressively load remaining thumbnails
-4. Priority order: current → nearby → distant
+1. Generate thumbnail for current image first (highest priority)
+2. Generate thumbnails for nearby images in order: +1, -1, +2, -2, +3, -3...
+3. Continue until all images in folder have thumbnails
+4. **Navigation priority**: If user navigates to a new image during thumbnail generation:
+   - Immediately prioritize displaying the new image
+   - Pause thumbnail generation
+   - Resume thumbnail generation after new image is displayed
 
 #### Preloading
 
-- Preload ±20 images (40 total max) at full resolution
-- Use circular buffer for memory efficiency
-- Load priority: next likely navigation direction
+- **Trigger**: Start after all thumbnail generation is complete
+- **Scope**: Preload up to 5 images before and 5 images after current image (10 total max) at full resolution
+- **Purpose**: Cache images for instant display during navigation
+- **Memory management**: Use circular buffer for memory efficiency
+- **Priority**: Focus on images adjacent to current position
 
 #### Caching
 
@@ -178,11 +183,20 @@ spica-photo-viewer/
 
 To ensure seamless image switching experience comparable to Picasa Photo Viewer:
 
+**Display Priority (3 levels)**
+1. **Cached full-resolution image** (0ms) - Display instantly if image is preloaded in cache
+2. **Thumbnail fallback** (0ms) - Display thumbnail immediately if full image not cached but thumbnail exists
+3. **Loading state** - Show loading indicator if neither cached image nor thumbnail is available
+
 **Cached Image Display (0ms)**
 - When navigating to a cached image, display it instantly without any blank state
 - Pre-calculate image position, zoom, and dimensions atomically with image data
 - Suppress CSS transitions during navigation to prevent visual animations
-- Only show blank state when loading uncached images
+
+**Thumbnail Fallback**
+- If full-resolution image is not cached but thumbnail exists, display thumbnail first
+- Replace with full-resolution image once loaded
+- Provides instant visual feedback while maintaining perceived performance
 
 **Flicker Prevention**
 - Manage transition suppression in global store for atomic state updates
@@ -206,8 +220,9 @@ To ensure seamless image switching experience comparable to Picasa Photo Viewer:
     3. `suppressTransition = false` and `currentImage.data` present → normal display with opacity 1 and smooth transitions
 
 **Performance Characteristics**
-- Cache hit: Instant display (0ms, no blank state)
-- Cache miss: Blank state during loading → display when ready
+- **Cached image**: Instant display (0ms, no blank state)
+- **Thumbnail available**: Instant thumbnail display (0ms) → upgrade to full image when loaded
+- **Neither cached**: Loading indicator → display when ready
 - No position shift or size adjustment after initial display
 - No unwanted animations during navigation
 
