@@ -72,7 +72,10 @@ export interface AppState {
   };
 
   cache: {
-    thumbnails: Map<string, { base64: string; width: number; height: number } | "error">;
+    thumbnails: Map<
+      string,
+      { base64: string; width: number; height: number } | "error"
+    >;
     preloaded: Map<string, ImageData>;
     imageViewStates: Map<string, ImageViewState>;
     lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation
@@ -116,7 +119,10 @@ export interface ThumbnailGenerationState {
 }
 
 export interface CacheState {
-  thumbnails: Map<string, { base64: string; width: number; height: number } | "error">;
+  thumbnails: Map<
+    string,
+    { base64: string; width: number; height: number } | "error"
+  >;
   preloaded: Map<string, ImageData>;
   imageViewStates: Map<string, ImageViewState>;
   lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation

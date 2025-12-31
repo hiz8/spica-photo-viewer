@@ -95,7 +95,10 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     thumbnailOpacity: 0.5,
   },
   cache: {
-    thumbnails: new Map<string, { base64: string; width: number; height: number } | "error">(),
+    thumbnails: new Map<
+      string,
+      { base64: string; width: number; height: number } | "error"
+    >(),
     preloaded: new Map(),
     imageViewStates: new Map(),
     lastNavigationTime: 0,

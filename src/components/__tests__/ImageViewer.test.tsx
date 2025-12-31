@@ -3,9 +3,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { mockImageData } from "../../utils/testUtils";
 import type { ImageData as AppImageData } from "../../types";
-import {
-  IMAGE_LOAD_DEBOUNCE_MS,
-} from "../../constants/timing";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
 
 // Mock the invoke function
 vi.mock("@tauri-apps/api/core", () => ({

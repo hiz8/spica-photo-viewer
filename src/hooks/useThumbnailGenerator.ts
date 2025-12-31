@@ -15,17 +15,12 @@ const INITIAL_RANGE = 10; // ±10 images for initial quick load
  * Pauses generation during navigation to prioritize image display
  */
 export const useThumbnailGenerator = () => {
-  const {
-    folder,
-    currentImage,
-  } = useAppStore();
+  const { folder, currentImage } = useAppStore();
 
   const generationQueueRef = useRef<string[]>([]);
   const isGeneratingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasExpandedQueueRef = useRef(false); // Track if queue expanded to full range
 
   /**
@@ -34,7 +29,11 @@ export const useThumbnailGenerator = () => {
   const generateThumbnail = useCallback(
     async (imagePath: string, signal: AbortSignal): Promise<boolean> => {
       // Get fresh cache state to avoid stale closure
-      const { cache: currentCache, setCachedThumbnail, setThumbnailGeneration } = useAppStore.getState();
+      const {
+        cache: currentCache,
+        setCachedThumbnail,
+        setThumbnailGeneration,
+      } = useAppStore.getState();
 
       // Check if already cached
       if (currentCache.thumbnails.has(imagePath)) {
@@ -45,13 +44,12 @@ export const useThumbnailGenerator = () => {
         setThumbnailGeneration({ currentGeneratingPath: imagePath });
 
         // First, try to get from backend cache
-        const cachedThumbnail = await invoke<[string, number | null, number | null] | null>(
-          "get_cached_thumbnail",
-          {
-            path: imagePath,
-            size: THUMBNAIL_SIZE,
-          },
-        );
+        const cachedThumbnail = await invoke<
+          [string, number | null, number | null] | null
+        >("get_cached_thumbnail", {
+          path: imagePath,
+          size: THUMBNAIL_SIZE,
+        });
 
         if (signal.aborted) return false;
 
@@ -95,9 +93,7 @@ export const useThumbnailGenerator = () => {
           height: result.original_height,
         });
 
-        console.log(
-          `Generated thumbnail: ${imagePath.split(/[\\/]/).pop()}`,
-        );
+        console.log(`Generated thumbnail: ${imagePath.split(/[\\/]/).pop()}`);
         return true;
       } catch (error) {
         if (!signal.aborted) {
@@ -124,7 +120,9 @@ export const useThumbnailGenerator = () => {
         return false;
       } finally {
         // Get fresh setThumbnailGeneration in case it changed
-        useAppStore.getState().setThumbnailGeneration({ currentGeneratingPath: null });
+        useAppStore
+          .getState()
+          .setThumbnailGeneration({ currentGeneratingPath: null });
       }
     },
     [], // No dependencies - always get fresh state from useAppStore.getState()
@@ -150,9 +148,10 @@ export const useThumbnailGenerator = () => {
     queue.push(images[currentIndex].path);
 
     // Determine effective range
-    const effectiveRange = maxRange !== undefined
-      ? Math.min(maxRange, images.length - 1)
-      : images.length - 1;
+    const effectiveRange =
+      maxRange !== undefined
+        ? Math.min(maxRange, images.length - 1)
+        : images.length - 1;
 
     // Add images in expanding radius: +1, -1, +2, -2, +3, -3...
     // Stop at effectiveRange instead of images.length
@@ -184,7 +183,9 @@ export const useThumbnailGenerator = () => {
 
     isGeneratingRef.current = true;
     // Get fresh setThumbnailGeneration
-    useAppStore.getState().setThumbnailGeneration({ isGenerating: true, allGenerated: false });
+    useAppStore
+      .getState()
+      .setThumbnailGeneration({ isGenerating: true, allGenerated: false });
 
     // Create new abort controller for this generation session
     abortControllerRef.current = new AbortController();
@@ -239,7 +240,9 @@ export const useThumbnailGenerator = () => {
       return;
     }
 
-    console.log(`Expanding thumbnail queue to ${fullQueue.length} remaining images`);
+    console.log(
+      `Expanding thumbnail queue to ${fullQueue.length} remaining images`,
+    );
     generationQueueRef.current = fullQueue;
     hasExpandedQueueRef.current = true;
 
@@ -267,12 +270,16 @@ export const useThumbnailGenerator = () => {
     // Build initial priority queue with limited range
     const initialQueue = buildPriorityQueue(INITIAL_RANGE);
     if (initialQueue.length === 0) {
-      useAppStore.getState().setThumbnailGeneration({ allGenerated: true, isGenerating: false });
+      useAppStore
+        .getState()
+        .setThumbnailGeneration({ allGenerated: true, isGenerating: false });
       return;
     }
 
     generationQueueRef.current = initialQueue;
-    console.log(`Initial thumbnail queue: ${initialQueue.length} images (±${INITIAL_RANGE})`);
+    console.log(
+      `Initial thumbnail queue: ${initialQueue.length} images (±${INITIAL_RANGE})`,
+    );
 
     // Debounce: wait for navigation to settle
     debounceTimeoutRef.current = setTimeout(() => {

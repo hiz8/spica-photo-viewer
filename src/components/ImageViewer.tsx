@@ -4,12 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
 import { useImagePreloader } from "../hooks/useImagePreloader";
-import type {
-  ImageData as AppImageData,
-} from "../types";
-import {
-  IMAGE_LOAD_DEBOUNCE_MS,
-} from "../constants/timing";
+import type { ImageData as AppImageData } from "../types";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 
 interface ImageViewerProps {
   className?: string;
@@ -73,13 +69,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
         // FAST PATH: If thumbnail is displayed, upgrade to full resolution immediately
         // Skip debounce since something is already visible
-        const isThumbnailUpgrade = currentUi.thumbnailDisplayed && current.path === path;
+        const isThumbnailUpgrade =
+          currentUi.thumbnailDisplayed && current.path === path;
 
         if (isThumbnailUpgrade) {
-          console.log(`Upgrading thumbnail to full resolution: ${path.split(/[\\/]/).pop()}`);
+          console.log(
+            `Upgrading thumbnail to full resolution: ${path.split(/[\\/]/).pop()}`,
+          );
 
           // Load full resolution directly
-          const fullImageData = await invoke<AppImageData>("load_image", { path });
+          const fullImageData = await invoke<AppImageData>("load_image", {
+            path,
+          });
 
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
@@ -173,11 +174,16 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               if (!hasSavedState) {
                 fitToWindow(cachedThumbnail.width, cachedThumbnail.height);
               } else {
-                updateImageDimensions(cachedThumbnail.width, cachedThumbnail.height);
+                updateImageDimensions(
+                  cachedThumbnail.width,
+                  cachedThumbnail.height,
+                );
               }
 
               // PHASE 2: Load full resolution image in background
-              const fullImageData = await invoke<AppImageData>("load_image", { path });
+              const fullImageData = await invoke<AppImageData>("load_image", {
+                path,
+              });
 
               // Check if loading was cancelled
               if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -191,7 +197,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               if (!hasSavedState) {
                 fitToWindow(fullImageData.width, fullImageData.height);
               } else {
-                updateImageDimensions(fullImageData.width, fullImageData.height);
+                updateImageDimensions(
+                  fullImageData.width,
+                  fullImageData.height,
+                );
               }
 
               // Add to preload cache
@@ -286,7 +295,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
     // Skip debounce if thumbnail is already displayed - upgrade immediately
     const { ui: currentUi } = useAppStore.getState();
-    const debounceDelay = currentUi.thumbnailDisplayed ? 0 : IMAGE_LOAD_DEBOUNCE_MS;
+    const debounceDelay = currentUi.thumbnailDisplayed
+      ? 0
+      : IMAGE_LOAD_DEBOUNCE_MS;
 
     // Debounce image loading to avoid loading intermediate images during rapid navigation
     const timeoutId = setTimeout(async () => {

@@ -42,9 +42,7 @@ export const useImagePreloader = () => {
         // Store in preload cache
         setPreloadedImage(imagePath, imageData);
 
-        console.log(
-          `Preloaded full image: ${imagePath.split(/[\\/]/).pop()}`,
-        );
+        console.log(`Preloaded full image: ${imagePath.split(/[\\/]/).pop()}`);
       } catch (error) {
         console.warn(
           `Failed to preload image: ${imagePath.split(/[\\/]/).pop()}`,
@@ -132,11 +130,14 @@ export const useImagePreloader = () => {
 
     keysToRemove.forEach((path) => {
       removePreloadedImage(path);
-      console.log(
-        `Cleaned from preload cache: ${path.split(/[\\/]/).pop()}`,
-      );
+      console.log(`Cleaned from preload cache: ${path.split(/[\\/]/).pop()}`);
     });
-  }, [currentImage.index, folder.images, cache.preloaded, removePreloadedImage]);
+  }, [
+    currentImage.index,
+    folder.images,
+    cache.preloaded,
+    removePreloadedImage,
+  ]);
 
   /**
    * Start preloading full-resolution images

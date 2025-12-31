@@ -87,7 +87,10 @@ interface AppActions {
   openImageFromPath: (imagePath: string) => Promise<void>;
   setPreloadedImage: (path: string, data: ImageData) => void;
   removePreloadedImage: (path: string) => void;
-  setCachedThumbnail: (path: string, thumbnail: { base64: string; width: number; height: number } | "error") => void;
+  setCachedThumbnail: (
+    path: string,
+    thumbnail: { base64: string; width: number; height: number } | "error",
+  ) => void;
   removeCachedThumbnail: (path: string) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
@@ -311,7 +314,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
             // Display thumbnail immediately with actual image dimensions
             imageData = thumbnailToImageData(image.path, cachedThumbnail);
             thumbnailDisplayed = true;
-            console.log(`Displaying cached thumbnail instantly: ${image.path.split(/[\\/]/).pop()}`);
+            console.log(
+              `Displaying cached thumbnail instantly: ${image.path.split(/[\\/]/).pop()}`,
+            );
           }
         }
 
