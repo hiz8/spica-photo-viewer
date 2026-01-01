@@ -34,6 +34,7 @@ export interface UIState {
   error: Error | null;
   suppressTransition: boolean;
   suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null;
+  thumbnailDisplayed?: boolean; // Whether current display is thumbnail (not full resolution)
 }
 
 export interface ImageViewState {
@@ -71,11 +72,16 @@ export interface AppState {
   };
 
   cache: {
-    thumbnails: Map<string, string>;
+    thumbnails: Map<
+      string,
+      { base64: string; width: number; height: number } | "error"
+    >;
     preloaded: Map<string, ImageData>;
     imageViewStates: Map<string, ImageViewState>;
     lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation
   };
+
+  thumbnailGeneration: ThumbnailGenerationState;
 
   ui: UIState;
 }
@@ -106,8 +112,17 @@ export interface CurrentImageState {
   error: Error | null;
 }
 
+export interface ThumbnailGenerationState {
+  isGenerating: boolean;
+  allGenerated: boolean;
+  currentGeneratingPath: string | null;
+}
+
 export interface CacheState {
-  thumbnails: Map<string, string>;
+  thumbnails: Map<
+    string,
+    { base64: string; width: number; height: number } | "error"
+  >;
   preloaded: Map<string, ImageData>;
   imageViewStates: Map<string, ImageViewState>;
   lastNavigationTime: number; // Timestamp of last navigation for detecting rapid navigation

@@ -95,10 +95,18 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     thumbnailOpacity: 0.5,
   },
   cache: {
-    thumbnails: new Map(),
+    thumbnails: new Map<
+      string,
+      { base64: string; width: number; height: number } | "error"
+    >(),
     preloaded: new Map(),
     imageViewStates: new Map(),
     lastNavigationTime: 0,
+  },
+  thumbnailGeneration: {
+    isGenerating: false,
+    allGenerated: false,
+    currentGeneratingPath: null,
   },
   ui: {
     isLoading: false,
@@ -107,6 +115,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     error: null,
     suppressTransition: false,
     suppressTransitionTimeoutId: null,
+    thumbnailDisplayed: false,
   },
   // Mock functions
   setCurrentImage: vi.fn(),
@@ -117,6 +126,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   setZoom: vi.fn(),
   setPan: vi.fn(),
   setFullscreen: vi.fn(),
+  setMaximized: vi.fn(),
   setThumbnailOpacity: vi.fn(),
   setLoading: vi.fn(),
   setDragOver: vi.fn(),
@@ -133,10 +143,13 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   openImageFromPath: vi.fn(),
   setPreloadedImage: vi.fn(),
   removePreloadedImage: vi.fn(),
+  setCachedThumbnail: vi.fn(),
+  removeCachedThumbnail: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
   openFileDialog: vi.fn(),
   openWithDialog: vi.fn(),
+  setThumbnailGeneration: vi.fn(),
   ...overrides,
 });
 

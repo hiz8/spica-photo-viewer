@@ -1051,7 +1051,7 @@ describe("AppStore", () => {
       expect(state.ui.suppressTransitionTimeoutId).not.toBeNull();
     });
 
-    it("should reset suppressTransition to false after 100ms", () => {
+    it("should reset suppressTransition to false after 300ms", () => {
       const initialState = useAppStore.getState();
       useAppStore.setState({
         folder: {
@@ -1066,8 +1066,8 @@ describe("AppStore", () => {
 
       expect(useAppStore.getState().ui.suppressTransition).toBe(true);
 
-      // Fast-forward time by 100ms
-      vi.advanceTimersByTime(100);
+      // Fast-forward time by 300ms
+      vi.advanceTimersByTime(300);
 
       const state = useAppStore.getState();
       expect(state.ui.suppressTransition).toBe(false);
@@ -1105,8 +1105,8 @@ describe("AppStore", () => {
       expect(secondTimeoutId).not.toBe(firstTimeoutId);
       expect(useAppStore.getState().ui.suppressTransition).toBe(true);
 
-      // Fast-forward remaining time (50ms + 100ms for new timeout)
-      vi.advanceTimersByTime(100);
+      // Fast-forward remaining time (50ms + 300ms for new timeout)
+      vi.advanceTimersByTime(300);
 
       // Should be false after the new timeout completes
       expect(useAppStore.getState().ui.suppressTransition).toBe(false);

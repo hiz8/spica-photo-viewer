@@ -2,15 +2,10 @@ import type React from "react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
+import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
 import { useImagePreloader } from "../hooks/useImagePreloader";
-import type {
-  ImageData as AppImageData,
-  ThumbnailWithDimensions,
-} from "../types";
-import {
-  IMAGE_LOAD_DEBOUNCE_MS,
-  PREVIEW_THUMBNAIL_SIZE,
-} from "../constants/timing";
+import type { ImageData as AppImageData } from "../types";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 
 interface ImageViewerProps {
   className?: string;
@@ -30,8 +25,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     updateImageDimensions,
     resizeToImage,
     setPreloadedImage,
+    setThumbnailDisplayed,
   } = useAppStore();
 
+  // Initialize thumbnail generation and preloading
+  useThumbnailGenerator();
   useImagePreloader();
 
   const [isDragging, setIsDragging] = useState(false);
@@ -54,19 +52,64 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           cache: currentCache,
           folder,
           currentImage: current,
+          ui: currentUi,
         } = useAppStore.getState();
 
-        // Check if navigateToImage already set this image's data and position.
-        // If so, skip loading to prevent a race condition that would overwrite the
-        // calculated position. Use path comparison instead of reference equality to
-        // handle state updates, and also verify that current.data.path matches the
-        // requested path so we don't reuse stale data from a previous navigation.
-        if (
+        // Check if we already have full resolution data (not just thumbnail)
+        const hasFullResolution =
           current.path === path &&
           current.data &&
-          current.data.path === path
-        ) {
-          // Image already loaded by navigateToImage with position calculated - skip
+          current.data.path === path &&
+          current.data.width > 0 && // Full resolution images have actual dimensions
+          !currentUi.thumbnailDisplayed; // Not just a thumbnail display
+
+        if (hasFullResolution) {
+          // Full resolution already loaded by navigateToImage - skip
+          return;
+        }
+
+        // FAST PATH: If thumbnail is displayed, upgrade to full resolution immediately
+        // Skip debounce since something is already visible
+        const isThumbnailUpgrade =
+          currentUi.thumbnailDisplayed && current.path === path;
+
+        if (isThumbnailUpgrade) {
+          console.log(
+            `Upgrading thumbnail to full resolution: ${path.split(/[\\/]/).pop()}`,
+          );
+
+          // Set loading state for consistent UX
+          setLoading(true);
+          setImageError(null);
+
+          // Load full resolution directly
+          const fullImageData = await invoke<AppImageData>("load_image", {
+            path,
+          });
+
+          if (signal.aborted || activeLoadPathRef.current !== path) {
+            return;
+          }
+
+          // Update with full resolution
+          setImageData(fullImageData);
+
+          // Check if this image has saved view state
+          const hasSavedState = currentCache.imageViewStates.has(path);
+
+          // Update dimensions
+          if (!hasSavedState) {
+            fitToWindow(fullImageData.width, fullImageData.height);
+          } else {
+            updateImageDimensions(fullImageData.width, fullImageData.height);
+          }
+
+          // Add to preload cache
+          setPreloadedImage(path, fullImageData);
+
+          // Clear thumbnail flag
+          setThumbnailDisplayed(false);
+
           return;
         }
 
@@ -108,57 +151,74 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
         // Two-phase loading for non-GIF images
         if (!skipProgressive) {
-          // Phase 1: Load and display preview immediately
-          try {
-            const thumbnailData = await invoke<ThumbnailWithDimensions>(
-              "generate_thumbnail_with_dimensions",
-              {
+          // Try to use cached thumbnail as preview
+          const cachedThumbnail = currentCache.thumbnails.get(path);
+          if (cachedThumbnail && cachedThumbnail !== "error") {
+            try {
+              // PHASE 1: Display thumbnail preview immediately with cached dimensions
+              // No need to call get_image_dimensions_only since thumbnail includes dimensions
+
+              // Check if loading was cancelled
+              if (signal.aborted || activeLoadPathRef.current !== path) {
+                return;
+              }
+
+              // Display cached thumbnail as preview with correct dimensions
+              const previewData: AppImageData = {
                 path,
-                size: PREVIEW_THUMBNAIL_SIZE,
-              },
-            );
+                base64: cachedThumbnail.base64,
+                width: cachedThumbnail.width,
+                height: cachedThumbnail.height,
+                format: "jpeg",
+              };
+              setImageData(previewData);
 
-            // Check if loading was cancelled
-            if (signal.aborted || activeLoadPathRef.current !== path) {
+              // Fit to window or restore saved view state
+              if (!hasSavedState) {
+                fitToWindow(cachedThumbnail.width, cachedThumbnail.height);
+              } else {
+                updateImageDimensions(
+                  cachedThumbnail.width,
+                  cachedThumbnail.height,
+                );
+              }
+
+              // PHASE 2: Load full resolution image in background
+              const fullImageData = await invoke<AppImageData>("load_image", {
+                path,
+              });
+
+              // Check if loading was cancelled
+              if (signal.aborted || activeLoadPathRef.current !== path) {
+                return;
+              }
+
+              // Replace with full resolution
+              setImageData(fullImageData);
+
+              // Update dimensions if needed
+              if (!hasSavedState) {
+                fitToWindow(fullImageData.width, fullImageData.height);
+              } else {
+                updateImageDimensions(
+                  fullImageData.width,
+                  fullImageData.height,
+                );
+              }
+
+              // Add to preload cache
+              setPreloadedImage(path, fullImageData);
               return;
-            }
-
-            // Display preview with original image dimensions
-            const previewData = {
-              path,
-              base64: thumbnailData.thumbnail_base64,
-              width: thumbnailData.original_width,
-              height: thumbnailData.original_height,
-              format: "jpeg",
-            };
-
-            setImageData(previewData);
-
-            // Fit to window using original dimensions
-            if (!hasSavedState) {
-              fitToWindow(
-                thumbnailData.original_width,
-                thumbnailData.original_height,
+            } catch (error) {
+              console.warn(
+                "Failed to use cached thumbnail preview, loading full image directly:",
+                error,
               );
-            } else {
-              updateImageDimensions(
-                thumbnailData.original_width,
-                thumbnailData.original_height,
-              );
+              // Fall through to direct load
             }
-
-            // Check again if loading was cancelled before starting full image load
-            if (signal.aborted || activeLoadPathRef.current !== path) {
-              return;
-            }
-          } catch (previewError) {
-            console.warn(
-              "Failed to load preview, continuing with full image:",
-              previewError,
-            );
           }
 
-          // Phase 2: Load full resolution image (in parallel with preview display)
+          // Direct load (no cached thumbnail)
           const fullImageData = await invoke<AppImageData>("load_image", {
             path,
           });
@@ -168,11 +228,14 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             return;
           }
 
-          // Replace preview with full resolution
           setImageData(fullImageData);
 
-          // Don't re-fit window, just update dimensions
-          updateImageDimensions(fullImageData.width, fullImageData.height);
+          // Fit to window or update dimensions based on saved state
+          if (!hasSavedState) {
+            fitToWindow(fullImageData.width, fullImageData.height);
+          } else {
+            updateImageDimensions(fullImageData.width, fullImageData.height);
+          }
 
           // Add to preload cache
           setPreloadedImage(path, fullImageData);
@@ -221,6 +284,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       setPreloadedImage,
       fitToWindow,
       updateImageDimensions,
+      setThumbnailDisplayed,
     ],
   );
 
@@ -233,6 +297,12 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
     if (!currentImage.path) return;
 
+    // Skip debounce if thumbnail is already displayed - upgrade immediately
+    const { ui: currentUi } = useAppStore.getState();
+    const debounceDelay = currentUi.thumbnailDisplayed
+      ? 0
+      : IMAGE_LOAD_DEBOUNCE_MS;
+
     // Debounce image loading to avoid loading intermediate images during rapid navigation
     const timeoutId = setTimeout(async () => {
       // Create new AbortController for this load
@@ -243,7 +313,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
       // Load the image with the specific signal for this request
       await loadImage(currentImage.path, signal);
-    }, IMAGE_LOAD_DEBOUNCE_MS);
+    }, debounceDelay);
 
     return () => {
       // Clear the timeout and abort any ongoing load when path changes
