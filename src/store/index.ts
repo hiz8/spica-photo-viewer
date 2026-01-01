@@ -74,6 +74,7 @@ interface AppActions {
   setLoading: (isLoading: boolean) => void;
   setDragOver: (isDragOver: boolean) => void;
   setShowAbout: (showAbout: boolean) => void;
+  setThumbnailDisplayed: (displayed: boolean) => void;
   setError: (error: Error | null) => void;
   navigateToImage: (index: number) => void;
   navigateNext: () => void;
@@ -263,6 +264,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ui: {
         ...state.ui,
         showAbout,
+      },
+    })),
+
+  setThumbnailDisplayed: (displayed) =>
+    set((state) => ({
+      ui: {
+        ...state.ui,
+        thumbnailDisplayed: displayed,
       },
     })),
 

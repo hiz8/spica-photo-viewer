@@ -25,6 +25,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     updateImageDimensions,
     resizeToImage,
     setPreloadedImage,
+    setThumbnailDisplayed,
   } = useAppStore();
 
   // Initialize thumbnail generation and preloading
@@ -77,6 +78,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             `Upgrading thumbnail to full resolution: ${path.split(/[\\/]/).pop()}`,
           );
 
+          // Set loading state for consistent UX
+          setLoading(true);
+          setImageError(null);
+
           // Load full resolution directly
           const fullImageData = await invoke<AppImageData>("load_image", {
             path,
@@ -103,9 +108,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setPreloadedImage(path, fullImageData);
 
           // Clear thumbnail flag
-          useAppStore.setState((state) => ({
-            ui: { ...state.ui, thumbnailDisplayed: false },
-          }));
+          setThumbnailDisplayed(false);
 
           return;
         }
@@ -281,6 +284,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       setPreloadedImage,
       fitToWindow,
       updateImageDimensions,
+      setThumbnailDisplayed,
     ],
   );
 
