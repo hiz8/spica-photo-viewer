@@ -32,7 +32,10 @@ export const useImagePreloader = () => {
   const preloadImage = useCallback(
     async (imagePath: string): Promise<void> => {
       // Check if already preloaded or currently loading
-      if (cache.preloaded.has(imagePath) || pendingLoadsRef.current.has(imagePath)) {
+      if (
+        cache.preloaded.has(imagePath) ||
+        pendingLoadsRef.current.has(imagePath)
+      ) {
         return;
       }
 
