@@ -187,6 +187,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
       cache: {
         ...state.cache,
+        // Clear all caches when folder changes to prevent unbounded growth
+        thumbnails:
+          state.folder.path !== path ? new Map() : state.cache.thumbnails,
+        preloaded:
+          state.folder.path !== path ? new Map() : state.cache.preloaded,
         imageViewStates:
           state.folder.path !== path ? new Map() : state.cache.imageViewStates,
       },
