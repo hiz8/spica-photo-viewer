@@ -1,6 +1,7 @@
 use crate::utils::image::{
     generate_thumbnail, get_image_dimensions, is_supported_image, load_image_as_base64,
 };
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -43,22 +44,24 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         return Err("Invalid folder path".to_string());
     }
 
-    let mut images = Vec::new();
-
-    for entry in WalkDir::new(folder_path)
+    // First, collect all valid image paths (fast, no metadata reads)
+    let image_paths: Vec<_> = WalkDir::new(folder_path)
         .max_depth(1)
         .into_iter()
         .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
+        .filter(|entry| {
+            let path = entry.path();
+            path.is_file() && is_supported_image(path)
+        })
+        .map(|entry| entry.path().to_path_buf())
+        .collect();
 
-        if path.is_file() && is_supported_image(path) {
-            match get_image_info(path) {
-                Ok(info) => images.push(info),
-                Err(_) => continue,
-            }
-        }
-    }
+    // Process metadata in parallel using rayon
+    // This dramatically speeds up folder scanning for large folders (900+ images)
+    let mut images: Vec<ImageInfo> = image_paths
+        .par_iter()
+        .filter_map(|path| get_image_info(path).ok())
+        .collect();
 
     images.sort_by(|a, b| a.filename.cmp(&b.filename));
     Ok(images)

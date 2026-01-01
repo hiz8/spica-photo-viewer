@@ -4063,6 +4063,7 @@ version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "image",
+ "rayon",
  "serde",
  "serde_json",
  "tauri",
