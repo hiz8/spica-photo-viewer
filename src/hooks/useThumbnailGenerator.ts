@@ -4,6 +4,7 @@ import { useAppStore } from "../store";
 import {
   THUMBNAIL_GENERATION_DEBOUNCE_MS,
   THUMBNAIL_GENERATION_INITIAL_RANGE,
+  THUMBNAIL_GENERATION_EXPANDED_RANGE,
   THUMBNAIL_SIZE,
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
@@ -20,7 +21,7 @@ export const useThumbnailGenerator = () => {
   const isGeneratingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasExpandedQueueRef = useRef(false); // Track if queue expanded to full range
+  const expansionPhaseRef = useRef<0 | 1 | 2>(0); // 0: initial, 1: expanded range, 2: full range
 
   /**
    * Generate thumbnail for a single image
@@ -222,34 +223,57 @@ export const useThumbnailGenerator = () => {
   }, [generateThumbnail]); // Only depend on generateThumbnail which is now stable
 
   /**
-   * Expand queue to full range in background after initial thumbnails complete
+   * Expand queue progressively: initial → expanded range → full range
+   * This avoids processing all 900+ images immediately
    */
-  const expandQueueToFullRange = useCallback(async () => {
+  const expandQueueProgressively = useCallback(async () => {
     const { currentImage, folder } = useAppStore.getState();
 
     if (currentImage.index === -1 || folder.images.length === 0) {
       return;
     }
 
-    // Build full priority queue (no maxRange limit)
-    const fullQueue = buildPriorityQueue();
+    // Phase 1: Already completed initial range, now do expanded range
+    if (expansionPhaseRef.current === 0) {
+      expansionPhaseRef.current = 1;
+      const expandedQueue = buildPriorityQueue(
+        THUMBNAIL_GENERATION_EXPANDED_RANGE,
+      );
 
-    if (fullQueue.length === 0) {
-      console.log("All thumbnails already generated");
+      if (expandedQueue.length > 0) {
+        console.log(
+          `Expanding to ±${THUMBNAIL_GENERATION_EXPANDED_RANGE} range: ${expandedQueue.length} images`,
+        );
+        generationQueueRef.current = expandedQueue;
+        await processQueue();
+      }
+
+      // Continue to full range after expanded range completes
+      await expandQueueProgressively();
       return;
     }
 
-    console.log(
-      `Expanding thumbnail queue to ${fullQueue.length} remaining images`,
-    );
-    generationQueueRef.current = fullQueue;
-    hasExpandedQueueRef.current = true;
+    // Phase 2: Now process remaining images (full range)
+    if (expansionPhaseRef.current === 1) {
+      expansionPhaseRef.current = 2;
+      const fullQueue = buildPriorityQueue();
 
-    await processQueue();
+      if (fullQueue.length === 0) {
+        console.log("All thumbnails already generated");
+        return;
+      }
+
+      console.log(
+        `Expanding to full range: ${fullQueue.length} remaining images`,
+      );
+      generationQueueRef.current = fullQueue;
+      await processQueue();
+    }
   }, [buildPriorityQueue, processQueue]);
 
   /**
-   * Start thumbnail generation with debounce
+   * Start thumbnail generation with smart debounce
+   * Skips debounce when all initial thumbnails are cached (optimization for large folders)
    */
   const startGeneration = useCallback(() => {
     // Abort any ongoing generation
@@ -263,15 +287,23 @@ export const useThumbnailGenerator = () => {
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    // Reset expansion flag on new navigation
-    hasExpandedQueueRef.current = false;
+    // Reset expansion phase on new navigation
+    expansionPhaseRef.current = 0;
 
     // Build initial priority queue with limited range
     const initialQueue = buildPriorityQueue(THUMBNAIL_GENERATION_INITIAL_RANGE);
+
+    // Optimization: Skip debounce if all initial thumbnails are already cached
+    // This saves ~500ms on subsequent folder opens for large folders
     if (initialQueue.length === 0) {
+      console.log(
+        "All initial thumbnails cached, skipping debounce and expanding",
+      );
       useAppStore
         .getState()
-        .setThumbnailGeneration({ allGenerated: true, isGenerating: false });
+        .setThumbnailGeneration({ allGenerated: false, isGenerating: false });
+      // Directly start progressive expansion without debounce
+      expandQueueProgressively();
       return;
     }
 
@@ -280,16 +312,14 @@ export const useThumbnailGenerator = () => {
       `Initial thumbnail queue: ${initialQueue.length} images (±${THUMBNAIL_GENERATION_INITIAL_RANGE})`,
     );
 
-    // Debounce: wait for navigation to settle
+    // Debounce: wait for navigation to settle before generating
     debounceTimeoutRef.current = setTimeout(() => {
       processQueue().then(() => {
-        // After initial queue completes, expand to full range in background
-        if (!hasExpandedQueueRef.current) {
-          expandQueueToFullRange();
-        }
+        // After initial queue completes, expand progressively in background
+        expandQueueProgressively();
       });
     }, THUMBNAIL_GENERATION_DEBOUNCE_MS);
-  }, [buildPriorityQueue, processQueue, expandQueueToFullRange]);
+  }, [buildPriorityQueue, processQueue, expandQueueProgressively]);
 
   /**
    * Trigger generation when current image or folder changes
