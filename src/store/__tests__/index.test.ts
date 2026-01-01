@@ -1319,4 +1319,360 @@ describe("AppStore", () => {
       expect(state.currentImage.path).toBe("/test/image1.jpg");
     });
   });
+
+  describe("thumbnail cache management", () => {
+    it("should store thumbnail with dimension metadata", () => {
+      const { setCachedThumbnail } = useAppStore.getState();
+
+      setCachedThumbnail("/test/image.jpg", {
+        base64: "thumbnailBase64",
+        width: 1920,
+        height: 1080,
+      });
+
+      const state = useAppStore.getState();
+      const thumbnail = state.cache.thumbnails.get("/test/image.jpg");
+      expect(thumbnail).toEqual({
+        base64: "thumbnailBase64",
+        width: 1920,
+        height: 1080,
+      });
+    });
+
+    it("should store error sentinel value for failed thumbnails", () => {
+      const { setCachedThumbnail } = useAppStore.getState();
+
+      setCachedThumbnail("/test/failed-image.jpg", "error");
+
+      const state = useAppStore.getState();
+      const thumbnail = state.cache.thumbnails.get("/test/failed-image.jpg");
+      expect(thumbnail).toBe("error");
+    });
+
+    it("should remove thumbnail from cache", () => {
+      const { setCachedThumbnail, removeCachedThumbnail } =
+        useAppStore.getState();
+
+      // Add thumbnail first
+      setCachedThumbnail("/test/image.jpg", {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      });
+      expect(
+        useAppStore.getState().cache.thumbnails.has("/test/image.jpg"),
+      ).toBe(true);
+
+      // Remove it
+      removeCachedThumbnail("/test/image.jpg");
+      expect(
+        useAppStore.getState().cache.thumbnails.has("/test/image.jpg"),
+      ).toBe(false);
+    });
+
+    it("should create immutable Map copy when setting thumbnail", () => {
+      const { setCachedThumbnail } = useAppStore.getState();
+
+      const initialMap = useAppStore.getState().cache.thumbnails;
+
+      setCachedThumbnail("/test/image.jpg", {
+        base64: "data",
+        width: 800,
+        height: 600,
+      });
+
+      const newMap = useAppStore.getState().cache.thumbnails;
+      expect(newMap).not.toBe(initialMap);
+    });
+  });
+
+  describe("thumbnail instant display in navigation", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      Object.defineProperty(window, "innerWidth", {
+        value: 1920,
+        configurable: true,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        value: 1080,
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("should display cached thumbnail instantly when navigating", () => {
+      const cachedThumbnail = {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      };
+
+      const initialState = useAppStore.getState();
+      useAppStore.setState({
+        folder: {
+          ...initialState.folder,
+          images: mockImageList,
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
+        },
+        cache: {
+          ...initialState.cache,
+          thumbnails: new Map([["/test/image1.jpg", cachedThumbnail]]),
+          preloaded: new Map(), // No full resolution cached
+        },
+      });
+
+      const { navigateToImage } = useAppStore.getState();
+      navigateToImage(0); // Navigate to image1.jpg
+
+      const state = useAppStore.getState();
+      // Should have data immediately from thumbnail
+      expect(state.currentImage.data).not.toBeNull();
+      expect(state.currentImage.data?.base64).toBe("thumbnailBase64");
+      expect(state.currentImage.data?.width).toBe(800);
+      expect(state.currentImage.data?.height).toBe(600);
+      expect(state.currentImage.data?.format).toBe("jpeg"); // Thumbnails are always JPEG
+    });
+
+    it("should set thumbnailDisplayed flag when using thumbnail", () => {
+      const cachedThumbnail = {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      };
+
+      const initialState = useAppStore.getState();
+      useAppStore.setState({
+        folder: {
+          ...initialState.folder,
+          images: mockImageList,
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
+        },
+        cache: {
+          ...initialState.cache,
+          thumbnails: new Map([["/test/image1.jpg", cachedThumbnail]]),
+          preloaded: new Map(),
+        },
+      });
+
+      const { navigateToImage } = useAppStore.getState();
+      navigateToImage(0);
+
+      const state = useAppStore.getState();
+      expect(state.ui.thumbnailDisplayed).toBe(true);
+    });
+
+    it("should not set thumbnailDisplayed when using full resolution", () => {
+      const cachedImage = {
+        ...mockImageData,
+        path: "/test/image1.jpg",
+      };
+
+      const initialState = useAppStore.getState();
+      useAppStore.setState({
+        folder: {
+          ...initialState.folder,
+          images: mockImageList,
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
+        },
+        cache: {
+          ...initialState.cache,
+          preloaded: new Map([["/test/image1.jpg", cachedImage]]),
+          thumbnails: new Map(),
+        },
+      });
+
+      const { navigateToImage } = useAppStore.getState();
+      navigateToImage(0);
+
+      const state = useAppStore.getState();
+      expect(state.ui.thumbnailDisplayed).toBe(false);
+    });
+
+    it("should prefer full resolution over thumbnail when both cached", () => {
+      const cachedImage = {
+        ...mockImageData,
+        path: "/test/image1.jpg",
+        base64: "fullResBase64",
+      };
+      const cachedThumbnail = {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      };
+
+      const initialState = useAppStore.getState();
+      useAppStore.setState({
+        folder: {
+          ...initialState.folder,
+          images: mockImageList,
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
+        },
+        cache: {
+          ...initialState.cache,
+          preloaded: new Map([["/test/image1.jpg", cachedImage]]),
+          thumbnails: new Map([["/test/image1.jpg", cachedThumbnail]]),
+        },
+      });
+
+      const { navigateToImage } = useAppStore.getState();
+      navigateToImage(0);
+
+      const state = useAppStore.getState();
+      // Should use full resolution, not thumbnail
+      expect(state.currentImage.data?.base64).toBe("fullResBase64");
+      expect(state.ui.thumbnailDisplayed).toBe(false);
+    });
+
+    it("should not display error thumbnails", () => {
+      const initialState = useAppStore.getState();
+      useAppStore.setState({
+        folder: {
+          ...initialState.folder,
+          images: mockImageList,
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
+        },
+        cache: {
+          ...initialState.cache,
+          thumbnails: new Map([["/test/image1.jpg", "error"]]),
+          preloaded: new Map(),
+        },
+      });
+
+      const { navigateToImage } = useAppStore.getState();
+      navigateToImage(0);
+
+      const state = useAppStore.getState();
+      // Should not use error thumbnail
+      expect(state.currentImage.data).toBeNull();
+      expect(state.ui.thumbnailDisplayed).toBe(false);
+    });
+
+    it("should calculate fit-to-window zoom for thumbnail dimensions", () => {
+      const cachedThumbnail = {
+        base64: "thumbnailBase64",
+        width: 3840, // Large image
+        height: 2160,
+      };
+
+      const initialState = useAppStore.getState();
+      useAppStore.setState({
+        folder: {
+          ...initialState.folder,
+          images: mockImageList,
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
+        },
+        cache: {
+          ...initialState.cache,
+          thumbnails: new Map([["/test/image1.jpg", cachedThumbnail]]),
+          preloaded: new Map(),
+          imageViewStates: new Map(), // No saved view state
+        },
+      });
+
+      const { navigateToImage } = useAppStore.getState();
+      navigateToImage(0);
+
+      const state = useAppStore.getState();
+      // Should apply fit-to-window zoom for large image
+      expect(state.view.zoom).toBeLessThan(100);
+      expect(state.view.zoom).toBeGreaterThanOrEqual(10);
+    });
+  });
+
+  describe("setThumbnailDisplayed", () => {
+    it("should set thumbnailDisplayed flag", () => {
+      const { setThumbnailDisplayed } = useAppStore.getState();
+
+      setThumbnailDisplayed(true);
+      expect(useAppStore.getState().ui.thumbnailDisplayed).toBe(true);
+
+      setThumbnailDisplayed(false);
+      expect(useAppStore.getState().ui.thumbnailDisplayed).toBe(false);
+    });
+  });
+
+  describe("setThumbnailGeneration", () => {
+    it("should update thumbnail generation state", () => {
+      const { setThumbnailGeneration } = useAppStore.getState();
+
+      setThumbnailGeneration({
+        isGenerating: true,
+        allGenerated: false,
+        currentGeneratingPath: "/test/image.jpg",
+      });
+
+      const state = useAppStore.getState();
+      expect(state.thumbnailGeneration.isGenerating).toBe(true);
+      expect(state.thumbnailGeneration.allGenerated).toBe(false);
+      expect(state.thumbnailGeneration.currentGeneratingPath).toBe(
+        "/test/image.jpg",
+      );
+    });
+
+    it("should partially update thumbnail generation state", () => {
+      const { setThumbnailGeneration } = useAppStore.getState();
+
+      // Set initial state
+      setThumbnailGeneration({
+        isGenerating: true,
+        allGenerated: false,
+        currentGeneratingPath: "/test/image.jpg",
+      });
+
+      // Partially update
+      setThumbnailGeneration({ allGenerated: true });
+
+      const state = useAppStore.getState();
+      expect(state.thumbnailGeneration.isGenerating).toBe(true);
+      expect(state.thumbnailGeneration.allGenerated).toBe(true);
+      expect(state.thumbnailGeneration.currentGeneratingPath).toBe(
+        "/test/image.jpg",
+      );
+    });
+  });
+
+  describe("folder change clears thumbnail cache", () => {
+    it("should clear thumbnails when changing to different folder", () => {
+      const { setFolderImages, setCachedThumbnail } = useAppStore.getState();
+
+      // Set up folder with thumbnails
+      setFolderImages("/test/folder1", mockImageList);
+      setCachedThumbnail("/test/image1.jpg", {
+        base64: "data",
+        width: 800,
+        height: 600,
+      });
+
+      expect(useAppStore.getState().cache.thumbnails.size).toBe(1);
+
+      // Change to different folder
+      setFolderImages("/test/folder2", mockImageList);
+
+      // Thumbnails should be cleared
+      expect(useAppStore.getState().cache.thumbnails.size).toBe(0);
+    });
+
+    it("should preserve thumbnails when setting same folder", () => {
+      const { setFolderImages, setCachedThumbnail } = useAppStore.getState();
+
+      // Set up folder with thumbnails
+      setFolderImages("/test/folder", mockImageList);
+      setCachedThumbnail("/test/image1.jpg", {
+        base64: "data",
+        width: 800,
+        height: 600,
+      });
+
+      expect(useAppStore.getState().cache.thumbnails.size).toBe(1);
+
+      // Set same folder again
+      setFolderImages("/test/folder", mockImageList);
+
+      // Thumbnails should be preserved
+      expect(useAppStore.getState().cache.thumbnails.size).toBe(1);
+    });
+  });
 });
