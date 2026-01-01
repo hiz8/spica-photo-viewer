@@ -590,16 +590,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           currentImage: {
             ...state.currentImage,
-            path: imagePath,
+            // Keep path and data unchanged - only update index
             index: imageIndex,
-            data: null,
-            error: null,
-          },
-          view: {
-            ...state.view,
-            zoom: 100,
-            panX: 0,
-            panY: 0,
           },
           cache: {
             ...state.cache,
