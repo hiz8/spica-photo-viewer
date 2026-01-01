@@ -499,6 +499,14 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         />
       )}
 
+      {/* Loading indicator when image path is set but data not yet loaded */}
+      {!currentImage.data && ui.isLoading && (
+        <div className="loading-indicator">
+          <div className="loading-spinner" />
+          <div className="loading-text">Loading...</div>
+        </div>
+      )}
+
       {view.zoom !== 100 && (
         <div className="zoom-indicator">{Math.round(view.zoom)}%</div>
       )}

@@ -550,7 +550,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
       );
       const folderPath = imagePath.substring(0, lastSlashIndex);
 
-      // Load all images in the folder
+      // OPTIMIZATION: Immediately set the image path to hide welcome screen
+      // and show loading state while folder scan happens in background
+      set((state) => ({
+        currentImage: {
+          ...state.currentImage,
+          path: imagePath,
+          index: -1, // Will be updated after folder scan
+          data: null,
+          error: null,
+        },
+        ui: {
+          ...state.ui,
+          isLoading: true,
+        },
+      }));
+
+      // Maximize window immediately (don't wait for folder scan)
+      invoke("maximize_window").catch((error) => {
+        console.error("Failed to maximize window when opening image:", error);
+      });
+
+      // Load all images in the folder (can take time for large folders)
       const images = await invoke<ImageInfo[]>("get_folder_images", {
         path: folderPath,
       });
@@ -561,13 +582,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       );
 
       if (imageIndex !== -1) {
-        // Maximize window when opening an image
-        try {
-          await invoke("maximize_window");
-        } catch (error) {
-          console.error("Failed to maximize window when opening image:", error);
-        }
-
         set((state) => ({
           folder: {
             ...state.folder,
@@ -597,12 +611,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }));
       } else {
         console.error("Image not found in folder:", imagePath);
+        // Still show the image even if not found in folder list
+        set((state) => ({
+          folder: {
+            ...state.folder,
+            path: folderPath,
+            images,
+          },
+          currentImage: {
+            ...state.currentImage,
+            index: 0, // Default to first if not found
+          },
+        }));
       }
     } catch (error) {
       console.error("Failed to open image from path:", error);
       set((state) => ({
         ui: {
           ...state.ui,
+          isLoading: false,
           error: new Error(`Failed to open image: ${error}`),
         },
       }));
