@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import type { ImageData } from "../types";
@@ -23,15 +23,21 @@ export const useImagePreloader = () => {
     removePreloadedImage,
   } = useAppStore();
 
+  // Track pending loads to prevent duplicate requests
+  const pendingLoadsRef = useRef<Set<string>>(new Set());
+
   /**
    * Preload full-resolution image
    */
   const preloadImage = useCallback(
     async (imagePath: string): Promise<void> => {
-      // Check if already preloaded
-      if (cache.preloaded.has(imagePath)) {
+      // Check if already preloaded or currently loading
+      if (cache.preloaded.has(imagePath) || pendingLoadsRef.current.has(imagePath)) {
         return;
       }
+
+      // Mark as pending to prevent duplicate loads
+      pendingLoadsRef.current.add(imagePath);
 
       try {
         // Load full-resolution image
@@ -58,6 +64,9 @@ export const useImagePreloader = () => {
           format: "error",
         };
         setPreloadedImage(imagePath, errorData);
+      } finally {
+        // Remove from pending loads
+        pendingLoadsRef.current.delete(imagePath);
       }
     },
     [cache.preloaded, setPreloadedImage],

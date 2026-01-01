@@ -7,7 +7,10 @@ import type {
   ViewState,
   ThumbnailGenerationState,
 } from "../types";
-import { RAPID_NAVIGATION_THRESHOLD_MS } from "../constants/timing";
+import {
+  RAPID_NAVIGATION_THRESHOLD_MS,
+  SUPPRESS_TRANSITION_MS,
+} from "../constants/timing";
 
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
@@ -385,7 +388,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
                     suppressTransitionTimeoutId: null,
                   },
                 });
-              }, 300);
+              }, SUPPRESS_TRANSITION_MS);
             })(),
           },
         };

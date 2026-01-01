@@ -3,11 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import {
   THUMBNAIL_GENERATION_DEBOUNCE_MS,
+  THUMBNAIL_GENERATION_INITIAL_RANGE,
+  THUMBNAIL_SIZE,
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
-
-const THUMBNAIL_SIZE = 20;
-const INITIAL_RANGE = 10; // ±10 images for initial quick load
 
 /**
  * Hook for centralized thumbnail generation with priority queue
@@ -268,7 +267,7 @@ export const useThumbnailGenerator = () => {
     hasExpandedQueueRef.current = false;
 
     // Build initial priority queue with limited range
-    const initialQueue = buildPriorityQueue(INITIAL_RANGE);
+    const initialQueue = buildPriorityQueue(THUMBNAIL_GENERATION_INITIAL_RANGE);
     if (initialQueue.length === 0) {
       useAppStore
         .getState()
@@ -278,7 +277,7 @@ export const useThumbnailGenerator = () => {
 
     generationQueueRef.current = initialQueue;
     console.log(
-      `Initial thumbnail queue: ${initialQueue.length} images (±${INITIAL_RANGE})`,
+      `Initial thumbnail queue: ${initialQueue.length} images (±${THUMBNAIL_GENERATION_INITIAL_RANGE})`,
     );
 
     // Debounce: wait for navigation to settle

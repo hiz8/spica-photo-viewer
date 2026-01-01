@@ -375,7 +375,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_folder_images_includes_all_image_extensions() {
+    async fn test_get_folder_images_defers_validation_to_load_time() {
         let temp_dir = create_temp_dir();
 
         // Create valid and corrupted images with valid extensions
