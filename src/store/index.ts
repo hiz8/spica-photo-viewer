@@ -550,10 +550,40 @@ export const useAppStore = create<AppStore>((set, get) => ({
       );
       const folderPath = imagePath.substring(0, lastSlashIndex);
 
-      // Load all images in the folder
+      // OPTIMIZATION: Immediately set the image path to hide welcome screen
+      // and show loading state while folder scan happens in background
+      set((state) => ({
+        currentImage: {
+          ...state.currentImage,
+          path: imagePath,
+          index: -1, // Will be updated after folder scan
+          data: null,
+          error: null,
+        },
+        ui: {
+          ...state.ui,
+          isLoading: true,
+        },
+      }));
+
+      // Maximize window immediately (don't wait for folder scan)
+      invoke("maximize_window").catch((error) => {
+        console.error("Failed to maximize window when opening image:", error);
+      });
+
+      // Load all images in the folder (can take time for large folders)
       const images = await invoke<ImageInfo[]>("get_folder_images", {
         path: folderPath,
       });
+
+      // Check for race condition: user may have navigated away during folder scan
+      const currentState = get();
+      if (currentState.currentImage.path !== imagePath) {
+        console.log(
+          "Navigation occurred during folder scan, aborting openImageFromPath",
+        );
+        return;
+      }
 
       // Find the index of the specific image
       const imageIndex = images.findIndex(
@@ -561,13 +591,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       );
 
       if (imageIndex !== -1) {
-        // Maximize window when opening an image
-        try {
-          await invoke("maximize_window");
-        } catch (error) {
-          console.error("Failed to maximize window when opening image:", error);
-        }
-
         set((state) => ({
           folder: {
             ...state.folder,
@@ -576,16 +599,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           currentImage: {
             ...state.currentImage,
-            path: imagePath,
+            // Keep path and data unchanged - only update index
             index: imageIndex,
-            data: null,
-            error: null,
-          },
-          view: {
-            ...state.view,
-            zoom: 100,
-            panX: 0,
-            panY: 0,
           },
           cache: {
             ...state.cache,
@@ -594,15 +609,43 @@ export const useAppStore = create<AppStore>((set, get) => ({
                 ? new Map()
                 : state.cache.imageViewStates,
           },
+          ui: {
+            ...state.ui,
+            isLoading: false, // Reset loading state after folder scan
+          },
         }));
       } else {
         console.error("Image not found in folder:", imagePath);
+        // Still show the image even if not found in folder list
+        // Reset view state since we're showing a different image than requested
+        set((state) => ({
+          folder: {
+            ...state.folder,
+            path: folderPath,
+            images,
+          },
+          currentImage: {
+            ...state.currentImage,
+            index: 0, // Default to first if not found
+          },
+          view: {
+            ...state.view,
+            zoom: 100, // Reset zoom to default
+            panX: 0,
+            panY: 0,
+          },
+          ui: {
+            ...state.ui,
+            isLoading: false, // Reset loading state
+          },
+        }));
       }
     } catch (error) {
       console.error("Failed to open image from path:", error);
       set((state) => ({
         ui: {
           ...state.ui,
+          isLoading: false,
           error: new Error(`Failed to open image: ${error}`),
         },
       }));

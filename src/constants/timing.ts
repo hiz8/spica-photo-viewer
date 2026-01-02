@@ -58,6 +58,13 @@ export const THUMBNAIL_GENERATION_DEBOUNCE_MS = 500;
 export const THUMBNAIL_GENERATION_INITIAL_RANGE = 10;
 
 /**
+ * Expanded range for thumbnail generation (±N images)
+ * After initial range, expands to this range before processing remaining images
+ * This limits the immediate work for large folders (900+ images)
+ */
+export const THUMBNAIL_GENERATION_EXPANDED_RANGE = 30;
+
+/**
  * Size (in pixels) for thumbnail generation and caching
  * Used by the thumbnail generator for creating preview thumbnails
  */

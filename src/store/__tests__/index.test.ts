@@ -920,15 +920,20 @@ describe("AppStore", () => {
       expect(state.currentImage.index).toBe(1); // Second image in the list
     });
 
-    it("should handle error when image not found in folder", async () => {
+    it("should handle when image not found in folder list", async () => {
       mockInvoke.mockResolvedValue(mockImageList);
 
       const { openImageFromPath } = useAppStore.getState();
 
       await openImageFromPath("/test/nonexistent.jpg");
 
-      // Should not change current image if not found
-      expect(useAppStore.getState().currentImage.path).toBe("");
+      const state = useAppStore.getState();
+      // Path is set immediately for loading indicator display
+      expect(state.currentImage.path).toBe("/test/nonexistent.jpg");
+      // Index defaults to 0 if image not found in folder list
+      expect(state.currentImage.index).toBe(0);
+      // Folder images should still be loaded
+      expect(state.folder.images).toEqual(mockImageList);
     });
 
     it("should handle invoke error", async () => {
