@@ -299,11 +299,9 @@ export const useThumbnailGenerator = () => {
       console.log(
         "All initial thumbnails cached, skipping debounce and expanding",
       );
-      useAppStore
-        .getState()
-        .setThumbnailGeneration({ allGenerated: false, isGenerating: false });
       // Directly start progressive expansion without debounce
-      expandQueueProgressively();
+      // Note: processQueue() in expandQueueProgressively will set isGenerating state
+      void expandQueueProgressively();
       return;
     }
 

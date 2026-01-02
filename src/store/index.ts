@@ -600,6 +600,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
                 ? new Map()
                 : state.cache.imageViewStates,
           },
+          ui: {
+            ...state.ui,
+            isLoading: false, // Reset loading state after folder scan
+          },
         }));
       } else {
         console.error("Image not found in folder:", imagePath);
@@ -613,6 +617,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
           currentImage: {
             ...state.currentImage,
             index: 0, // Default to first if not found
+          },
+          ui: {
+            ...state.ui,
+            isLoading: false, // Reset loading state
           },
         }));
       }
