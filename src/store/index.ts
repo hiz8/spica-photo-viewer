@@ -576,6 +576,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
         path: folderPath,
       });
 
+      // Check for race condition: user may have navigated away during folder scan
+      const currentState = get();
+      if (currentState.currentImage.path !== imagePath) {
+        console.log(
+          "Navigation occurred during folder scan, aborting openImageFromPath",
+        );
+        return;
+      }
+
       // Find the index of the specific image
       const imageIndex = images.findIndex(
         (img: ImageInfo) => img.path === imagePath,
@@ -608,6 +617,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       } else {
         console.error("Image not found in folder:", imagePath);
         // Still show the image even if not found in folder list
+        // Reset view state since we're showing a different image than requested
         set((state) => ({
           folder: {
             ...state.folder,
@@ -617,6 +627,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
           currentImage: {
             ...state.currentImage,
             index: 0, // Default to first if not found
+          },
+          view: {
+            ...state.view,
+            zoom: 100, // Reset zoom to default
+            panX: 0,
+            panY: 0,
           },
           ui: {
             ...state.ui,
