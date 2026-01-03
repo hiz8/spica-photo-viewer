@@ -1,42 +1,68 @@
-import { spawn } from "child_process";
-import { createInterface } from "readline";
+#!/usr/bin/env node
 
-const rl = createInterface({ input: process.stdin });
-let inputData = "";
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 
-rl.on("line", (line) => {
-  inputData += line;
-});
+const SUPPORTED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.json', '.jsonc'];
 
-rl.on("close", () => {
-  let data;
+function debugLog(message) {
+  if (process.env.DEBUG) {
+    console.error(message);
+  }
+}
+
+function parseInput(inputData) {
   try {
-    data = JSON.parse(inputData);
+    return JSON.parse(inputData);
   } catch {
-    process.exit(0);
+    return null;
   }
+}
 
-  const filePath = data?.tool_input?.file_path ?? "";
-  const supportedExtensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".jsonc"];
-  const hasValidExtension = supportedExtensions.some((ext) =>
-    filePath.endsWith(ext)
-  );
-
-  if (!filePath || !hasValidExtension) {
-    process.exit(0);
+function hasValidExtension(filePath) {
+  if (!filePath) {
+    return false;
   }
+  return SUPPORTED_EXTENSIONS.some((ext) => filePath.endsWith(ext));
+}
 
-  const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
-  const biome = spawn(npxCommand, ["biome", "format", "--write", filePath], {
-    stdio: "inherit",
+function getNpxCommand() {
+  return process.platform === 'win32' ? 'npx.cmd' : 'npx';
+}
+
+function runBiomeFormat(filePath) {
+  const npxCommand = getNpxCommand();
+  const biome = spawn(npxCommand, ['biome', 'format', '--write', filePath], {
+    stdio: 'inherit',
   });
 
-  biome.on("error", (err) => {
-    console.error("Failed to start biome formatter:", err?.message ?? err);
+  biome.on('error', (err) => {
+    console.error(`Failed to start biome formatter: ${err?.message ?? err}`);
     process.exit(1);
   });
 
-  biome.on("close", (code) => {
+  biome.on('close', (code) => {
     process.exit(code ?? 0);
   });
+}
+
+const rl = createInterface({ input: process.stdin });
+let inputData = '';
+
+rl.on('line', (line) => {
+  inputData += line;
+});
+
+rl.on('close', () => {
+  const data = parseInput(inputData);
+  if (data === null) {
+    process.exit(0);
+  }
+
+  const filePath = data?.tool_input?.file_path ?? '';
+  if (!hasValidExtension(filePath)) {
+    process.exit(0);
+  }
+
+  runBiomeFormat(filePath);
 });
