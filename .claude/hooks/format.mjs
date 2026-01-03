@@ -37,7 +37,7 @@ function runBiomeFormat(filePath) {
   });
 
   biome.on('error', (err) => {
-    debugLog(`Failed to start biome formatter: ${err?.message ?? err}`);
+    console.error(`Failed to start biome formatter: ${err?.message ?? err}`);
     process.exit(1);
   });
 
@@ -55,7 +55,7 @@ rl.on('line', (line) => {
 
 rl.on('close', () => {
   const data = parseInput(inputData);
-  if (!data) {
+  if (data === null) {
     process.exit(0);
   }
 
