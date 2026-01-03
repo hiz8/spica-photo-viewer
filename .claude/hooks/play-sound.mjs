@@ -3,6 +3,8 @@
 import { exec } from 'node:child_process';
 import os from 'node:os';
 
+const VALID_SOUND_TYPES = ['default', 'notification', 'done'];
+
 const SOUND_CONFIGS = {
   darwin: {
     command: 'afplay',
@@ -13,7 +15,7 @@ const SOUND_CONFIGS = {
     },
   },
   linux: {
-    command: 'paplay || aplay || play',
+    commands: ['paplay', 'aplay', 'play'],
     sounds: {
       default: '/usr/share/sounds/freedesktop/stereo/complete.oga',
       notification: '/usr/share/sounds/freedesktop/stereo/message.oga',
@@ -35,7 +37,14 @@ function debugLog(message) {
   }
 }
 
-function getSoundCommand(type = 'default') {
+function validateSoundType(type) {
+  if (!type || !VALID_SOUND_TYPES.includes(type)) {
+    return 'default';
+  }
+  return type;
+}
+
+function getSoundCommand(type) {
   const platform = os.platform();
   const config = SOUND_CONFIGS[platform];
 
@@ -43,10 +52,18 @@ function getSoundCommand(type = 'default') {
     throw new Error(`Unsupported platform: ${platform}`);
   }
 
-  const soundFile = config.sounds[type] || config.sounds.default;
+  const validType = validateSoundType(type);
+  const soundFile = config.sounds[validType];
 
   if (platform === 'win32') {
     return `powershell -c "(New-Object Media.SoundPlayer '${soundFile}').PlaySync()"`;
+  }
+
+  if (platform === 'linux') {
+    const fallbackCommands = config.commands
+      .map((cmd) => `${cmd} "${soundFile}"`)
+      .join(' || ');
+    return fallbackCommands;
   }
 
   return `${config.command} "${soundFile}"`;
