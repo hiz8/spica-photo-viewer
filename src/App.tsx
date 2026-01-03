@@ -14,7 +14,8 @@ import { useAppStore } from "./store";
 import "./App.css";
 
 const App: React.FC = () => {
-  const { ui, currentImage, view, openImageFromPath } = useAppStore();
+  const { ui, currentImage, view, openImageFromPath, setCheckingStartupFile } =
+    useAppStore();
 
   useKeyboard();
   // useFileDrop(); // Temporarily disabled to test thumbnails
@@ -32,11 +33,13 @@ const App: React.FC = () => {
         }
       } catch (error) {
         console.error("Failed to check startup file:", error);
+      } finally {
+        setCheckingStartupFile(false);
       }
     };
 
     checkStartupFile();
-  }, [openImageFromPath]);
+  }, [openImageFromPath, setCheckingStartupFile]);
 
   return (
     <div
@@ -45,7 +48,7 @@ const App: React.FC = () => {
       <DropZone className="main-drop-zone">
         <ImageViewer />
 
-        {!currentImage.path && (
+        {!currentImage.path && !ui.isCheckingStartupFile && (
           <div className="welcome-overlay">
             <div className="welcome-content">
               <h1>Spica Photo Viewer</h1>

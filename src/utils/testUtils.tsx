@@ -116,6 +116,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     suppressTransition: false,
     suppressTransitionTimeoutId: null,
     thumbnailDisplayed: false,
+    isCheckingStartupFile: true,
   },
   // Mock functions
   setCurrentImage: vi.fn(),
@@ -150,6 +151,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   openFileDialog: vi.fn(),
   openWithDialog: vi.fn(),
   setThumbnailGeneration: vi.fn(),
+  setCheckingStartupFile: vi.fn(),
   ...overrides,
 });
 

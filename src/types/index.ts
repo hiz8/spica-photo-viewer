@@ -35,6 +35,7 @@ export interface UIState {
   suppressTransition: boolean;
   suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null;
   thumbnailDisplayed?: boolean; // Whether current display is thumbnail (not full resolution)
+  isCheckingStartupFile: boolean; // Whether startup file check is in progress
 }
 
 export interface ImageViewState {

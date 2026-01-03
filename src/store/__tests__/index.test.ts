@@ -49,6 +49,7 @@ describe("AppStore", () => {
         error: null,
         suppressTransition: false,
         suppressTransitionTimeoutId: null,
+        isCheckingStartupFile: true,
       },
     });
     vi.clearAllMocks();
@@ -1016,6 +1017,19 @@ describe("AppStore", () => {
 
       setDragOver(false);
       expect(useAppStore.getState().ui.isDragOver).toBe(false);
+    });
+
+    it("should set checking startup file state", () => {
+      const { setCheckingStartupFile } = useAppStore.getState();
+
+      // Initial state is true
+      expect(useAppStore.getState().ui.isCheckingStartupFile).toBe(true);
+
+      setCheckingStartupFile(false);
+      expect(useAppStore.getState().ui.isCheckingStartupFile).toBe(false);
+
+      setCheckingStartupFile(true);
+      expect(useAppStore.getState().ui.isCheckingStartupFile).toBe(true);
     });
 
     it("should set thumbnail opacity", () => {
