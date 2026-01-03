@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { exec } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import os from 'node:os';
 
 const VALID_SOUND_TYPES = ['default', 'notification', 'done'];
@@ -72,13 +72,7 @@ function getSoundCommand(type) {
 function playSound(type) {
   try {
     const command = getSoundCommand(type);
-    exec(command, (error, _, stderr) => {
-      if (error) {
-        debugLog(`Sound playback failed: ${error.message}`);
-      } else if (stderr) {
-        debugLog(`Sound playback warning: ${stderr}`);
-      }
-    });
+    execSync(command, { stdio: 'ignore' });
   } catch (error) {
     debugLog(`Sound error: ${error.message}`);
   }
