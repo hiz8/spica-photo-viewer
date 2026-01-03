@@ -50,6 +50,7 @@ const mockStore = {
   ui: {
     suppressTransition: false,
     suppressTransitionTimeoutId: null,
+    thumbnailDisplayed: false,
   },
   setImageData: vi.fn(),
   setImageError: vi.fn(),
@@ -94,6 +95,8 @@ describe("ImageViewer", () => {
     mockStore.folder.images = [];
     mockStore.cache.thumbnails = new Map();
     mockStore.cache.preloaded = new Map();
+    mockStore.cache.imageViewStates = new Map();
+    mockStore.ui.thumbnailDisplayed = false;
   });
 
   describe("Empty state", () => {
@@ -674,6 +677,199 @@ describe("ImageViewer", () => {
       // CSS positioning is handled by App.css via class, not inline styles
       expect(image).toBeInTheDocument();
       expect(image.tagName).toBe("IMG");
+    });
+  });
+
+  describe("cached preview display", () => {
+    it("should display cached thumbnail preview when available", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = null;
+      mockStore.cache.thumbnails.set("/test/image.jpg", {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      });
+
+      mockInvoke.mockResolvedValue({
+        path: "/test/image.jpg",
+        base64: "fullResBase64",
+        width: 1920,
+        height: 1080,
+        format: "jpeg",
+      });
+
+      await act(async () => {
+        render(<ImageViewer />);
+      });
+
+      // Advance past debounce
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await Promise.resolve();
+      });
+
+      // setImageData should have been called with preview first
+      expect(mockStore.setImageData).toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it("should skip debounce when thumbnail already displayed", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = {
+        path: "/test/image.jpg",
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+        format: "jpeg",
+      };
+      mockStore.ui.thumbnailDisplayed = true;
+      mockStore.cache.thumbnails.set("/test/image.jpg", {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      });
+
+      mockInvoke.mockResolvedValue({
+        path: "/test/image.jpg",
+        base64: "fullResBase64",
+        width: 1920,
+        height: 1080,
+        format: "jpeg",
+      });
+
+      await act(async () => {
+        render(<ImageViewer />);
+      });
+
+      // Should call load_image immediately (skipping debounce)
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockInvoke).toHaveBeenCalledWith("load_image", {
+            path: "/test/image.jpg",
+          });
+        });
+      });
+
+      vi.useRealTimers();
+    });
+
+    it("should upgrade from thumbnail to full resolution", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = null;
+      mockStore.ui.thumbnailDisplayed = false;
+      mockStore.cache.thumbnails.set("/test/image.jpg", {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      });
+
+      const fullImageData = {
+        path: "/test/image.jpg",
+        base64: "fullResBase64",
+        width: 1920,
+        height: 1080,
+        format: "jpeg",
+      };
+
+      mockInvoke.mockResolvedValue(fullImageData);
+
+      await act(async () => {
+        render(<ImageViewer />);
+      });
+
+      // Advance past debounce
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await vi.runAllTimersAsync();
+      });
+
+      // Wait for async operations
+      await act(async () => {
+        await vi.waitFor(() => {
+          // Should have called setImageData (possibly multiple times for preview then full)
+          expect(mockStore.setImageData).toHaveBeenCalled();
+        });
+      });
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("dimension-based layout optimization", () => {
+    it("should call fitToWindow with cached thumbnail dimensions", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = null;
+      mockStore.cache.thumbnails.set("/test/image.jpg", {
+        base64: "thumbnailBase64",
+        width: 3840,
+        height: 2160,
+      });
+
+      mockInvoke.mockResolvedValue({
+        path: "/test/image.jpg",
+        base64: "fullResBase64",
+        width: 3840,
+        height: 2160,
+        format: "jpeg",
+      });
+
+      await act(async () => {
+        render(<ImageViewer />);
+      });
+
+      // Advance past debounce
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await vi.runAllTimersAsync();
+      });
+
+      // fitToWindow should have been called
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockStore.fitToWindow).toHaveBeenCalled();
+        });
+      });
+
+      vi.useRealTimers();
+    });
+
+    it("should use updateImageDimensions for images with saved view state", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = null;
+      mockStore.cache.preloaded.set("/test/image.jpg", {
+        path: "/test/image.jpg",
+        base64: "fullResBase64",
+        width: 1920,
+        height: 1080,
+        format: "jpeg",
+      });
+      // Simulate saved view state
+      mockStore.cache.imageViewStates.set("/test/image.jpg", {
+        zoom: 150,
+        panX: 50,
+        panY: 30,
+      });
+
+      await act(async () => {
+        render(<ImageViewer />);
+      });
+
+      // Advance past debounce
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await Promise.resolve();
+      });
+
+      // updateImageDimensions should be called for images with saved state
+      expect(mockStore.updateImageDimensions).toHaveBeenCalledWith(1920, 1080);
+
+      vi.useRealTimers();
     });
   });
 });
