@@ -7,6 +7,32 @@
           {
             "type": "command",
             "command": "node .claude/hooks/format.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/play-sound.mjs done"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/play-sound.mjs notification"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/play-sound.mjs"
           }
         ]
       }
