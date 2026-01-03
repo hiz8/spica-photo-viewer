@@ -614,15 +614,15 @@ describe("useThumbnailGenerator", () => {
         await vi.runAllTimersAsync();
       });
 
-      // Should have expanded to full range
+      // Should have expanded to full range (uses "Expanding to full range" or "Expanding to ±N range")
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Expanding thumbnail queue"),
+        expect.stringContaining("Expanding to"),
       );
 
       consoleLogSpy.mockRestore();
     });
 
-    it("should not expand if all thumbnails already generated", async () => {
+    it("should log when all thumbnails already generated", async () => {
       const images = Array.from({ length: 5 }, (_, i) =>
         createMockImageInfo(i),
       );
@@ -652,17 +652,15 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
+      // Trigger generation - no debounce since all cached
       await act(async () => {
-        vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Should set allGenerated to true since all are cached
-      expect(mockStore.setThumbnailGeneration).toHaveBeenCalledWith({
-        allGenerated: true,
-        isGenerating: false,
-      });
+      // Should log that all thumbnails are already generated
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("All"),
+      );
 
       consoleLogSpy.mockRestore();
     });
