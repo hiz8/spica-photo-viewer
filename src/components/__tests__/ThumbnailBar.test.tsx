@@ -96,10 +96,7 @@ describe("ThumbnailBar", () => {
       render(<ThumbnailBar />);
 
       const image = screen.getByRole("img");
-      expect(image).toHaveAttribute(
-        "src",
-        "data:image/jpeg;base64,base64data",
-      );
+      expect(image).toHaveAttribute("src", "data:image/jpeg;base64,base64data");
       expect(image).toHaveAttribute("alt", "image0.jpg");
     });
 
