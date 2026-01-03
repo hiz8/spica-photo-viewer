@@ -504,8 +504,7 @@ describe("useThumbnailGenerator", () => {
       mockStore.folder.images = images;
       mockStore.currentImage.index = 2;
 
-      let abortedPaths: string[] = [];
-      mockInvoke.mockImplementation(async (cmd, args) => {
+      mockInvoke.mockImplementation(async (cmd) => {
         if (cmd === "generate_thumbnail_with_dimensions") {
           // Simulate slow generation
           await new Promise((resolve) => setTimeout(resolve, 1000));

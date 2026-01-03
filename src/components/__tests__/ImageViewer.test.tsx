@@ -691,14 +691,6 @@ describe("ImageViewer", () => {
         height: 600,
       });
 
-      const previewData = {
-        path: "/test/image.jpg",
-        base64: "thumbnailBase64",
-        width: 800,
-        height: 600,
-        format: "jpeg" as const,
-      };
-
       mockInvoke.mockResolvedValue({
         path: "/test/image.jpg",
         base64: "fullResBase64",
