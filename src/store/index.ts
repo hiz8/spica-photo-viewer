@@ -101,6 +101,7 @@ interface AppActions {
   openFileDialog: () => Promise<void>;
   openWithDialog: () => Promise<void>;
   setThumbnailGeneration: (state: Partial<ThumbnailGenerationState>) => void;
+  setCheckingStartupFile: (checking: boolean) => void;
 }
 
 type AppStore = AppState & AppActions;
@@ -146,6 +147,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     suppressTransition: false,
     suppressTransitionTimeoutId: null,
     thumbnailDisplayed: false,
+    isCheckingStartupFile: true,
   },
 
   // Actions
@@ -858,5 +860,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ...state.thumbnailGeneration,
         ...thumbnailGenerationUpdate,
       },
+    })),
+
+  setCheckingStartupFile: (checking) =>
+    set((state) => ({
+      ui: { ...state.ui, isCheckingStartupFile: checking },
     })),
 }));
