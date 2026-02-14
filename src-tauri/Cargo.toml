@@ -32,7 +32,7 @@ rayon = "1.10"
 windows = { version = "0.62", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [dev-dependencies]
-tempfile = "3.24"
+tempfile = "3.25"
 tokio-test = "0.4"
 tokio = { version = "1", features = ["macros", "rt"] }
 
