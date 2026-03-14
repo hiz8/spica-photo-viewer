@@ -32,7 +32,7 @@ Create a git commit with an auto-generated Conventional Commits message.
 
    Optional body explaining why.
 
-   Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+   Co-Authored-By: Claude <noreply@anthropic.com>
    EOF
    )"
    ```
