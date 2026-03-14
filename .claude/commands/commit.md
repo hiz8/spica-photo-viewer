@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git:*), Read, Grep, Glob
+allowed-tools: Bash(git:*), Bash(npm:*), Read, Edit, Grep, Glob
 description: Analyze changes and create a Conventional Commits style commit
 ---
 
