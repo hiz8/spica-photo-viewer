@@ -6,11 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/format.mjs"
+            "command": "node $CLAUDE_PROJECT_DIR/.claude/hooks/format.mjs"
           },
           {
             "type": "command",
-            "command": "node .claude/hooks/play-sound.mjs done"
+            "command": "node $CLAUDE_PROJECT_DIR/.claude/hooks/play-sound.mjs done"
           }
         ]
       }
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/play-sound.mjs notification"
+            "command": "node $CLAUDE_PROJECT_DIR/.claude/hooks/play-sound.mjs notification"
           }
         ]
       }
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/play-sound.mjs"
+            "command": "node $CLAUDE_PROJECT_DIR/.claude/hooks/play-sound.mjs"
           }
         ]
       }
