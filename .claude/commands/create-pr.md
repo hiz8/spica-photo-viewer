@@ -16,8 +16,8 @@ Create a GitHub Pull Request with an auto-generated title and description based 
    - `git remote -v` to verify the remote
 
 2. Determine the base branch (default: `main`, or use the user-specified base branch). Run the following in parallel:
-   - `git log main..HEAD --oneline` to see all commits on this branch
-   - `git diff main...HEAD --stat` to see a summary of changed files
+   - `git log <base-branch>..HEAD --oneline` to see all commits on this branch
+   - `git diff <base-branch>...HEAD --stat` to see a summary of changed files
 
 3. If there are uncommitted changes (unstaged or staged), warn the user and STOP — do not create a PR with uncommitted work.
 
@@ -42,7 +42,7 @@ Create a GitHub Pull Request with an auto-generated title and description based 
 
 7. Create the PR using `gh pr create`:
    ```
-   gh pr create --base main --title "the pr title" --body "$(cat <<'EOF'
+   gh pr create --base <base-branch> --title "the pr title" --body "$(cat <<'EOF'
    ## Summary
    - ...
 

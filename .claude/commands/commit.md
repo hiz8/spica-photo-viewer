@@ -10,7 +10,7 @@ Create a git commit with an auto-generated Conventional Commits message.
 ## Steps
 
 1. Run the following commands in parallel to understand the current state:
-   - `git status` to see all untracked and modified files (never use `-uall` flag)
+   - `git status` to see untracked and modified files (never use `-uall` flag)
    - `git diff` and `git diff --staged` to see unstaged and staged changes
    - `git log --oneline -10` to check recent commit message style
 
