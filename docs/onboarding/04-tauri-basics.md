@@ -209,13 +209,13 @@ const images = await invoke<ImageInfo[]>("get_folder_images", {
 
 ### 引数名の対応規則
 
-**フロント側のオブジェクトのキー名は、Rust 関数の引数名 (snake_case) と一致させる必要があります**。例:
+**Rust 側では引数名は snake_case で定義しますが、フロント側からは対応する camelCase のキー名でも渡せます**。このリポジトリの TypeScript 例でも、基本的に camelCase で渡しています。例:
 
 | Rust 引数 | フロント側の渡し方 |
 | --- | --- |
 | `path: String` | `{ path: "..." }` |
 | `size: Option<u32>` | `{ size: 30 }` または `{ size: null }` |
-| `image_width: u32` | `{ imageWidth: 100 }` ← **キャメルケースに自動変換される** |
+| `image_width: u32` | `{ imageWidth: 100 }` ← **snake_case の引数名に対応する camelCase で渡せる** |
 
 `commands/window.rs:42-47` の `resize_window_to_image` がよい例です:
 
