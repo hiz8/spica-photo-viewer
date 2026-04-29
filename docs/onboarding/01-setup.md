@@ -120,9 +120,9 @@ npm install
 npm run tauri dev
 ```
 
-`src-tauri/tauri.conf.json:6-11` の `build` セクションが示す通り、このコマンドは内部で次のことを行います。
+`src-tauri/tauri.conf.json` の `build` セクションが示す通り、このコマンドは内部で次のことを行います。
 
-1. `npm run dev` が走り、Vite が `http://localhost:1420` でフロントエンドの開発サーバを起動 (`tauri.conf.json:7-8`)
+1. `build.beforeDevCommand` (`npm run dev`) が走り、Vite が `build.devUrl` (`http://localhost:1420`) でフロントエンドの開発サーバを起動
 2. Tauri CLI が `src-tauri/Cargo.toml` の依存をダウンロード・コンパイル (**初回は 5〜10 分かかります**)
 3. ビルド完了後、Tauri の WebView ウィンドウが開き、Vite の開発サーバを表示
 
