@@ -55,7 +55,7 @@ npm run format:fix         # フォーマット適用
 
 このリポジトリには Claude Code 用の hook (`.claude/hooks/format.mjs`) が組み込まれており、**Edit / Write の直後に対象ファイルが Biome で自動整形** されます。手動で `format:fix` を頻発させる必要はありません。CI では `npm run format` (チェックのみ) が走るため、もし整形漏れがあれば検知されます。
 
-`biome.json:8-13` の通り、Biome の対象は基本的に `src/` 配下です。`src-tauri/` 配下の Rust コードは対象外なので、Rust の整形は `cargo fmt` を別途使ってください (本プロジェクトでは CI で `cargo fmt` のチェックは行っていませんが、`rustfmt` のデフォルトに従うのが習慣です)。
+このプロジェクトでは、`package.json` の npm scripts で `biome lint src/` / `biome format src/` を実行しているため、Biome は通常 `src/` 配下を対象にします。`src-tauri/` 配下の Rust コードは対象外なので、Rust の整形は `cargo fmt` を別途使ってください (本プロジェクトでは CI で `cargo fmt` のチェックは行っていませんが、`rustfmt` のデフォルトに従うのが習慣です)。
 
 ---
 
