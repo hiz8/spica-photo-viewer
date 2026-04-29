@@ -66,14 +66,14 @@ Rust 最大の特徴は **所有権 (ownership)** です。値には常に「持
 - `String::to_string()` / `String::clone()` で複製ができる
 - `&str` から `String` へは `.to_string()` か `String::from(...)`
 
-このプロジェクトでは **Tauri command の引数は必ず `String`** です。例:
+このプロジェクトの **ファイルパス系の Tauri command では `String` がよく使われます**。例:
 
 ```rust
 // commands/file.rs:71
 pub async fn load_image(path: String) -> Result<ImageData, String> {
 ```
 
-これは Tauri マクロの制約で、「フロントから渡された JSON 文字列は所有付きで受け取る必要がある」ためです。逆に **コマンド以外の内部ヘルパー関数は `&Path` や `&str` を借用で受けることが多い**:
+Tauri command の引数はフロントから渡された値を所有付きで受け取る必要があり、借用 (`&str`) では受けられないためです。なお、command の引数は `String` 限定ではなく、`commands/window.rs` のように `u32` / `f64` / `Option<bool>` / `AppHandle` を取る command もあります。逆に **コマンド以外の内部ヘルパー関数は `&Path` や `&str` を借用で受けることが多い**:
 
 ```rust
 // commands/file.rs:281

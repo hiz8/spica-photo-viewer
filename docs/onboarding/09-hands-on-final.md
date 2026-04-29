@@ -116,7 +116,7 @@ use commands::file::{
 
 ## ステップ 3: バックエンドテストの追加
 
-`commands/file.rs` のファイル末尾の `mod tests` の中、`test_open_with_dialog_with_japanese_filename` (760 行目以降) の **直前** あたりに 3 件追加します。
+`commands/file.rs` のファイル末尾の `mod tests` の中、`test_open_with_dialog_with_japanese_filename` (740 行目付近) の **直前** あたりに 3 件追加します。
 
 ```rust
     #[tokio::test]
