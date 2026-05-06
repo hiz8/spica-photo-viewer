@@ -171,7 +171,7 @@ if (cachedImage && cachedImage.format !== "error") {
 
 このロジックの設計意図は [PROJECT_SPEC.md](../../PROJECT_SPEC.md) の「Display Priority (3 levels)」と「Cached Image Display (0ms)」セクションに詳しく書かれています。
 
-加えて `suppressTransition` フラグ (`ui.suppressTransition`) を 300ms だけ立て、その間 CSS トランジションを無効化することで、ナビ中のアニメーションのチラつきを防いでいます (`store/index.ts:387-408`、`ImageViewer.tsx:445-447`)。
+加えて `suppressTransition` フラグ (`ui.suppressTransition`) を 300ms だけ立て、その間 CSS トランジションを無効化することで、ナビ中のアニメーションのチラつきを防いでいます (`store/index.ts:384-400`、`ImageViewer.tsx:438-440`)。
 
 ---
 
@@ -197,10 +197,10 @@ if (cachedImage && cachedImage.format !== "error") {
 
 2 つの `useEffect` を持ちます。
 
-1. **マウント時 (11-29 行)**: `invoke("clear_old_cache")` と `invoke("get_cache_stats")` をコールしてコンソールにログ
-2. **30 秒ごと (32-68 行)**: メモリ上の `cache.preloaded` (上限 20)、`cache.thumbnails` (上限 100) が超過してたら古い順に削除
+1. **マウント時 (10-26 行)**: `invoke("clear_old_cache")` と `invoke("get_cache_stats")` をコールしてコンソールにログ
+2. **30 秒ごと (28-54 行)**: メモリ上の `cache.preloaded` (上限 20)、`cache.thumbnails` (上限 100) が超過してたら古い順に削除
 
-> 注意: 32-68 行のループは Map を **直接 mutate** しています (`cache.preloaded.delete(path)`)。これは Zustand のルールに反しているように見えますが、実装上は React の再レンダリングをトリガしないキャッシュ削除として動作しているため害はありません。新規にキャッシュ削減処理を書くときは [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) のルールに従って `set((state) => ({ cache: { ...state.cache, preloaded: new Map(...) } }))` で書くことを推奨します。
+削除はストアのアクション (`removePreloadedImage` / `removeCachedThumbnail`) 経由でイミュータブルに行います。これは [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) で必須とされている書き方で、Map を直接 `delete()` すると React の再レンダリングが発火せずに `ThumbnailBar` 等で stale 表示の原因になるため避けてください。
 
 ### `useThumbnailGenerator` (`src/hooks/useThumbnailGenerator.ts`)
 
@@ -208,16 +208,16 @@ if (cachedImage && cachedImage.format !== "error") {
 
 主要な仕掛け:
 
-1. **優先度キュー** (`buildPriorityQueue`、135-174 行): 現在画像 → +1 → -1 → +2 → -2 ... の順序でサムネイル生成対象をリスト化
-2. **3 段階の段階的拡張** (`expandQueueProgressively`、229-272 行):
+1. **優先度キュー** (`buildPriorityQueue`、136-175 行): 現在画像 → +1 → -1 → +2 → -2 ... の順序でサムネイル生成対象をリスト化
+2. **3 段階の段階的拡張** (`expandQueueProgressively`、230-273 行):
    - Phase 0: 初期範囲 ±10 (`THUMBNAIL_GENERATION_INITIAL_RANGE`)
    - Phase 1: 拡張範囲 ±30 (`THUMBNAIL_GENERATION_EXPANDED_RANGE`)
    - Phase 2: 全画像
-3. **AbortController でキャンセル**: ナビゲーションが起きたらサムネイル生成を中止して新しい優先度で再開 (`processQueue`、179-223 行)
+3. **AbortController でキャンセル**: ナビゲーションが起きたらサムネイル生成を中止して新しい優先度で再開 (`processQueue`、180-224 行)
 4. **デバウンス**: 500ms (`THUMBNAIL_GENERATION_DEBOUNCE_MS`) 待ってから生成開始
 5. **並列度制限**: 最大 3 件同時 (`MAX_CONCURRENT_LOADS`、`Promise.allSettled` で待つ)
 
-各サムネイルの生成手順 (`generateThumbnail`、29-129 行):
+各サムネイルの生成手順 (`generateThumbnail`、30-130 行):
 
 ```
 1. メモリキャッシュにあれば即終了
@@ -235,7 +235,7 @@ if (cachedImage && cachedImage.format !== "error") {
 
 すべてのサムネイル生成が完了 (`thumbnailGeneration.allGenerated === true`) してから、現在画像の前後 ±5 枚 (`PRELOAD_RANGE`) の本画像を `invoke("load_image")` で先読みします。
 
-範囲外に出た画像はメモリから削除 (`cleanupCache`、118-152 行) します。
+範囲外に出た画像はメモリから削除 (`cleanupCache`、119-153 行) します。
 
 ### `useWindowState` (`src/hooks/useWindowState.ts`)
 
@@ -256,18 +256,18 @@ if (cachedImage && cachedImage.format !== "error") {
 | Rust コマンド (定義) | 呼び出し元 | 引数 | 戻り値 |
 | --- | --- | --- | --- |
 | `get_startup_file` (`commands/file.rs:125`) | `App.tsx:29` | なし | `string \| null` |
-| `get_folder_images` (`commands/file.rs:40`) | `store/index.ts:577`、`useFileDrop.ts:62` (無効) | `{ path: string }` | `ImageInfo[]` |
-| `load_image` (`commands/file.rs:71`) | `ImageViewer.tsx:86, 187, 222, 244`、`useImagePreloader.ts:47` | `{ path: string }` | `ImageData` |
-| `validate_image_file` (`commands/file.rs:119`) | `useFileDrop.ts:40` (無効) | `{ path: string }` | `boolean` |
-| `get_cached_thumbnail` (`commands/cache.rs:65`) | `useThumbnailGenerator.ts:47` | `{ path: string, size: number }` | `[base64, width, height] \| null` |
-| `set_cached_thumbnail` (`commands/cache.rs:101`) | `useThumbnailGenerator.ts:79, 107` | `{ path, thumbnail, size, width, height }` | `void` |
-| `generate_thumbnail_with_dimensions` (`commands/file.rs:159`) | `useThumbnailGenerator.ts:71` | `{ path: string, size: number }` | `{ thumbnail_base64, original_width, original_height }` |
-| `clear_old_cache` (`commands/cache.rs:135`) | `useCacheManager.ts:15, 72` | なし | `void` |
-| `get_cache_stats` (`commands/cache.rs:184`) | `useCacheManager.ts:19, 81` | なし | `Record<string, number>` |
+| `get_folder_images` (`commands/file.rs:40`) | `store/index.ts:564`、`useFileDrop.ts:48` (無効) | `{ path: string }` | `ImageInfo[]` |
+| `load_image` (`commands/file.rs:71`) | `ImageViewer.tsx:87, 180, 215, 237`、`useImagePreloader.ts:48` | `{ path: string }` | `ImageData` |
+| `validate_image_file` (`commands/file.rs:119`) | `useFileDrop.ts:33` (無効) | `{ path: string }` | `boolean` |
+| `get_cached_thumbnail` (`commands/cache.rs:65`) | `useThumbnailGenerator.ts:50` | `{ path: string, size: number }` | `[base64, width, height] \| null` |
+| `set_cached_thumbnail` (`commands/cache.rs:101`) | `useThumbnailGenerator.ts:80, 108` | `{ path, thumbnail, size, width, height }` | `void` |
+| `generate_thumbnail_with_dimensions` (`commands/file.rs:159`) | `useThumbnailGenerator.ts:72` | `{ path: string, size: number }` | `{ thumbnail_base64, original_width, original_height }` |
+| `clear_old_cache` (`commands/cache.rs:135`) | `useCacheManager.ts:13` | なし | `void` |
+| `get_cache_stats` (`commands/cache.rs:184`) | `useCacheManager.ts:17` | なし | `Record<string, number>` |
 | `get_window_state` (`commands/window.rs:20`) | `useWindowState.ts:15` | なし (`AppHandle` は自動注入) | `{ is_maximized, is_fullscreen }` |
-| `maximize_window` (`commands/window.rs:162`) | `store/index.ts:572` | なし | `void` |
-| `resize_window_to_image` (`commands/window.rs:40`) | `store/index.ts:749` | `{ imageWidth, imageHeight, zoomPercent, imageScreenCenterX, imageScreenCenterY, disableAnimation }` | `void` |
-| `open_with_dialog` (`commands/file.rs:252`) | `store/index.ts:843` | `{ path: string }` | `void` |
+| `maximize_window` (`commands/window.rs:162`) | `store/index.ts:559` | なし | `void` |
+| `resize_window_to_image` (`commands/window.rs:40`) | `store/index.ts:736` | `{ imageWidth, imageHeight, zoomPercent, imageScreenCenterX, imageScreenCenterY, disableAnimation }` | `void` |
+| `open_with_dialog` (`commands/file.rs:252`) | `store/index.ts:830` | `{ path: string }` | `void` |
 
 未使用 (登録のみ):
 
@@ -288,7 +288,7 @@ if (cachedImage && cachedImage.format !== "error") {
 
 | Plugin | 呼び出し元 | 用途 |
 | --- | --- | --- |
-| `@tauri-apps/plugin-dialog` の `open()` | `store/index.ts:785` | OS ファイル選択ダイアログ |
+| `@tauri-apps/plugin-dialog` の `open()` | `store/index.ts:772` | OS ファイル選択ダイアログ |
 | `@tauri-apps/api/app` の `getVersion()` | `AboutDialog.tsx:14` | About に表示するバージョン |
 | `@tauri-apps/api/window` の `getCurrentWindow()` | `useKeyboard.ts:22, 39, 49`、`useWindowState.ts:36` | フルスクリーン操作・ウィンドウクローズ・イベント購読 |
 

@@ -389,7 +389,7 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 
 **演習 2**: `commands/cache.rs:65-98` の `get_cached_thumbnail` を読み、戻り値の型 `Result<Option<(String, Option<u32>, Option<u32>)>, String>` をフロントエンド (TypeScript) で受け取るとどんな型になるか書いてみてください。
 
-ヒント: `Result` は `Promise` の成否、`Option` は `T | null`、タプルは配列に変換されます。実際の使用例は `src/hooks/useThumbnailGenerator.ts:47-52` にあります。
+ヒント: `Result` は `Promise` の成否、`Option` は `T | null`、タプルは配列に変換されます。実際の使用例は `src/hooks/useThumbnailGenerator.ts:48-53` にあります。
 
 ---
 
