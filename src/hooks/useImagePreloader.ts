@@ -7,6 +7,7 @@ import {
   PRELOAD_RANGE,
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
+import { getFilename } from "../utils/path";
 
 /**
  * Hook for preloading full-resolution images
@@ -51,10 +52,10 @@ export const useImagePreloader = () => {
         // Store in preload cache
         setPreloadedImage(imagePath, imageData);
 
-        console.log(`Preloaded full image: ${imagePath.split(/[\\/]/).pop()}`);
+        console.log(`Preloaded full image: ${getFilename(imagePath)}`);
       } catch (error) {
         console.warn(
-          `Failed to preload image: ${imagePath.split(/[\\/]/).pop()}`,
+          `Failed to preload image: ${getFilename(imagePath)}`,
           error,
         );
 
@@ -142,7 +143,7 @@ export const useImagePreloader = () => {
 
     keysToRemove.forEach((path) => {
       removePreloadedImage(path);
-      console.log(`Cleaned from preload cache: ${path.split(/[\\/]/).pop()}`);
+      console.log(`Cleaned from preload cache: ${getFilename(path)}`);
     });
   }, [
     currentImage.index,

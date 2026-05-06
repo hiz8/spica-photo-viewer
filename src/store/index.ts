@@ -11,6 +11,7 @@ import {
   RAPID_NAVIGATION_THRESHOLD_MS,
   SUPPRESS_TRANSITION_MS,
 } from "../constants/timing";
+import { getFilename, getFolderPath } from "../utils/path";
 
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
@@ -45,11 +46,7 @@ const calculateFitToWindowZoom = (
   return fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
 };
 
-/**
- * Convert thumbnail cache to ImageData format
- * Uses actual image dimensions from the thumbnail cache
- */
-const thumbnailToImageData = (
+export const thumbnailToImageData = (
   path: string,
   thumbnailCache: { base64: string; width: number; height: number },
 ): ImageData => ({
@@ -57,7 +54,7 @@ const thumbnailToImageData = (
   base64: thumbnailCache.base64,
   width: thumbnailCache.width,
   height: thumbnailCache.height,
-  format: "jpeg", // Thumbnails are always JPEG
+  format: "jpeg",
 });
 
 interface AppActions {
@@ -227,20 +224,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   setFullscreen: (isFullscreen) =>
-    set((state) => ({
-      view: {
-        ...state.view,
-        isFullscreen,
-      },
-    })),
+    set((state) =>
+      state.view.isFullscreen === isFullscreen
+        ? state
+        : { view: { ...state.view, isFullscreen } },
+    ),
 
   setMaximized: (isMaximized) =>
-    set((state) => ({
-      view: {
-        ...state.view,
-        isMaximized,
-      },
-    })),
+    set((state) =>
+      state.view.isMaximized === isMaximized
+        ? state
+        : { view: { ...state.view, isMaximized } },
+    ),
 
   setThumbnailOpacity: (opacity) =>
     set((state) => ({
@@ -251,28 +246,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   setLoading: (isLoading) =>
-    set((state) => ({
-      ui: {
-        ...state.ui,
-        isLoading,
-      },
-    })),
+    set((state) =>
+      state.ui.isLoading === isLoading
+        ? state
+        : { ui: { ...state.ui, isLoading } },
+    ),
 
   setDragOver: (isDragOver) =>
-    set((state) => ({
-      ui: {
-        ...state.ui,
-        isDragOver,
-      },
-    })),
+    set((state) =>
+      state.ui.isDragOver === isDragOver
+        ? state
+        : { ui: { ...state.ui, isDragOver } },
+    ),
 
   setShowAbout: (showAbout) =>
-    set((state) => ({
-      ui: {
-        ...state.ui,
-        showAbout,
-      },
-    })),
+    set((state) =>
+      state.ui.showAbout === showAbout
+        ? state
+        : { ui: { ...state.ui, showAbout } },
+    ),
 
   setThumbnailDisplayed: (displayed) =>
     set((state) => ({
@@ -334,7 +326,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             imageData = thumbnailToImageData(image.path, cachedThumbnail);
             thumbnailDisplayed = true;
             console.log(
-              `Displaying cached thumbnail instantly: ${image.path.split(/[\\/]/).pop()}`,
+              `Displaying cached thumbnail instantly: ${getFilename(image.path)}`,
             );
           }
         }
@@ -545,12 +537,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   openImageFromPath: async (imagePath: string) => {
     try {
-      // Get the folder containing the image (handle both \\ and / separators)
-      const lastSlashIndex = Math.max(
-        imagePath.lastIndexOf("\\"),
-        imagePath.lastIndexOf("/"),
-      );
-      const folderPath = imagePath.substring(0, lastSlashIndex);
+      const folderPath = getFolderPath(imagePath);
 
       // OPTIMIZATION: Immediately set the image path to hide welcome screen
       // and show loading state while folder scan happens in background

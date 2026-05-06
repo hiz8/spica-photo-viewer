@@ -8,6 +8,7 @@ import {
   THUMBNAIL_SIZE,
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
+import { getFilename } from "../utils/path";
 
 /**
  * Hook for centralized thumbnail generation with priority queue
@@ -93,12 +94,12 @@ export const useThumbnailGenerator = () => {
           height: result.original_height,
         });
 
-        console.log(`Generated thumbnail: ${imagePath.split(/[\\/]/).pop()}`);
+        console.log(`Generated thumbnail: ${getFilename(imagePath)}`);
         return true;
       } catch (error) {
         if (!signal.aborted) {
           console.warn(
-            `Failed to generate thumbnail for ${imagePath.split(/[\\/]/).pop()}:`,
+            `Failed to generate thumbnail for ${getFilename(imagePath)}:`,
             error,
           );
 
