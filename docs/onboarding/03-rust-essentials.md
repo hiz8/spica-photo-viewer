@@ -69,14 +69,14 @@ Rust 最大の特徴は **所有権 (ownership)** です。値には常に「持
 このプロジェクトの **ファイルパス系の Tauri command では `String` がよく使われます**。例:
 
 ```rust
-// commands/file.rs:71
+// commands/file.rs:81
 pub async fn load_image(path: String) -> Result<ImageData, String> {
 ```
 
 Tauri command の引数はフロントから渡された値を所有付きで受け取る必要があり、借用 (`&str`) では受けられないためです。なお、command の引数は `String` 限定ではなく、`commands/window.rs` のように `u32` / `f64` / `Option<bool>` / `AppHandle` を取る command もあります。逆に **コマンド以外の内部ヘルパー関数は `&Path` や `&str` を借用で受けることが多い**:
 
 ```rust
-// commands/file.rs:281
+// commands/file.rs:259
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
 ```
 
@@ -122,7 +122,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
 
 ### `?` 演算子: エラーの早期 return
 
-`commands/file.rs:81-86` の例:
+`commands/file.rs:85-89` の例:
 
 ```rust
 let base64_data =
@@ -158,7 +158,7 @@ enum Option<T> {
 }
 ```
 
-`commands/file.rs:125-137` の `get_startup_file` が良い例です。
+`commands/file.rs:120-132` の `get_startup_file` が良い例です。
 
 ```rust
 pub fn get_startup_file() -> Result<Option<String>, String> {
@@ -180,7 +180,7 @@ pub fn get_startup_file() -> Result<Option<String>, String> {
 `.unwrap_or(default)` は「`Some(値)` ならその値、`None` なら `default`」を返すメソッドで、デフォルト値を扱うときに頻出します:
 
 ```rust
-// commands/file.rs:151
+// commands/file.rs:139
 let thumbnail_size = size.unwrap_or(30);
 ```
 
@@ -240,7 +240,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
 - **`async`**: 内部で I/O (ファイル読み書き、画像デコード) があり、フロントで `await` する想定のコマンド
   - 例: `get_folder_images`、`load_image`、`generate_thumbnail_with_dimensions`、`get_cached_thumbnail`
 - **同期 (`async` なし)**: I/O がほぼなく即座に終わる関数
-  - 例: `validate_image_file` (`commands/file.rs:119`)、`get_startup_file` (`commands/file.rs:125`)
+  - 例: `validate_image_file` (`commands/file.rs:114`)、`get_startup_file` (`commands/file.rs:120`)
 
 `async` でも実際には `.await` を使って明示的に待つ場面はこのコードにはほとんどありません (`fs::read_to_string()` などは同期 API を使っています)。Tauri command を `async` にしておくのは「フロント側の `Promise` に揃える」ための慣習だと考えてください。
 
@@ -249,7 +249,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
 非同期関数をテストするには通常の `#[test]` ではなく **`#[tokio::test]`** を使います。`Cargo.toml:37` で `tokio` を `dev-dependencies` に入れているのはそのためです。
 
 ```rust
-// commands/file.rs:323-333
+// commands/file.rs:301-321
 #[tokio::test]
 async fn test_get_folder_images_with_valid_folder() {
     let temp_dir = create_temp_dir();
@@ -293,7 +293,7 @@ use commands::file::{
 - `use foo::bar::Baz;` で長い名前を短く使えるようにする (TypeScript の `import` と似ています)
 - `pub` を付けないアイテムは **モジュール外から参照できない**
 
-このプロジェクトでは **公開する関数のうえに `pub`、内部だけで使う関数 (例: `commands/file.rs:281` `get_image_info`) には `pub` を付けない** という方針が一貫しています。
+このプロジェクトでは **公開する関数のうえに `pub`、内部だけで使う関数 (例: `commands/file.rs:259` `get_image_info`) には `pub` を付けない** という方針が一貫しています。
 
 ---
 
@@ -301,7 +301,7 @@ use commands::file::{
 
 OS 別の処理を書いたり、テスト時だけ有効にしたいコードがあるとき、`#[cfg(...)]` 属性を使います。
 
-`commands/file.rs:195` :
+`commands/file.rs:173` :
 
 ```rust
 #[cfg(target_os = "windows")]
@@ -322,7 +322,7 @@ Windows 以外でビルドしたときには **この関数は存在しない** 
 
 ファイル先頭の `#![cfg(test)]` は **このファイル全体を test ビルド時のみ含める** という指定です。`#[cfg(test)]` (`!` なし) はその直下のアイテムだけが対象、`#![cfg(test)]` (`!` あり = inner attribute) はファイル全体が対象、と覚えておきましょう。
 
-`commands/cache.rs:20-45` では `cfg!()` マクロも使われています。これは関数の中で if 式として OS 判定する書き方です:
+`commands/cache.rs:20-44` では `cfg!()` マクロも使われています。これは関数の中で if 式として OS 判定する書き方です:
 
 ```rust
 let cache_dir = if cfg!(target_os = "windows") {
@@ -369,7 +369,7 @@ pub height: Option<u32>,
 
 ## ハンズオン演習
 
-**演習 1**: `commands/file.rs:119-122` の `validate_image_file` 関数を読み、次の入力に対する戻り値を予想して紙に書いてみてください。
+**演習 1**: `commands/file.rs:114-117` の `validate_image_file` 関数を読み、次の入力に対する戻り値を予想して紙に書いてみてください。
 
 ```rust
 pub fn validate_image_file(path: String) -> Result<bool, String> {
@@ -385,9 +385,9 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 | 存在しないパス | ? |
 | 存在するディレクトリのパス | ? |
 
-答え合わせは、`commands/file.rs:545-580` のテストケースを読んで確認してください。
+答え合わせは、`commands/file.rs:524-558` のテストケースを読んで確認してください。
 
-**演習 2**: `commands/cache.rs:65-98` の `get_cached_thumbnail` を読み、戻り値の型 `Result<Option<(String, Option<u32>, Option<u32>)>, String>` をフロントエンド (TypeScript) で受け取るとどんな型になるか書いてみてください。
+**演習 2**: `commands/cache.rs:77-104` の `get_cached_thumbnail` を読み、戻り値の型 `Result<Option<(String, Option<u32>, Option<u32>)>, String>` をフロントエンド (TypeScript) で受け取るとどんな型になるか書いてみてください。
 
 ヒント: `Result` は `Promise` の成否、`Option` は `T | null`、タプルは配列に変換されます。実際の使用例は `src/hooks/useThumbnailGenerator.ts:48-53` にあります。
 

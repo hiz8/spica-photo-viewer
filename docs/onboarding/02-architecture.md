@@ -48,8 +48,8 @@ Tauri の動作イメージは以下のとおりです。
 - 画像のデコード・サムネイル生成・base64 化 (`utils/image.rs`)
 - サムネイルのディスクキャッシュ (`commands/cache.rs`)
 - ウィンドウのリサイズ・最大化・フルスクリーン (`commands/window.rs`)
-- Windows 固有処理: 「プログラムから開く」ダイアログ (`commands/file.rs:251` `open_with_dialog`)
-- 起動引数からの画像パス取得 (`commands/file.rs:125` `get_startup_file`)
+- Windows 固有処理: 「プログラムから開く」ダイアログ (`commands/file.rs:230` `open_with_dialog`)
+- 起動引数からの画像パス取得 (`commands/file.rs:120` `get_startup_file`)
 
 ### フロントエンド (React = `src/`) が受け持つこと
 
@@ -153,7 +153,7 @@ spica-photo-viewer/
         invoke<string|null>("get_startup_file") を呼ぶ
    │
    ▼
-[Rust] commands/file.rs:125 get_startup_file()
+[Rust] commands/file.rs:120 get_startup_file()
         std::env::args() から画像パスを探して返す
    │
    ▼
@@ -175,7 +175,7 @@ spica-photo-viewer/
         invoke<ImageData>("load_image", { path }) を呼ぶ
    │
    ▼
-[Rust] commands/file.rs:71 load_image()
+[Rust] commands/file.rs:81 load_image()
         utils/image.rs:28 load_image_as_base64() で画像を base64 化
         utils/image.rs:48 get_image_dimensions() で幅・高さを取得
    │
@@ -228,9 +228,9 @@ spica-photo-viewer/
    await invoke("get_cache_stats");
    ```
 
-4. `{ total_files: ..., valid_files: ... }` のようなオブジェクトが返ってくれば成功です。これは `commands/cache.rs:184` の `get_cache_stats` が JSON で返した HashMap がそのまま JS の object になったものです。
-5. 試しに `await invoke("validate_image_file", { path: "C:\\Windows\\System32\\notepad.exe" })` を呼ぶと、`false` (画像じゃないので) が返るはずです (`commands/file.rs:119`)。
-6. 存在しないコマンドを呼んでみましょう: `await invoke("does_not_exist")` → エラーになります。`lib.rs:24-41` の `invoke_handler!` に登録されたコマンドだけが呼べることを確認してください。
+4. `{ total_files: ..., valid_files: ... }` のようなオブジェクトが返ってくれば成功です。これは `commands/cache.rs:180` の `get_cache_stats` が JSON で返した HashMap がそのまま JS の object になったものです。
+5. 試しに `await invoke("validate_image_file", { path: "C:\\Windows\\System32\\notepad.exe" })` を呼ぶと、`false` (画像じゃないので) が返るはずです (`commands/file.rs:114`)。
+6. 存在しないコマンドを呼んでみましょう: `await invoke("does_not_exist")` → エラーになります。`lib.rs:23-40` の `invoke_handler!` に登録されたコマンドだけが呼べることを確認してください。
 
 このように、フロントは `invoke(コマンド名, 引数オブジェクト)` で Rust 関数を呼び出します。引数オブジェクトのキーは Rust 関数の引数名と一致している必要があります (例: `path: String` なら `{ path: "..." }`)。
 

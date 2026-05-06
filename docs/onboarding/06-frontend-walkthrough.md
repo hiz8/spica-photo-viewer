@@ -255,24 +255,24 @@ if (cachedImage && cachedImage.format !== "error") {
 
 | Rust コマンド (定義) | 呼び出し元 | 引数 | 戻り値 |
 | --- | --- | --- | --- |
-| `get_startup_file` (`commands/file.rs:125`) | `App.tsx:29` | なし | `string \| null` |
+| `get_startup_file` (`commands/file.rs:120`) | `App.tsx:29` | なし | `string \| null` |
 | `get_folder_images` (`commands/file.rs:40`) | `store/index.ts:564`、`useFileDrop.ts:48` (無効) | `{ path: string }` | `ImageInfo[]` |
-| `load_image` (`commands/file.rs:71`) | `ImageViewer.tsx:87, 180, 215, 237`、`useImagePreloader.ts:48` | `{ path: string }` | `ImageData` |
-| `validate_image_file` (`commands/file.rs:119`) | `useFileDrop.ts:33` (無効) | `{ path: string }` | `boolean` |
-| `get_cached_thumbnail` (`commands/cache.rs:65`) | `useThumbnailGenerator.ts:50` | `{ path: string, size: number }` | `[base64, width, height] \| null` |
-| `set_cached_thumbnail` (`commands/cache.rs:101`) | `useThumbnailGenerator.ts:80, 108` | `{ path, thumbnail, size, width, height }` | `void` |
-| `generate_thumbnail_with_dimensions` (`commands/file.rs:159`) | `useThumbnailGenerator.ts:72` | `{ path: string, size: number }` | `{ thumbnail_base64, original_width, original_height }` |
-| `clear_old_cache` (`commands/cache.rs:135`) | `useCacheManager.ts:13` | なし | `void` |
-| `get_cache_stats` (`commands/cache.rs:184`) | `useCacheManager.ts:17` | なし | `Record<string, number>` |
+| `load_image` (`commands/file.rs:81`) | `ImageViewer.tsx:87, 180, 215, 237`、`useImagePreloader.ts:48` | `{ path: string }` | `ImageData` |
+| `validate_image_file` (`commands/file.rs:114`) | `useFileDrop.ts:33` (無効) | `{ path: string }` | `boolean` |
+| `get_cached_thumbnail` (`commands/cache.rs:77`) | `useThumbnailGenerator.ts:50` | `{ path: string, size: number }` | `[base64, width, height] \| null` |
+| `set_cached_thumbnail` (`commands/cache.rs:107`) | `useThumbnailGenerator.ts:80, 108` | `{ path, thumbnail, size, width, height }` | `void` |
+| `generate_thumbnail_with_dimensions` (`commands/file.rs:146`) | `useThumbnailGenerator.ts:72` | `{ path: string, size: number }` | `{ thumbnail_base64, original_width, original_height }` |
+| `clear_old_cache` (`commands/cache.rs:134`) | `useCacheManager.ts:13` | なし | `void` |
+| `get_cache_stats` (`commands/cache.rs:180`) | `useCacheManager.ts:17` | なし | `Record<string, number>` |
 | `get_window_state` (`commands/window.rs:20`) | `useWindowState.ts:15` | なし (`AppHandle` は自動注入) | `{ is_maximized, is_fullscreen }` |
-| `maximize_window` (`commands/window.rs:162`) | `store/index.ts:559` | なし | `void` |
-| `resize_window_to_image` (`commands/window.rs:40`) | `store/index.ts:736` | `{ imageWidth, imageHeight, zoomPercent, imageScreenCenterX, imageScreenCenterY, disableAnimation }` | `void` |
-| `open_with_dialog` (`commands/file.rs:252`) | `store/index.ts:830` | `{ path: string }` | `void` |
+| `maximize_window` (`commands/window.rs:118`) | `store/index.ts:559` | なし | `void` |
+| `resize_window_to_image` (`commands/window.rs:40`) | `store/index.ts:736` | `{ imageWidth, imageHeight, zoomPercent, imageScreenCenterX, imageScreenCenterY, disableAnimation }` (※ `disableAnimation` はバックエンドで現在使われていないが、IPC 互換のため受け取り続けている) | `void` |
+| `open_with_dialog` (`commands/file.rs:230`) | `store/index.ts:830` | `{ path: string }` | `void` |
 
 未使用 (登録のみ):
 
-- `handle_dropped_file` (`commands/file.rs:104`) — D&D 再有効化時に呼ぶ予定
-- `generate_image_thumbnail` (`commands/file.rs:140`) — 新 API (`generate_thumbnail_with_dimensions`) に置き換えられたが残置
+- `handle_dropped_file` (`commands/file.rs:107`) — D&D 再有効化時に呼ぶ予定
+- `generate_image_thumbnail` (`commands/file.rs:135`) — 新 API (`generate_thumbnail_with_dimensions`) に置き換えられたが残置
 - `get_window_position` (`commands/window.rs:4`) — 現在フロントから呼んでいない
 
 ### `event listen` 購読

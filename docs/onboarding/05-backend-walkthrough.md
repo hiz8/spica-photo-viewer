@@ -69,7 +69,7 @@ pub fn load_image_as_base64(path: &Path) -> Result<String, ImageError> {
     // For GIF files, read the original file to preserve animation
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         if ext.to_lowercase() == "gif" {
-            let file_data = std::fs::read(path).map_err(|e| ImageError::IoError(e))?;
+            let file_data = std::fs::read(path).map_err(ImageError::IoError)?;
             return Ok(general_purpose::STANDARD.encode(&file_data));
         }
     }
@@ -140,30 +140,34 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
 
 注目ポイント:
 
-- **`WalkDir::new(...).max_depth(1)`**: サブディレクトリを再帰しない。`commands/file.rs:399-417` のテストでこの挙動が固定されています
+- **`WalkDir::new(...).max_depth(1)`**: サブディレクトリを再帰しない。`commands/file.rs:376-395` のテストでこの挙動が固定されています
 - **2 段階処理**:
   1. 拡張子のフィルタリングで「画像かもしれない」パスを集める (1 ファイルあたり O(1)、IO なし)
   2. `rayon::par_iter()` で並列にメタデータ (サイズ・更新時刻) を取得
 
   `Cargo.toml:29` で依存追加されている `rayon` クレートのおかげで、CPU コア数だけスレッドが立ち、900 枚ある大きなフォルダでも体感できる速度差が出ます。
-- **画像の検証は遅延**: ファイルが本当に有効な画像かは `image::open()` を通すまでわかりませんが、ここではあえて検証を **しません** (281-306 行目のコメントで明示)。900 枚のフォルダで全部開くと数秒かかってしまうため、実際の `load_image` 時に検出する設計です
+- **画像の検証は遅延**: ファイルが本当に有効な画像かは `image::open()` を通すまでわかりませんが、ここではあえて検証を **しません** (282-284 行目のコメントで明示)。900 枚のフォルダで全部開くと数秒かかってしまうため、実際の `load_image` 時に検出する設計です
 - **ソート**: ファイル名の昇順
 
-### `load_image` (71-101 行目)
+### `validate_image_path` (private, 70-78 行目)
+
+`load_image` / `handle_dropped_file` / `generate_image_thumbnail` / `generate_thumbnail_with_dimensions` で同じ前段検証 (`exists() + is_file() + is_supported_image()`) を共有するための小さなヘルパーです。失敗時は `"File not found"` か `"Unsupported file format"` のいずれかを返します。
+
+### `load_image` (81-104 行目)
 
 1 枚の画像を読み込んで base64 + 寸法 + 形式を返します。
 
 返り値の `ImageData` 構造体は `commands/file.rs:23-30` で定義され、TypeScript 側の `src/types/index.ts:9-15` の `ImageData` interface と対応しています。
 
-### `handle_dropped_file` (104-116 行目)
+### `handle_dropped_file` (107-111 行目)
 
 ドラッグ&ドロップで投下されたファイルが画像かを検証して `ImageInfo` を返します。**現在 `App.tsx:21` で `useFileDrop` がコメントアウトされている** ため、実プロダクトでは呼ばれていません。残してある理由は将来 D&D を再有効化する想定です。
 
-### `validate_image_file` (119-122 行目)
+### `validate_image_file` (114-117 行目)
 
 3 行のシンプルな関数。「ファイルが存在し、ファイルで、拡張子が画像形式」のすべてを満たすかを bool で返します。`async` ではなく **同期関数** です (即座に終わる処理なので)。
 
-### `get_startup_file` (125-137 行目)
+### `get_startup_file` (120-132 行目)
 
 OS が画像ファイルをダブルクリックで起動した場合、画像パスはコマンドライン引数として渡ってきます。それを拾って返します。
 
@@ -184,23 +188,23 @@ pub fn get_startup_file() -> Result<Option<String>, String> {
 
 `args[0]` は実行ファイル自体のパスなのでスキップしています。`Result<Option<String>, String>` の三層構造はフロント側で `string | null` として受け取られます (`App.tsx:29`)。
 
-### `generate_image_thumbnail` (140-155 行目)
+### `generate_image_thumbnail` (135-143 行目)
 
-互換性のために残されている古い API。寸法を返さない、シンプルなサムネイル生成。**現在のフロントコードからは呼ばれていません** が、`lib.rs:29` で登録されているので削除はされていません。
+互換性のために残されている古い API。寸法を返さない、シンプルなサムネイル生成。**現在のフロントコードからは呼ばれていません** が、`lib.rs:28` で登録されているので削除はされていません。
 
-### `generate_thumbnail_with_dimensions` (159-186 行目)
+### `generate_thumbnail_with_dimensions` (146-164 行目)
 
 現役で使われているサムネイル生成 API。サムネイル本体に加えて元画像の寸法も返します。フロント側 (`useThumbnailGenerator.ts:68-75`) では戻り値の `original_width`/`original_height` を使って、サムネイル表示時にも正しい縦横比でレイアウトします。
 
-### `prepare_path_for_open_with` (private, 195-249 行目)
+### `prepare_path_for_open_with` (private, 174-227 行目)
 
 `#[cfg(target_os = "windows")]` で Windows 限定。「プログラムから開く」ダイアログに渡すパスを 8.3 形式の短いパスに変換します。
 
 なぜこんなことをするのか? `rundll32.exe shell32.dll,OpenAs_RunDLL "C:\path with spaces\テスト画像 (1).jpg"` のような長いパスを渡すと、シェルのエスケープルールに引っかかって失敗することがあるためです。`GetShortPathNameW` Windows API で `C:\PATHWI~1\テスト画~1.JPG` のような形に変換すれば、空白も括弧も日本語も問題になりません。
 
-`unsafe` ブロックは Windows API を呼ぶために必要。失敗時は元のパスにフォールバックする実装になっています (242 行目)。
+`unsafe` ブロックは Windows API を呼ぶために必要。失敗時は元のパスにフォールバックする実装になっています (220 行目)。
 
-### `open_with_dialog` (252-279 行目)
+### `open_with_dialog` (230-257 行目)
 
 Windows のみ動作。`rundll32.exe shell32.dll,OpenAs_RunDLL <path>` を spawn して「プログラムから開く」ダイアログを表示します。
 
@@ -219,7 +223,7 @@ Windows のみ動作。`rundll32.exe shell32.dll,OpenAs_RunDLL <path>` を spawn
 
 `#[cfg(not(test))]` で囲まれているのは、**テスト時に実際のダイアログを開かないため**。テストではパスの検証 (`prepare_path_for_open_with`) だけが走り、UI は出ません。
 
-### `get_image_info` (private, 281-315 行目)
+### `get_image_info` (private, 259-293 行目)
 
 ファイルメタデータ (サイズ、更新日時、ファイル名、拡張子) から `ImageInfo` を組み立てるヘルパー。`get_folder_images` から並列に呼ばれます。
 
@@ -229,7 +233,7 @@ Windows のみ動作。`rundll32.exe shell32.dll,OpenAs_RunDLL <path>` を spawn
 
 ディスク上にサムネイルを保存して、フォルダを再度開いたときに即座に表示できるようにする仕組みです。
 
-### キャッシュディレクトリ (private, 19-53 行目)
+### キャッシュディレクトリ (private, 19-52 行目)
 
 OS ごとに保存先を変えています。
 
@@ -241,9 +245,13 @@ OS ごとに保存先を変えています。
 
 `cfg!(target_os = "...")` マクロを if 式の中で使う書き方に注目してください ([03 章 8 節](./03-rust-essentials.md#8-条件付きコンパイル-cfg) で解説済み)。
 
-### キャッシュキー (private, 55-63 行目)
+### キャッシュキー (private, 54-62 行目)
 
 ファイルパスとサムネイルサイズをハッシュ化して、ファイル名にしています。`std::collections::hash_map::DefaultHasher` を使ったシンプルな実装。
+
+### `cache_file_for` / `current_unix_time` (private, 64-74 行目)
+
+それぞれ「キャッシュキーから JSON ファイルパスを組み立てる」「UNIX 秒で現在時刻を取得する」ための薄いヘルパー。`get_cached_thumbnail` / `set_cached_thumbnail` / `clear_old_cache` / `get_cache_stats` の 4 箇所で重複していた処理をまとめたものです。
 
 ### `CacheEntry` 構造体 (7-15 行目)
 
@@ -261,7 +269,7 @@ pub struct CacheEntry {
 
 JSON ファイルとしてディスクに書かれます。`width`/`height` が後から追加されたフィールドなので、古いキャッシュ (寸法なし) との互換性を保つために `Option` + `skip_serializing_if` で省略可能になっています。
 
-### `get_cached_thumbnail` (65-98 行目)
+### `get_cached_thumbnail` (77-104 行目)
 
 キャッシュを読みに行き、24 時間以上経っていれば削除して `None` を返します。
 
@@ -271,15 +279,15 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 タプルの返り値 `Option<(String, Option<u32>, Option<u32>)>` が JS 側ではどう見えるかは `src/hooks/useThumbnailGenerator.ts:48-53` で確認できます (配列 `[base64, width, height] | null`)。
 
-### `set_cached_thumbnail` (101-132 行目)
+### `set_cached_thumbnail` (107-131 行目)
 
 `CacheEntry` を JSON にして書き出す。`println!` でログを出している箇所はないので静かに動作します。
 
-### `clear_old_cache` (135-181 行目)
+### `clear_old_cache` (134-177 行目)
 
 起動時に呼ばれる (`useCacheManager.ts:13`) クリーンアップ処理。`CACHE_DURATION` を超えた JSON ファイルを削除します。腐ったキャッシュ (JSON パース失敗) も削除対象。最後に削除件数を `println!` で出します。
 
-### `get_cache_stats` (184-227 行目)
+### `get_cache_stats` (180-218 行目)
 
 統計情報 (`total_files` / `valid_files`) を `HashMap<String, u32>` で返します。これは JS 側では普通のオブジェクト (`{ total_files: number, valid_files: number }`) として扱われます。
 
@@ -297,23 +305,23 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 最大化中・フルスクリーン中かを `WindowState` 構造体で返します。フロントは `useWindowState.ts:15` で起動時にこれを呼び、初期状態を取得します。
 
-### `resize_window_to_image` (39-147 行目)
+### `resize_window_to_image` (39-103 行目)
 
 このプロジェクトで一番複雑なコマンドです。「最大化されたウィンドウを、表示中の画像にぴったり合うサイズに縮める」処理を行います。
 
 ロジックの大筋:
 
-1. 最大化されていなければ早期 return (`58-60 行目`)
-2. ズーム率を考慮した「表示画像サイズ」を計算 (`63-65 行目`)
-3. UI 余白 (40px 横、80px 縦 — サムネイルバー分) を加算 (`67-72 行目`)
+1. 最大化されていなければ早期 return (`57-59 行目`)
+2. ズーム率を考慮した「表示画像サイズ」を計算 (`61-63 行目`)
+3. UI 余白 (40px 横、80px 縦 — サムネイルバー分) を加算 (`65-70 行目`)
 4. ウィンドウを `unmaximize()` してから `set_size()`
 5. 画像が画面内のどの位置にいたかを基に新しいウィンドウ位置を計算
 6. プライマリモニターのサイズ取得 → 画面外にはみ出さないようにクランプ
 7. `set_position()`
 
-`disable_animation: Option<bool>` で OS のリサイズアニメーションを抑制するかを切り替えますが、フロント側 (`store/index.ts:755`) は `true` 固定で呼んでいます。
+`disable_animation: Option<bool>` 引数は IPC 互換のためにシグネチャに残してありますが、現在は値を参照していません。以前は「アニメーションを抑制する/しない」で 2 分岐していましたが、フロント側 (`store/index.ts:742`) が常に `true` を渡し、しかも両分岐の処理内容が同一だったため、リファクタで分岐ごと削除しました。
 
-### `maximize_window` (161-172 行目)
+### `maximize_window` (118-128 行目)
 
 シンプルにウィンドウを最大化。`store/index.ts:572` で「画像を開いたときに自動最大化」のために呼ばれます。
 
@@ -326,7 +334,7 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 | ファイル | 例 |
 | --- | --- |
 | `commands/file.rs:40` | `Result<Vec<ImageInfo>, String>` |
-| `commands/cache.rs:184` | `Result<HashMap<String, u32>, String>` |
+| `commands/cache.rs:180` | `Result<HashMap<String, u32>, String>` |
 | `commands/window.rs:40` | `Result<(), String>` |
 
 エラーメッセージは英語の自然文で書かれます。フロント側では `try/catch` の `error` として受け取り、`store/index.ts:651` のように `new Error(...)` でラップして UI に表示されます。
@@ -347,7 +355,7 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 4. アプリを終了
 5. 60 秒以上待つ (PC を別作業に使う等)
 6. 再度起動
-7. ターミナルに `Cleaned N old cache entries` (`commands/cache.rs:179`) と表示されることを確認
+7. ターミナルに `Cleaned N old cache entries` (`commands/cache.rs:175`) と表示されることを確認
 8. **元の値 (`24 * 60 * 60`) に戻す**
 
 これで `clear_old_cache` がいつ呼ばれて何をしているか、を体感できます。
