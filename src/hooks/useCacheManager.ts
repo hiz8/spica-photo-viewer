@@ -27,7 +27,7 @@ export const useCacheManager = () => {
 
   useEffect(() => {
     const cleanupMemoryCache = () => {
-      const { cache, removePreloadedImage, removeCachedThumbnail } =
+      const { cache, removePreloadedImages, removeCachedThumbnails } =
         useAppStore.getState();
 
       if (cache.preloaded.size > MAX_PRELOADED_IMAGES) {
@@ -35,7 +35,7 @@ export const useCacheManager = () => {
           0,
           cache.preloaded.size - MAX_PRELOADED_IMAGES,
         );
-        paths.forEach(removePreloadedImage);
+        removePreloadedImages(paths);
         console.log(`Cleaned up ${paths.length} preloaded images from memory`);
       }
 
@@ -44,7 +44,7 @@ export const useCacheManager = () => {
           0,
           cache.thumbnails.size - MAX_THUMBNAIL_CACHE,
         );
-        paths.forEach(removeCachedThumbnail);
+        removeCachedThumbnails(paths);
         console.log(`Cleaned up ${paths.length} thumbnails from memory`);
       }
     };

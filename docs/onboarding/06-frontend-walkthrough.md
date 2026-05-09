@@ -200,7 +200,7 @@ if (cachedImage && cachedImage.format !== "error") {
 1. **マウント時 (10-26 行)**: `invoke("clear_old_cache")` と `invoke("get_cache_stats")` をコールしてコンソールにログ
 2. **30 秒ごと (28-54 行)**: メモリ上の `cache.preloaded` (上限 20)、`cache.thumbnails` (上限 100) が超過してたら古い順に削除
 
-削除はストアのアクション (`removePreloadedImage` / `removeCachedThumbnail`) 経由でイミュータブルに行います。これは [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) で必須とされている書き方で、Map を直接 `delete()` すると React の再レンダリングが発火せずに `ThumbnailBar` 等で stale 表示の原因になるため避けてください。
+削除はストアのバルクアクション (`removePreloadedImages` / `removeCachedThumbnails`) で 1 回の `set()` にまとめて行います。1 件ずつ単発アクションを呼ぶと、削除件数分だけ Map を再生成して store 更新が走り、`ThumbnailBar` 等の購読コンポーネントが連続再レンダリングしてしまうためです。イミュータブル更新自体は [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) で必須とされている書き方で、Map を直接 `delete()` すると React の再レンダリングが発火せずに stale 表示の原因になるので避けてください。
 
 ### `useThumbnailGenerator` (`src/hooks/useThumbnailGenerator.ts`)
 
