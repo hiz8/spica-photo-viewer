@@ -38,8 +38,8 @@ cargo test -- --nocapture         # println! の出力も表示
 
 | ソース | テスト範囲 |
 | --- | --- |
-| `commands/file.rs:317-763` | `get_folder_images`、`load_image`、`generate_image_thumbnail`、`open_with_dialog` などのテスト |
-| `commands/cache.rs:229-346` | キャッシュキー生成、キャッシュ読み書き、`CacheEntry` のシリアライズ |
+| `commands/file.rs:295-740` | `get_folder_images`、`load_image`、`generate_image_thumbnail`、`open_with_dialog` などのテスト |
+| `commands/cache.rs:220-337` | キャッシュキー生成、キャッシュ読み書き、`CacheEntry` のシリアライズ |
 | `utils/image.rs:65-268` | 形式判定、寸法取得、base64 化、サムネイル生成 |
 
 別途 `tests/` ディレクトリを切る Rust の慣習 (= 統合テスト) は採用していません。**新しいテストを追加するときも、対象関数と同じファイルの `mod tests` の中に追加** します。
@@ -59,7 +59,7 @@ mod tests {
 ### 同期テスト vs 非同期テスト
 
 ```rust
-// 同期テスト (commands/file.rs:546-553)
+// 同期テスト (commands/file.rs:524-531)
 #[test]
 fn test_validate_image_file_with_valid_image() {
     let temp_dir = create_temp_dir();
@@ -69,7 +69,7 @@ fn test_validate_image_file_with_valid_image() {
     assert!(result.unwrap());
 }
 
-// 非同期テスト (commands/file.rs:323-342)
+// 非同期テスト (commands/file.rs:302-321)
 #[tokio::test]
 async fn test_get_folder_images_with_valid_folder() {
     let temp_dir = create_temp_dir();
@@ -112,7 +112,7 @@ async fn test_get_folder_images_with_valid_folder() {
 
 ### プラットフォーム条件付きテスト
 
-`commands/file.rs:674-695` のように Windows 限定のテストには `#[cfg(target_os = "windows")]` を付けます。
+`commands/file.rs:652-658` のように Windows 限定のテストには `#[cfg(target_os = "windows")]` を付けます。
 
 ```rust
 #[test]

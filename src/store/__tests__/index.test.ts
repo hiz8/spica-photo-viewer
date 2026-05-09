@@ -976,6 +976,37 @@ describe("AppStore", () => {
         useAppStore.getState().cache.preloaded.has("/test/image.jpg"),
       ).toBe(false);
     });
+
+    it("should remove multiple preloaded images in a single store update", () => {
+      const { setPreloadedImage, removePreloadedImages } =
+        useAppStore.getState();
+
+      setPreloadedImage("/test/a.jpg", mockImageData);
+      setPreloadedImage("/test/b.jpg", mockImageData);
+      setPreloadedImage("/test/c.jpg", mockImageData);
+
+      const before = useAppStore.getState().cache.preloaded;
+
+      removePreloadedImages(["/test/a.jpg", "/test/b.jpg"]);
+
+      const after = useAppStore.getState().cache.preloaded;
+      expect(after).not.toBe(before);
+      expect(after.has("/test/a.jpg")).toBe(false);
+      expect(after.has("/test/b.jpg")).toBe(false);
+      expect(after.has("/test/c.jpg")).toBe(true);
+    });
+
+    it("should be a no-op when removing zero preloaded images", () => {
+      const { setPreloadedImage, removePreloadedImages } =
+        useAppStore.getState();
+
+      setPreloadedImage("/test/a.jpg", mockImageData);
+      const before = useAppStore.getState().cache.preloaded;
+
+      removePreloadedImages([]);
+
+      expect(useAppStore.getState().cache.preloaded).toBe(before);
+    });
   });
 
   describe("UI state management", () => {
@@ -1368,6 +1399,42 @@ describe("AppStore", () => {
       expect(
         useAppStore.getState().cache.thumbnails.has("/test/image.jpg"),
       ).toBe(false);
+    });
+
+    it("should remove multiple thumbnails in a single store update", () => {
+      const { setCachedThumbnail, removeCachedThumbnails } =
+        useAppStore.getState();
+
+      const thumb = { base64: "data", width: 800, height: 600 };
+      setCachedThumbnail("/test/a.jpg", thumb);
+      setCachedThumbnail("/test/b.jpg", thumb);
+      setCachedThumbnail("/test/c.jpg", thumb);
+
+      const before = useAppStore.getState().cache.thumbnails;
+
+      removeCachedThumbnails(["/test/a.jpg", "/test/b.jpg"]);
+
+      const after = useAppStore.getState().cache.thumbnails;
+      expect(after).not.toBe(before);
+      expect(after.has("/test/a.jpg")).toBe(false);
+      expect(after.has("/test/b.jpg")).toBe(false);
+      expect(after.has("/test/c.jpg")).toBe(true);
+    });
+
+    it("should be a no-op when removing zero thumbnails", () => {
+      const { setCachedThumbnail, removeCachedThumbnails } =
+        useAppStore.getState();
+
+      setCachedThumbnail("/test/a.jpg", {
+        base64: "data",
+        width: 800,
+        height: 600,
+      });
+      const before = useAppStore.getState().cache.thumbnails;
+
+      removeCachedThumbnails([]);
+
+      expect(useAppStore.getState().cache.thumbnails).toBe(before);
     });
 
     it("should create immutable Map copy when setting thumbnail", () => {
