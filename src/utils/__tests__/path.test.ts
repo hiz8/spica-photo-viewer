@@ -21,6 +21,10 @@ describe("getFilename", () => {
   it("returns empty string for empty input", () => {
     expect(getFilename("")).toBe("");
   });
+
+  it("handles paths with mixed separators", () => {
+    expect(getFilename("C:/foo\\bar/baz.jpg")).toBe("baz.jpg");
+  });
 });
 
 describe("getFolderPath", () => {
@@ -46,5 +50,10 @@ describe("getFolderPath", () => {
 
   it("preserves the trailing separator for files at a Windows drive root with forward slash", () => {
     expect(getFolderPath("C:/file.jpg")).toBe("C:/");
+  });
+
+  it("returns the folder up to the last separator regardless of separator mix", () => {
+    expect(getFolderPath("C:/foo\\bar/baz.jpg")).toBe("C:/foo\\bar");
+    expect(getFolderPath("/foo\\bar.jpg")).toBe("/foo");
   });
 });

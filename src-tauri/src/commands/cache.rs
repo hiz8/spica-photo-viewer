@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -69,7 +69,7 @@ fn cache_file_for(cache_dir: &Path, path: &str, size: Option<u32>) -> std::path:
 fn current_unix_time() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap() // safe: any system clock the app runs on is post-1970
+        .unwrap_or(Duration::ZERO)
         .as_secs()
 }
 
@@ -91,7 +91,9 @@ pub async fn get_cached_thumbnail(
     let cache_entry: CacheEntry = serde_json::from_str(&cache_content)
         .map_err(|e| format!("Failed to parse cache entry: {}", e))?;
 
-    if current_unix_time() - cache_entry.created > CACHE_DURATION {
+    // saturating_sub: if the system clock has stepped backwards (NTP / VM resume / manual change)
+    // and `created` is in the future, treat the entry as fresh rather than panicking on u64 underflow.
+    if current_unix_time().saturating_sub(cache_entry.created) > CACHE_DURATION {
         let _ = fs::remove_file(&cache_file);
         return Ok(None);
     }
@@ -156,7 +158,7 @@ pub async fn clear_old_cache() -> Result<(), String> {
             match fs::read_to_string(&path) {
                 Ok(content) => {
                     if let Ok(cache_entry) = serde_json::from_str::<CacheEntry>(&content) {
-                        if current_time - cache_entry.created > CACHE_DURATION
+                        if current_time.saturating_sub(cache_entry.created) > CACHE_DURATION
                             && fs::remove_file(&path).is_ok()
                         {
                             removed_count += 1;
@@ -203,7 +205,7 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u32>, String> {
 
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(cache_entry) = serde_json::from_str::<CacheEntry>(&content) {
-                    if current_time - cache_entry.created <= CACHE_DURATION {
+                    if current_time.saturating_sub(cache_entry.created) <= CACHE_DURATION {
                         valid_files += 1;
                     }
                 }
