@@ -56,4 +56,10 @@ describe("getFolderPath", () => {
     expect(getFolderPath("C:/foo\\bar/baz.jpg")).toBe("C:/foo\\bar");
     expect(getFolderPath("/foo\\bar.jpg")).toBe("/foo");
   });
+
+  it("returns the share folder for a Windows UNC path", () => {
+    expect(getFolderPath("\\\\server\\share\\file.jpg")).toBe(
+      "\\\\server\\share",
+    );
+  });
 });

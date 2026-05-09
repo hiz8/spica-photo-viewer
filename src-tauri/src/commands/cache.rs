@@ -67,6 +67,8 @@ fn cache_file_for(cache_dir: &Path, path: &str, size: Option<u32>) -> std::path:
 }
 
 fn current_unix_time() -> u64 {
+    // Falls back to 0 for the impossible case of a pre-epoch system clock; combined with the
+    // `saturating_sub` callers below, this just defers any cache eviction until time corrects.
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::ZERO)
