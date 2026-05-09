@@ -227,7 +227,7 @@ pub async fn resize_window_to_image(
     zoom_percent: f64,
     image_screen_center_x: f64,
     image_screen_center_y: f64,
-    disable_animation: Option<bool>,
+    _disable_animation: Option<bool>,
 ) -> Result<(), String> {
 ```
 

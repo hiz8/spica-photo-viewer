@@ -69,7 +69,7 @@ fn cache_file_for(cache_dir: &Path, path: &str, size: Option<u32>) -> std::path:
 fn current_unix_time() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap() // safe: any system clock the app runs on is post-1970
         .as_secs()
 }
 

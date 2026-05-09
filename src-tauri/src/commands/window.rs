@@ -44,7 +44,8 @@ pub async fn resize_window_to_image(
     zoom_percent: f64,
     image_screen_center_x: f64,
     image_screen_center_y: f64,
-    #[allow(unused_variables)] disable_animation: Option<bool>,
+    // Kept for IPC compat — front sends `disableAnimation` but both branches were identical so it is unused.
+    _disable_animation: Option<bool>,
 ) -> Result<(), String> {
     let window = app_handle
         .get_webview_window("main")

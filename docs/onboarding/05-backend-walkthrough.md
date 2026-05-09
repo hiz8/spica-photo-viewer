@@ -319,7 +319,7 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 6. プライマリモニターのサイズ取得 → 画面外にはみ出さないようにクランプ
 7. `set_position()`
 
-`disable_animation: Option<bool>` 引数は IPC 互換のためにシグネチャに残してありますが、現在は値を参照していません。以前は「アニメーションを抑制する/しない」で 2 分岐していましたが、フロント側 (`store/index.ts:742`) が常に `true` を渡し、しかも両分岐の処理内容が同一だったため、リファクタで分岐ごと削除しました。
+`_disable_animation: Option<bool>` 引数は IPC 互換のためにシグネチャに残してありますが、現在は値を参照していません。以前は「アニメーションを抑制する/しない」で 2 分岐していましたが、フロント側 (`store/index.ts:742`) が常に `true` を渡し、しかも両分岐の処理内容が同一だったため、リファクタで分岐ごと削除しました。先頭のアンダースコアは Rust の慣用で「意図的に未使用」を表す印で、Tauri が JS キーへ変換するときに使う `heck` クレートはアンダースコアを区切り扱いするので、JS 側のキーは引き続き `disableAnimation` のまま（`_disable_animation` → `disableAnimation`）です。
 
 ### `maximize_window` (118-128 行目)
 

@@ -13,8 +13,6 @@ export const useFileDrop = () => {
 
   useEffect(() => {
     let unlistenFileDrop: (() => void) | null = null;
-    let unlistenFileDropHover: (() => void) | null = null;
-    let unlistenFileDropCancelled: (() => void) | null = null;
 
     const setupListeners = async () => {
       try {
@@ -65,16 +63,6 @@ export const useFileDrop = () => {
             setLoading(false);
           }
         });
-
-        unlistenFileDropHover = await listen(
-          "tauri://file-drop-hover",
-          () => {},
-        );
-
-        unlistenFileDropCancelled = await listen(
-          "tauri://file-drop-cancelled",
-          () => {},
-        );
       } catch (error) {
         console.error("Failed to setup file drop listeners:", error);
       }
@@ -84,8 +72,6 @@ export const useFileDrop = () => {
 
     return () => {
       if (unlistenFileDrop) unlistenFileDrop();
-      if (unlistenFileDropHover) unlistenFileDropHover();
-      if (unlistenFileDropCancelled) unlistenFileDropCancelled();
     };
   }, [setCurrentImage, setFolderImages, setError, setLoading]);
 };
