@@ -12,6 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
       - if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' }}
         run: gh pr merge "${GITHUB_HEAD_REF}" --merge --auto
