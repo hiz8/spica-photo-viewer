@@ -1,11 +1,12 @@
 import type React from "react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../store";
+import { useAppStore, thumbnailToImageData } from "../store";
 import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
 import { useImagePreloader } from "../hooks/useImagePreloader";
 import type { ImageData as AppImageData } from "../types";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
+import { getFilename } from "../utils/path";
 
 interface ImageViewerProps {
   className?: string;
@@ -75,7 +76,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
         if (isThumbnailUpgrade) {
           console.log(
-            `Upgrading thumbnail to full resolution: ${path.split(/[\\/]/).pop()}`,
+            `Upgrading thumbnail to full resolution: ${getFilename(path)}`,
           );
 
           // Set loading state for consistent UX
@@ -163,15 +164,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
                 return;
               }
 
-              // Display cached thumbnail as preview with correct dimensions
-              const previewData: AppImageData = {
-                path,
-                base64: cachedThumbnail.base64,
-                width: cachedThumbnail.width,
-                height: cachedThumbnail.height,
-                format: "jpeg",
-              };
-              setImageData(previewData);
+              setImageData(thumbnailToImageData(path, cachedThumbnail));
 
               // Fit to window or restore saved view state
               if (!hasSavedState) {
@@ -491,7 +484,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         <img
           ref={imageRef}
           src={`data:${currentImage.data.format};base64,${currentImage.data.base64}`}
-          alt={currentImage.path.split(/[\\/]/).pop() || "Current image"}
+          alt={getFilename(currentImage.path) || "Current image"}
           style={imageStyle}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
