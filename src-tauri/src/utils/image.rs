@@ -32,8 +32,11 @@ pub fn load_image_as_base64(path: &Path) -> Result<String, ImageError> {
     // For GIF files, read the original file to preserve animation
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         if ext.to_lowercase() == "gif" {
-            let _t = PerfTimer::start("read_raw", &path_str);
-            let file_data = std::fs::read(path).map_err(ImageError::IoError)?;
+            let file_data = {
+                let _t = PerfTimer::start("read_raw", &path_str);
+                std::fs::read(path).map_err(ImageError::IoError)?
+            };
+            let _t = PerfTimer::start("base64", &path_str);
             return Ok(general_purpose::STANDARD.encode(&file_data));
         }
     }
