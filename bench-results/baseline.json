@@ -1,0 +1,45 @@
+{
+  "gitSha": "08caaee",
+  "timestamp": "2026-08-15T16:02:45.827Z",
+  "buildProfile": "release",
+  "runs": 7,
+  "corpus": [
+    "small",
+    "medium",
+    "large"
+  ],
+  "metrics": {
+    "TTFI_cold": {
+      "median_ms": 1771.3999999910593,
+      "p95_ms": 2106.6000000089407,
+      "n": 7,
+      "full": {
+        "median_ms": 1771.3999999910593,
+        "p95_ms": 2106.6000000089407,
+        "n": 7
+      }
+    },
+    "NAV_warm": {
+      "median_ms": 162,
+      "p95_ms": 293.5,
+      "n": 7
+    },
+    "NAV_cold": {
+      "median_ms": 515.5999999940395,
+      "p95_ms": 663.4000000059605,
+      "n": 7
+    },
+    "breakdown": {
+      "ipc_cold": {
+        "median_ms": 1266.5,
+        "p95_ms": 1523.7999999970198,
+        "n": 7
+      },
+      "decode_cold": {
+        "median_ms": 266.29999999701977,
+        "p95_ms": 470.70000000298023,
+        "n": 7
+      }
+    }
+  }
+}

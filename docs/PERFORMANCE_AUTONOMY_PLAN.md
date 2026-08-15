@@ -116,9 +116,9 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 ### Phase 3 — baseline 確定
 
-- [ ] 最適化前の状態で `npm run bench` を実行
-- [ ] 結果を `bench-results/baseline.json` として**コミット**（以降の比較基準）
-- [ ] baseline を README か本ファイルの §8 に転記（現状値の記録）
+- [x] 最適化前の状態で `npm run bench` を実行
+- [x] 結果を `bench-results/baseline.json` として**コミット**（以降の比較基準）
+- [x] baseline を README か本ファイルの §8 に転記（現状値の記録）
 
 ---
 
@@ -171,16 +171,26 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
   "gitSha": "abc1234",
   "timestamp": "2025-01-01T00:00:00Z",
   "buildProfile": "release",
-  "runs": 10,
+  "runs": 7,
   "corpus": ["small", "medium", "large"],
   "metrics": {
-    "TTFI_cold":  { "median_ms": 0, "p95_ms": 0, "byCorpus": { "large": { "median_ms": 0 } } },
-    "NAV_warm":   { "median_ms": 0, "p95_ms": 0 },
-    "NAV_cold":   { "median_ms": 0, "p95_ms": 0 },
-    "breakdown":  { "ipc_median_ms": 0, "decode_median_ms": 0 }
+    "TTFI_cold": {
+      "median_ms": 0,
+      "p95_ms": 0,
+      "n": 7,
+      "full": { "median_ms": 0, "p95_ms": 0, "n": 7 }
+    },
+    "NAV_warm": { "median_ms": 0, "p95_ms": 0, "n": 7 },
+    "NAV_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
+    "breakdown": {
+      "ipc_cold":    { "median_ms": 0, "p95_ms": 0, "n": 7 },
+      "decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 }
+    }
   }
 }
 ```
+
+> `TTFI_cold` のトップレベルは最初の paint（サムネイル先行表示があればそれを含む）までの `ttfi`、`full` はフル解像度 paint（`thumbnail: false`）までの `ttfi`。2 段階描画が発生しない場合は両者が一致する。`n` はサンプル欠落（cold 実行失敗など）を考慮した実サンプル数で、7 未満になり得る。
 
 ---
 
@@ -222,21 +232,26 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 ## 8. 現状 baseline（Phase 3 完了時に記入）
 
-| 指標 | corpus | median (ms) | p95 (ms) | 目標 |
-|------|--------|-------------|----------|------|
-| TTFI_cold | large | _TBD_ | _TBD_ | < 500 |
-| NAV_warm  | medium | _TBD_ | _TBD_ | < 100 |
-| NAV_cold  | medium | _TBD_ | _TBD_ | — |
-| ipc（内訳） | large | _TBD_ | _TBD_ | — |
-| decode（内訳） | large | _TBD_ | _TBD_ | — |
+計測元: `bench-results/baseline.json`（`gitSha: 08caaee`, `timestamp: 2026-08-15T16:02:45.827Z`, `runs: 7`, release ビルド）。全指標 n=7（欠落サンプルなし）。
+
+| 指標 | corpus | median (ms) | p95 (ms) | n | 目標 |
+|------|--------|-------------|----------|---|------|
+| TTFI_cold（first paint） | large | 1771.4 | 2106.6 | 7 | < 500 |
+| NAV_warm  | medium | 162.0 | 293.5 | 7 | < 100 |
+| NAV_cold  | medium | 515.6 | 663.4 | 7 | — |
+| ipc（内訳） | large | 1266.5 | 1523.8 | 7 | — |
+| decode（内訳） | large | 266.3 | 470.7 | 7 | — |
+
+> **TTFI_cold の full paint**: 全 7 サンプルでサムネイル先行表示は発生せず、`full`（`thumbnail: false` の paint まで）は `first` と完全に一致（median 1771.4ms / p95 2106.6ms / n=7）。したがって large コーパスでは 2 段階描画のオーバーヘッドは現状観測されていない。
+> **p95 に関する注記**: n=7 の nearest-rank p95 は最大値と一致するため、外れ値 1 個の影響を強く受ける（例: NAV_warm は 7 サンプル中の最大値 293.5ms がそのまま p95 になっている）。回帰判定では中央値を主指標として扱うこと（詳細は CLAUDE.md 参照）。
 
 ---
 
 ## 9. 進捗チェックリスト（サマリ）
 
-- [ ] Phase 1: 計測ハーネス（両側 instrumentation）
-- [ ] Phase 2: ベンチ駆動（WebdriverIO + release ビルド + 固定コーパス）
-- [ ] Phase 3: baseline 確定・コミット
+- [x] Phase 1: 計測ハーネス（両側 instrumentation）
+- [x] Phase 2: ベンチ駆動（WebdriverIO + release ビルド + 固定コーパス）
+- [x] Phase 3: baseline 確定・コミット
 - [ ] Phase 4: profiling で支配的ボトルネック特定
 - [ ] Phase 5: 最適化（base64→asset protocol を筆頭に、確認済み仮説のみ）
 - [ ] Phase 6: 自律ループ & ゲート運用開始
