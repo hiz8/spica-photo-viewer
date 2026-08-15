@@ -82,6 +82,8 @@ pub async fn load_image(path: String) -> Result<ImageData, String> {
     let image_path = Path::new(&path);
     validate_image_path(image_path)?;
 
+    let _t = crate::utils::perf::PerfTimer::start("load_image", &path);
+
     let base64_data =
         load_image_as_base64(image_path).map_err(|e| format!("Failed to load image: {}", e))?;
 

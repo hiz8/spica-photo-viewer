@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use image::{ImageError, ImageFormat};
 use std::path::Path;
+use crate::utils::perf::PerfTimer;
 
 pub fn is_supported_image(path: &Path) -> bool {
     match path.extension().and_then(|s| s.to_str()) {
@@ -26,22 +27,31 @@ pub fn get_image_format(path: &Path) -> Option<ImageFormat> {
 }
 
 pub fn load_image_as_base64(path: &Path) -> Result<String, ImageError> {
+    let path_str = path.to_string_lossy();
+
     // For GIF files, read the original file to preserve animation
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         if ext.to_lowercase() == "gif" {
+            let _t = PerfTimer::start("read_raw", &path_str);
             let file_data = std::fs::read(path).map_err(ImageError::IoError)?;
             return Ok(general_purpose::STANDARD.encode(&file_data));
         }
     }
 
     // For other formats, use image processing
-    let img = image::open(path)?;
+    let img = {
+        let _t = PerfTimer::start("decode", &path_str);
+        image::open(path)?
+    };
+
     let mut buffer = Vec::new();
-
     let format = get_image_format(path).unwrap_or(ImageFormat::Jpeg);
+    {
+        let _t = PerfTimer::start("encode", &path_str);
+        img.write_to(&mut std::io::Cursor::new(&mut buffer), format)?;
+    }
 
-    img.write_to(&mut std::io::Cursor::new(&mut buffer), format)?;
-
+    let _t = PerfTimer::start("base64", &path_str);
     Ok(general_purpose::STANDARD.encode(&buffer))
 }
 

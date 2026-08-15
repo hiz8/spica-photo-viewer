@@ -86,7 +86,7 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
   - `src/components/ImageViewer.tsx`: オープン/ナビゲーション時に `open:request` / `paint:done`
   - `src/components/ImageViewer.tsx の loadImage コールバック（invoke("load_image") 呼び出し 4 箇所）`: `ipc:sent` / `ipc:received` / `decode:done`
   - `src/store/index.ts`: preload ヒット/ミスのフラグを計測ログに含める
-- [ ] **Rust 側計時** `src-tauri/src/commands/file.rs`（load_image コマンド）と `src-tauri/src/utils/image.rs`（decode/encode 実処理）に `Instant` 計測を追加し、`tracing`（または `println!`）で構造化ログ出力（JSON 1 行）
+- [x] **Rust 側計時** `src-tauri/src/commands/file.rs`（load_image コマンド）と `src-tauri/src/utils/image.rs`（decode/encode 実処理）に `Instant` 計測を追加し、`tracing`（または `println!`）で構造化ログ出力（JSON 1 行）
 - [ ] **preload 可視化**: `src/store/index.ts` の preload 判定に、対象 path が `cache.preloaded` にヒットしたか否かをログに残す
 
 **完了条件**: アプリを手動起動して画像を開閉すると、`window.__PERF__` と Rust ログに区間時間が出る。
