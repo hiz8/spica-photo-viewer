@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -19,13 +19,12 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 fn get_cache_dir() -> Result<std::path::PathBuf, String> {
     let cache_dir = if cfg!(target_os = "windows") {
         // Windows: %APPDATA%\SpicaPhotoViewer\cache
-        let app_data = std::env::var("APPDATA")
-            .map_err(|_| "Failed to get APPDATA directory".to_string())?;
+        let app_data =
+            std::env::var("APPDATA").map_err(|_| "Failed to get APPDATA directory".to_string())?;
         Path::new(&app_data).join("SpicaPhotoViewer").join("cache")
     } else if cfg!(target_os = "macos") {
         // macOS: ~/Library/Caches/SpicaPhotoViewer
-        let home = std::env::var("HOME")
-            .map_err(|_| "Failed to get HOME directory".to_string())?;
+        let home = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
         Path::new(&home)
             .join("Library")
             .join("Caches")
@@ -62,15 +61,27 @@ fn get_cache_key(path: &str, size: u32) -> String {
     format!("{:x}", hasher.finish())
 }
 
+fn cache_file_for(cache_dir: &Path, path: &str, size: Option<u32>) -> std::path::PathBuf {
+    let cache_key = get_cache_key(path, size.unwrap_or(30));
+    cache_dir.join(format!("{}.json", cache_key))
+}
+
+fn current_unix_time() -> u64 {
+    // Falls back to 0 for the impossible case of a pre-epoch system clock; combined with the
+    // `saturating_sub` callers below, this just defers any cache eviction until time corrects.
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_secs()
+}
+
 #[tauri::command]
 pub async fn get_cached_thumbnail(
     path: String,
     size: Option<u32>,
 ) -> Result<Option<(String, Option<u32>, Option<u32>)>, String> {
     let cache_dir = get_cache_dir()?;
-    let thumbnail_size = size.unwrap_or(30);
-    let cache_key = get_cache_key(&path, thumbnail_size);
-    let cache_file = cache_dir.join(format!("{}.json", cache_key));
+    let cache_file = cache_file_for(&cache_dir, &path, size);
 
     if !cache_file.exists() {
         return Ok(None);
@@ -82,19 +93,18 @@ pub async fn get_cached_thumbnail(
     let cache_entry: CacheEntry = serde_json::from_str(&cache_content)
         .map_err(|e| format!("Failed to parse cache entry: {}", e))?;
 
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // Check if cache is still valid
-    if current_time - cache_entry.created > CACHE_DURATION {
-        // Remove expired cache
+    // saturating_sub: if the system clock has stepped backwards (NTP / VM resume / manual change)
+    // and `created` is in the future, treat the entry as fresh rather than panicking on u64 underflow.
+    if current_unix_time().saturating_sub(cache_entry.created) > CACHE_DURATION {
         let _ = fs::remove_file(&cache_file);
         return Ok(None);
     }
 
-    Ok(Some((cache_entry.thumbnail, cache_entry.width, cache_entry.height)))
+    Ok(Some((
+        cache_entry.thumbnail,
+        cache_entry.width,
+        cache_entry.height,
+    )))
 }
 
 #[tauri::command]
@@ -106,18 +116,11 @@ pub async fn set_cached_thumbnail(
     height: Option<u32>,
 ) -> Result<(), String> {
     let cache_dir = get_cache_dir()?;
-    let thumbnail_size = size.unwrap_or(30);
-    let cache_key = get_cache_key(&path, thumbnail_size);
-    let cache_file = cache_dir.join(format!("{}.json", cache_key));
-
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let cache_file = cache_file_for(&cache_dir, &path, size);
 
     let cache_entry = CacheEntry {
         thumbnail,
-        created: current_time,
+        created: current_unix_time(),
         width,
         height,
     };
@@ -142,10 +145,7 @@ pub async fn clear_old_cache() -> Result<(), String> {
         return Ok(());
     }
 
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let current_time = current_unix_time();
 
     let entries =
         fs::read_dir(&cache_dir).map_err(|e| format!("Failed to read cache directory: {}", e))?;
@@ -160,10 +160,10 @@ pub async fn clear_old_cache() -> Result<(), String> {
             match fs::read_to_string(&path) {
                 Ok(content) => {
                     if let Ok(cache_entry) = serde_json::from_str::<CacheEntry>(&content) {
-                        if current_time - cache_entry.created > CACHE_DURATION {
-                            if fs::remove_file(&path).is_ok() {
-                                removed_count += 1;
-                            }
+                        if current_time.saturating_sub(cache_entry.created) > CACHE_DURATION
+                            && fs::remove_file(&path).is_ok()
+                        {
+                            removed_count += 1;
                         }
                     }
                 }
@@ -198,22 +198,17 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u32>, String> {
     let mut total_files = 0;
     let mut valid_files = 0;
 
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let current_time = current_unix_time();
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                total_files += 1;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            total_files += 1;
 
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(cache_entry) = serde_json::from_str::<CacheEntry>(&content) {
-                        if current_time - cache_entry.created <= CACHE_DURATION {
-                            valid_files += 1;
-                        }
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(cache_entry) = serde_json::from_str::<CacheEntry>(&content) {
+                    if current_time.saturating_sub(cache_entry.created) <= CACHE_DURATION {
+                        valid_files += 1;
                     }
                 }
             }

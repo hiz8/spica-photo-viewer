@@ -75,18 +75,17 @@ pub async fn get_image_file_size(path: String) -> Result<u64, String> {
 
 ## ステップ 2: `lib.rs` への登録
 
-`src-tauri/src/lib.rs:10-14` の `use commands::file::{ ... };` ブロックに追加します。
+`src-tauri/src/lib.rs:10-13` の `use commands::file::{ ... };` ブロックに追加します。
 
 ```rust
 use commands::file::{
     generate_image_thumbnail, generate_thumbnail_with_dimensions, get_folder_images,
     get_image_file_size,  // ← 追加
-    get_startup_file, handle_dropped_file, load_image,
-    open_with_dialog, validate_image_file,
+    get_startup_file, handle_dropped_file, load_image, open_with_dialog, validate_image_file,
 };
 ```
 
-そして `lib.rs:24-41` の `invoke_handler!` リストにも追加します。
+そして `lib.rs:23-40` の `invoke_handler!` リストにも追加します。
 
 ```rust
 .invoke_handler(tauri::generate_handler![
@@ -116,7 +115,7 @@ use commands::file::{
 
 ## ステップ 3: バックエンドテストの追加
 
-`commands/file.rs` のファイル末尾の `mod tests` の中、`test_open_with_dialog_with_japanese_filename` (740 行目付近) の **直前** あたりに 3 件追加します。
+`commands/file.rs` のファイル末尾の `mod tests` の中、`test_open_with_dialog_with_japanese_filename` (718 行目付近) の **直前** あたりに 3 件追加します。
 
 ```rust
     #[tokio::test]
@@ -150,7 +149,7 @@ use commands::file::{
     }
 ```
 
-`use crate::test_utils::*;` (`commands/file.rs:320`) は既に書かれているので、`create_test_jpeg` などはそのまま使えます。
+`use crate::test_utils::*;` (`commands/file.rs:298`) は既に書かれているので、`create_test_jpeg` などはそのまま使えます。
 
 ---
 

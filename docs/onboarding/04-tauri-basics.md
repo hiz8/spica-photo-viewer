@@ -99,7 +99,7 @@ Tauri v2 アプリは大きく 4 つの要素でできています。
 
 ## `tauri::Builder` と `invoke_handler!`
 
-Rust 側のエントリは `src-tauri/src/lib.rs:19-44` です。短いので全文を見ます。
+Rust 側のエントリは `src-tauri/src/lib.rs:19-43` です。短いので全文を見ます。
 
 ```rust
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -227,7 +227,7 @@ pub async fn resize_window_to_image(
     zoom_percent: f64,
     image_screen_center_x: f64,
     image_screen_center_y: f64,
-    disable_animation: Option<bool>,
+    _disable_animation: Option<bool>,
 ) -> Result<(), String> {
 ```
 
@@ -275,9 +275,9 @@ pub async fn get_window_position(app_handle: AppHandle) -> Result<WindowPosition
 `WebviewWindow` には以下のようなメソッドが生えています。
 
 - `is_maximized()`、`is_fullscreen()` (`commands/window.rs:25-31`)
-- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`commands/window.rs:84-108`)
-- `maximize()`、`unmaximize()` (`commands/window.rs:78`、`commands/window.rs:167`)
-- `primary_monitor()` (画面サイズ取得、`commands/window.rs:92`)
+- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`commands/window.rs:76-100`)
+- `maximize()`、`unmaximize()` (`commands/window.rs:124`、`commands/window.rs:73`)
+- `primary_monitor()` (画面サイズ取得、`commands/window.rs:85`)
 
 詳細は Tauri 公式ドキュメントを参照: https://docs.rs/tauri/latest/tauri/window/struct.WebviewWindow.html
 
@@ -359,7 +359,7 @@ Tauri にはプラグイン機構があり、よく使う機能 (ダイアログ
 
 ### Rust 側 (登録)
 
-`Cargo.toml:22-23` で依存に追加し、`lib.rs:22-23` で `.plugin(...)` で初期化するだけです。
+`Cargo.toml:22-23` で依存に追加し、`lib.rs:21-22` で `.plugin(...)` で初期化するだけです。
 
 ```toml
 tauri-plugin-opener = "2.5"
@@ -468,7 +468,7 @@ const unlistenUnmaximize = await window.listen("tauri://unmaximize", () => {
    });
    ```
 
-最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs:58-60`)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
+最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs:57-59`)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
 
 これにより:
 

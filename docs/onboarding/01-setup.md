@@ -14,7 +14,7 @@
 
 このドキュメントは **Windows 10 / 11** を前提にしています。Spica Photo Viewer の主要ターゲットは Windows で、MSI インストーラ・ファイル関連付け・「プログラムから開く」ダイアログなど Windows 固有の機能を扱うためです。
 
-macOS / Linux でも開発自体は可能ですが、Windows 限定の機能 (`commands/file.rs:251` の `open_with_dialog` など) はそのままでは動作しません。
+macOS / Linux でも開発自体は可能ですが、Windows 限定の機能 (`commands/file.rs:230` の `open_with_dialog` など) はそのままでは動作しません。
 
 ---
 
@@ -179,7 +179,7 @@ npm run tauri dev
 
 ### macOS / Linux でビルドエラー
 
-`commands/file.rs` 内の Windows 専用コードは `#[cfg(target_os = "windows")]` で隔離されているのでビルドはできますが、`open_with_dialog` を呼ぶと `Err("Open With dialog is only supported on Windows")` を返します (`commands/file.rs:275-278`)。
+`commands/file.rs` 内の Windows 専用コードは `#[cfg(target_os = "windows")]` で隔離されているのでビルドはできますが、`open_with_dialog` を呼ぶと `Err("Open With dialog is only supported on Windows")` を返します (`commands/file.rs:253-256`)。
 
 ---
 
