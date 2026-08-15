@@ -25,3 +25,6 @@ dist-ssr
 .claude/settings.local.json
 .tmp
 target
+
+# E2E harness scratch (images generated at runtime by specs)
+e2e/.tmp/
