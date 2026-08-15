@@ -1,16 +1,16 @@
-import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  AppState,
-  ImageInfo,
-  ImageData,
-  ViewState,
-  ThumbnailGenerationState,
-} from "../types";
+import { create } from "zustand";
 import {
   RAPID_NAVIGATION_THRESHOLD_MS,
   SUPPRESS_TRANSITION_MS,
 } from "../constants/timing";
+import type {
+  AppState,
+  ImageData,
+  ImageInfo,
+  ThumbnailGenerationState,
+  ViewState,
+} from "../types";
 import { getFilename, getFolderPath } from "../utils/path";
 import { perfEvent, perfMark } from "../utils/perf";
 

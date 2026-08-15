@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mockImageData, mockImageList } from "../../utils/testUtils";
-import { createImageInfo } from "../../utils/testFactories";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RAPID_NAVIGATION_THRESHOLD_MS } from "../../constants/timing";
 import { _setPerfEnabledForTests } from "../../utils/perf";
+import { createImageInfo } from "../../utils/testFactories";
+import { mockImageData, mockImageList } from "../../utils/testUtils";
 
 // Mock the invoke function before importing the store
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-import { useAppStore } from "../index";
 import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../index";
 
 const mockInvoke = vi.mocked(invoke);
 

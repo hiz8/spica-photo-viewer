@@ -1,12 +1,12 @@
-import { useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../store";
-import type { ImageData } from "../types";
+import { useCallback, useEffect, useRef } from "react";
 import {
+  MAX_CONCURRENT_LOADS,
   PRELOAD_DELAY_MS,
   PRELOAD_RANGE,
-  MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
+import { useAppStore } from "../store";
+import type { ImageData } from "../types";
 import { getFilename } from "../utils/path";
 import { perfEvent } from "../utils/perf";
 

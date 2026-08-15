@@ -1,11 +1,11 @@
-import type React from "react";
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore, thumbnailToImageData } from "../store";
-import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
-import { useImagePreloader } from "../hooks/useImagePreloader";
-import type { ImageData as AppImageData } from "../types";
+import type React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
+import { useImagePreloader } from "../hooks/useImagePreloader";
+import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
+import { thumbnailToImageData, useAppStore } from "../store";
+import type { ImageData as AppImageData } from "../types";
 import { getFilename } from "../utils/path";
 import { isPerfEnabled, perfMark } from "../utils/perf";
 
@@ -343,7 +343,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       img
         .decode()
         .then(() => {
-          if (!cancelled) perfMark("decode:done", { path: data.path, thumbnail });
+          if (!cancelled)
+            perfMark("decode:done", { path: data.path, thumbnail });
         })
         .catch(() => {
           /* decode() rejects for data-URL races; paint mark still fires */
