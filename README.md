@@ -112,6 +112,10 @@ npm run format
 npm run format:fix
 ```
 
+### Onboarding
+
+If you are new to Rust or Tauri, start with [`docs/onboarding/README.md`](docs/onboarding/README.md). It walks through the codebase chapter by chapter with hands-on exercises (in Japanese / 日本語).
+
 ### Building
 
 ```bash

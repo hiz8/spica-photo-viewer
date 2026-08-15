@@ -67,17 +67,20 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
     Ok(images)
 }
 
+fn validate_image_path(path: &Path) -> Result<(), String> {
+    if !path.exists() || !path.is_file() {
+        return Err("File not found".to_string());
+    }
+    if !is_supported_image(path) {
+        return Err("Unsupported file format".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn load_image(path: String) -> Result<ImageData, String> {
     let image_path = Path::new(&path);
-
-    if !image_path.exists() || !image_path.is_file() {
-        return Err("File not found".to_string());
-    }
-
-    if !is_supported_image(image_path) {
-        return Err("Unsupported file format".to_string());
-    }
+    validate_image_path(image_path)?;
 
     let base64_data =
         load_image_as_base64(image_path).map_err(|e| format!("Failed to load image: {}", e))?;
@@ -92,7 +95,7 @@ pub async fn load_image(path: String) -> Result<ImageData, String> {
         .to_lowercase();
 
     Ok(ImageData {
-        path: path.clone(),
+        path,
         base64: base64_data,
         width,
         height,
@@ -103,15 +106,7 @@ pub async fn load_image(path: String) -> Result<ImageData, String> {
 #[tauri::command]
 pub async fn handle_dropped_file(path: String) -> Result<ImageInfo, String> {
     let file_path = Path::new(&path);
-
-    if !file_path.exists() || !file_path.is_file() {
-        return Err("File not found".to_string());
-    }
-
-    if !is_supported_image(file_path) {
-        return Err("Unsupported file format".to_string());
-    }
-
+    validate_image_path(file_path)?;
     get_image_info(file_path)
 }
 
@@ -139,14 +134,7 @@ pub fn get_startup_file() -> Result<Option<String>, String> {
 #[tauri::command]
 pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result<String, String> {
     let image_path = Path::new(&path);
-
-    if !image_path.exists() || !image_path.is_file() {
-        return Err("File not found".to_string());
-    }
-
-    if !is_supported_image(image_path) {
-        return Err("Unsupported file format".to_string());
-    }
+    validate_image_path(image_path)?;
 
     let thumbnail_size = size.unwrap_or(30);
 
@@ -154,27 +142,17 @@ pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result
         .map_err(|e| format!("Failed to generate thumbnail: {}", e))
 }
 
-/// Generate thumbnail and return original image dimensions
 #[tauri::command]
 pub async fn generate_thumbnail_with_dimensions(
     path: String,
     size: u32,
 ) -> Result<ThumbnailWithDimensions, String> {
     let image_path = Path::new(&path);
+    validate_image_path(image_path)?;
 
-    if !image_path.exists() || !image_path.is_file() {
-        return Err("File not found".to_string());
-    }
-
-    if !is_supported_image(image_path) {
-        return Err("Unsupported file format".to_string());
-    }
-
-    // Get original image dimensions
     let (original_width, original_height) = get_image_dimensions(image_path)
         .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
 
-    // Generate thumbnail
     let thumbnail_base64 = generate_thumbnail(image_path, size)
         .map_err(|e| format!("Failed to generate thumbnail: {}", e))?;
 
@@ -759,5 +737,4 @@ mod tests {
             assert!(result.unwrap_err().contains("only supported on Windows"));
         }
     }
-
 }
