@@ -66,7 +66,17 @@ for (let i = 0; i < runs; i++) {
   // is running; the app recreates the directory on demand.
   rmSync(thumbCacheDir, { recursive: true, force: true });
   console.log(`\n=== TTFI_cold ${i + 1}/${runs} (fresh app process) ===`);
-  wdio("e2e/specs/ttfi-cold.perf.ts", { BENCH_COLD_INDEX: String(i) });
+  try {
+    wdio("e2e/specs/ttfi-cold.perf.ts", { BENCH_COLD_INDEX: String(i) });
+  } catch (error) {
+    // execFileSync throws on wdio's non-zero exit (e.g. a single flaky
+    // waitForFullPaint timeout). One bad sample must not abort the whole
+    // ~20min run and leave no JSON at all - skip it and keep going. The
+    // aggregator (bench.perf.ts) already tolerates a short samples file;
+    // `n` in the final JSON will legitimately reflect the samples that
+    // actually landed.
+    console.warn(`TTFI_cold sample ${i} failed, skipping: ${error.message}`);
+  }
 }
 
 console.log("\n=== NAV_warm / NAV_cold + aggregation ===");

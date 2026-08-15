@@ -159,7 +159,10 @@ export const extractTimings = (
     (e) => e.name === "ipc:received" && e.detail?.path === path,
   );
   const decoded = entries.find(
-    (e) => e.name === "decode:done" && e.detail?.path === path,
+    (e) =>
+      e.name === "decode:done" &&
+      e.detail?.path === path &&
+      e.detail?.thumbnail === false,
   );
   return {
     firstPaint: paints[0].ts - open.ts,
