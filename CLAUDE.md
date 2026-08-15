@@ -36,6 +36,7 @@ For detailed specifications, see [PROJECT_SPEC.md](./PROJECT_SPEC.md).
   - 他の指標が p95 の揺れを超えて悪化していない
   - `npm test` と `cd src-tauri && cargo test --lib` が全件 green
   - `npm run test:e2e`（視覚ゲート含む）が green
+- いずれかの指標の `n` が `runs` を下回った場合（特に NAV_warm の preload MISS による除外）は、原因を調査して説明できるまで採用しない。
 - 満たさない変更は `git revert` する。
 - 最適化前に必ず profiling（`SPICA_PERF=1` の Rust ログと `__PERF__` の ipc/decode 内訳）で支配的ボトルネックを特定し、1 コミット 1 仮説とする。当て推量での複数同時変更は禁止。
 - 採用時は `npm run bench:baseline` で `baseline.json` を更新し、同じコミットに含める。

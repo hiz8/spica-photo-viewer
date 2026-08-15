@@ -151,10 +151,22 @@ const readColdSamples = (): ColdSample[] => {
     );
     return [];
   }
-  return readFileSync(COLD_SAMPLES_FILE, "utf8")
+  const lines = readFileSync(COLD_SAMPLES_FILE, "utf8")
     .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as ColdSample);
+    .filter((line) => line.trim().length > 0);
+  const samples: ColdSample[] = [];
+  for (const line of lines) {
+    try {
+      samples.push(JSON.parse(line) as ColdSample);
+    } catch (error) {
+      // A torn/partial line shouldn't throw inside after() and lose the
+      // whole run's output - skip it and keep the rest of the samples.
+      console.warn(
+        `skipping unparseable line in ${COLD_SAMPLES_FILE}: ${(error as Error).message}`,
+      );
+    }
+  }
+  return samples;
 };
 
 const summarize = (values: number[]): Summary =>

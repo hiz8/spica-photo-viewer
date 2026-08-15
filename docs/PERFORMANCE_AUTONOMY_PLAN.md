@@ -23,7 +23,7 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  bench harness (WebdriverIO + tauri-driver, Windows/WebView2)│
+│  bench harness (WebdriverIO + @wdio/tauri-service (embedded), Windows/WebView2)│
 │   - release ビルドを起動                                       │
 │   - 固定コーパス × 固定操作シーケンスを N 回実行                  │
 │   - cold / warm を明示的に切替                                 │
@@ -93,7 +93,7 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 
 ---
 
-### Phase 2 — ベンチ駆動（WebdriverIO + tauri-driver, Windows）
+### Phase 2 — ベンチ駆動（WebdriverIO + @wdio/tauri-service, Windows）
 
 E2E ハーネスは存在しないためここで新規構築し、性能計測専用スペックを追加する。
 
@@ -199,8 +199,10 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 ```jsonc
 {
   "scripts": {
-    "test:e2e":       "wdio run e2e/wdio.conf.ts",
-    "bench":          "wdio run e2e/wdio.conf.ts --spec e2e/specs/bench.perf.ts",
+    "bench:build":    "node e2e/scripts/build-bench.mjs",
+    "bench:corpus":   "node e2e/scripts/generate-corpus.mjs",
+    "test:e2e":       "wdio run e2e/wdio.conf.ts --spec e2e/specs/smoke.e2e.ts --spec e2e/specs/visual.e2e.ts",
+    "bench":          "node e2e/scripts/run-bench.mjs",
     "bench:baseline": "npm run bench && node e2e/scripts/save-baseline.mjs"
   }
 }

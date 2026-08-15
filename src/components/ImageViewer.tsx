@@ -325,7 +325,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   useEffect(() => {
     const data = currentImage.data;
     if (!data || !isPerfEnabled()) return;
-    const thumbnail = useAppStore.getState().ui.thumbnailDisplayed;
+    const thumbnail = !!useAppStore.getState().ui.thumbnailDisplayed;
     let cancelled = false;
 
     const markPaint = () => {
