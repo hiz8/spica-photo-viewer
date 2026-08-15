@@ -3,6 +3,9 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // Specs import helpers with an explicit .ts extension so wdio's ESM TS
+    // loader resolves them without an extension-guessing step.
+    "allowImportingTsExtensions": true,
     "types": [
       "node",
       "@wdio/globals/types",

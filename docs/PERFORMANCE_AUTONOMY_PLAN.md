@@ -97,18 +97,18 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 
 E2E ハーネスは存在しないためここで新規構築し、性能計測専用スペックを追加する。
 
-- [ ] `e2e/` 配下に WebdriverIO をセットアップ（`@wdio/tauri-service` の embedded プロバイダ（Rust 側に `tauri-plugin-wdio-webdriver` を cargo feature `e2e` 付きで追加。外部ドライバ不要、WebView2 とのバージョン整合問題を回避））
-- [ ] `wdio.conf.ts` の `onPrepare` で **release ビルド**を実行（`cargo build --release` または `tauri build --debug` は使わず、計測は release で行う）
-- [ ] **固定コーパス** `e2e/fixtures/corpus/` を用意：
+- [x] `e2e/` 配下に WebdriverIO をセットアップ（`@wdio/tauri-service` の embedded プロバイダ（Rust 側に `tauri-plugin-wdio-webdriver` を cargo feature `e2e` 付きで追加。外部ドライバ不要、WebView2 とのバージョン整合問題を回避））
+- [x] `wdio.conf.ts` の `onPrepare` で **release ビルド**を実行（`cargo build --release` または `tauri build --debug` は使わず、計測は release で行う）
+- [x] **固定コーパス** `e2e/fixtures/corpus/` を用意：
   - `small/`（〜1MP）, `medium/`（〜8MP）, `large/`（2000px 超, 20MP 前後）を各数枚
   - コーパスは Git LFS もしくは生成スクリプトで再現可能にする
-- [ ] **ベンチスペック** `e2e/specs/bench.perf.ts`：
+- [x] **ベンチスペック** `e2e/specs/bench.perf.ts`：
   - **TTFI_cold**: **新規アプリプロセス起動** + `%APPDATA%\SpicaPhotoViewer\cache\` クリア（ディスク上のサムネイルキャッシュ）の状態で画像を開く。フル画像の preload はプロセス内メモリのため、セッション再起動が cold の必要条件。`paint:done` を待つ → `ttfi` 収集
   - **NAV_warm**: 連番を順方向にナビゲーション（preload が効く想定）→ `ttfi` 収集
   - **NAV_cold**: 遠方インデックスへジャンプ（preload ミス想定）→ `ttfi` 収集
   - 各ケースを **N=7〜10 回**繰り返し
   - `browser.execute(() => window.__PERF__)` で計測を回収
-- [ ] **結果出力** `bench-results/<git-sha>-<timestamp>.json` に中央値/p95 を書き出す（スキーマは §4）
+- [x] **結果出力** `bench-results/<git-sha>-<timestamp>.json` に中央値/p95 を書き出す（スキーマは §4）
 
 **完了条件**: `npm run bench` 一発で、release アプリを起動し JSON 結果が生成される。
 

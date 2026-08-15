@@ -29,3 +29,7 @@ target
 # E2E harness scratch (images generated at runtime by specs)
 e2e/.tmp/
 e2e/fixtures/corpus/
+
+# Bench results are machine-specific; only the committed baseline is tracked
+bench-results/*
+!bench-results/baseline.json
