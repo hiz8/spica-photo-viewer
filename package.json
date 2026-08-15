@@ -17,7 +17,7 @@
     "test:coverage": "vitest --coverage",
     "bench:build": "node e2e/scripts/build-bench.mjs",
     "bench:corpus": "node e2e/scripts/generate-corpus.mjs",
-    "test:e2e": "wdio run e2e/wdio.conf.ts --spec e2e/specs/smoke.e2e.ts",
+    "test:e2e": "wdio run e2e/wdio.conf.ts --spec e2e/specs/smoke.e2e.ts --spec e2e/specs/visual.e2e.ts",
     "bench": "node e2e/scripts/run-bench.mjs",
     "bench:baseline": "npm run bench && node e2e/scripts/save-baseline.mjs",
     "type-check": "tsc --noEmit",
