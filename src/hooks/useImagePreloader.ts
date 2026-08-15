@@ -8,6 +8,7 @@ import {
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
 import { getFilename } from "../utils/path";
+import { perfEvent } from "../utils/perf";
 
 /**
  * Hook for preloading full-resolution images
@@ -51,6 +52,7 @@ export const useImagePreloader = () => {
 
         // Store in preload cache
         setPreloadedImage(imagePath, imageData);
+        perfEvent("preload:done", { path: imagePath });
 
         console.log(`Preloaded full image: ${getFilename(imagePath)}`);
       } catch (error) {
