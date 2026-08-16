@@ -196,6 +196,74 @@ describe("useImagePreloader (bitmap window scheduler)", () => {
     );
   });
 
+  it("does not let a stale (superseded) load win over a fresh load for the same path", async () => {
+    // bitmapLoader only passes the AbortSignal to fetch(); once the
+    // response has arrived, abort() cannot stop blob()/createImageBitmap().
+    // So: P's load starts (L1), P leaves the window (aborted + dropped from
+    // pendingRef), P re-enters the window before L1 settles (fresh load
+    // L2, new controller), then L1 finally resolves. L1 must lose: its
+    // bitmap gets close()'d and discarded, and it must not evict L2's
+    // pending-map entry. L2 must still win when it resolves afterward.
+    type Deferred = {
+      promise: Promise<{ data: ImageData; bitmap: ImageBitmap }>;
+      resolve: (v: { data: ImageData; bitmap: ImageBitmap }) => void;
+    };
+    const makeDeferred = (): Deferred => {
+      let resolve!: Deferred["resolve"];
+      const promise = new Promise<{ data: ImageData; bitmap: ImageBitmap }>(
+        (res) => {
+          resolve = res;
+        },
+      );
+      return { promise, resolve };
+    };
+
+    const target = "/test/image1.jpg";
+    const deferredCalls: Deferred[] = [];
+    mockLoad.mockImplementation((path: string) => {
+      if (path === target) {
+        const deferred = makeDeferred();
+        deferredCalls.push(deferred);
+        return deferred.promise;
+      }
+      return Promise.resolve({ data: fullData(path), bitmap: fakeBitmap() });
+    });
+
+    showFullRes(0);
+    const { rerender } = renderHook(() => useImagePreloader());
+    // Initial window [1,2,3] (capped at 3) launches L1 for the target path.
+    expect(deferredCalls).toHaveLength(1);
+
+    // P leaves the window: pump() aborts L1's controller and drops it from
+    // pendingRef, but our deferred (standing in for an unstoppable
+    // in-flight decode) stays unsettled.
+    showFullRes(10);
+    rerender();
+
+    // P re-enters the window: pump() starts a fresh load (L2) for the same
+    // path under a new controller.
+    showFullRes(0);
+    rerender();
+    expect(deferredCalls).toHaveLength(2);
+
+    // L1 (stale) resolves after L2 has already started.
+    const staleBitmap = fakeBitmap();
+    deferredCalls[0].resolve({ data: fullData(target), bitmap: staleBitmap });
+    await flush();
+    expect(staleBitmap.close).toHaveBeenCalledOnce();
+    expect(getBitmap(target)).not.toBe(staleBitmap);
+
+    // L2 (fresh) resolves; it must win — cached and reported.
+    const freshBitmap = fakeBitmap();
+    deferredCalls[1].resolve({ data: fullData(target), bitmap: freshBitmap });
+    await flush();
+    expect(getBitmap(target)).toBe(freshBitmap);
+    expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+      target,
+      fullData(target),
+    );
+  });
+
   it("marks failed loads as error entries and does not retry them", async () => {
     const consoleWarnSpy = vi
       .spyOn(console, "warn")

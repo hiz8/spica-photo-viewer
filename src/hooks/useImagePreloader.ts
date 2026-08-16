@@ -108,8 +108,15 @@ export const useImagePreloader = (): void => {
       pendingRef.current.set(path, controller);
       void loadBitmapViaProtocol(path, controller.signal)
         .then(({ data: loaded, bitmap }) => {
-          if (!pendingRef.current.has(path)) {
-            bitmap.close(); // aborted or evicted while decoding
+          // Identity check, not existence: abort() cannot guarantee the
+          // fetch/decode chain actually stops once the response has
+          // arrived (bitmapLoader only passes the signal to fetch()), so a
+          // path can leave the window, get re-requested under a NEW
+          // controller, and have its stale load resolve afterward. Keying
+          // on path alone would let that stale result win over the fresh
+          // one; comparing the stored controller detects supersession.
+          if (pendingRef.current.get(path) !== controller) {
+            bitmap.close(); // superseded, aborted, or evicted while decoding
             return;
           }
           setBitmap(path, bitmap);
@@ -130,7 +137,13 @@ export const useImagePreloader = (): void => {
           useAppStore.getState().setPreloadedImage(path, errorData);
         })
         .finally(() => {
-          pendingRef.current.delete(path);
+          // Only clear the pending entry if it still belongs to this load;
+          // a superseded load must not delete the fresh load's ownership
+          // record (which would let a still-later stale resolution look
+          // "current" again, or make a legit in-flight load look free).
+          if (pendingRef.current.get(path) === controller) {
+            pendingRef.current.delete(path);
+          }
           pump();
         });
     }
