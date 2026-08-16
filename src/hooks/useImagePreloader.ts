@@ -203,6 +203,7 @@ export const useImagePreloader = () => {
 
   // Drop retained decoded elements when the folder changes; they belong to
   // paths that are no longer navigable, so keeping them alive would leak.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: folder.path is the intentional reset trigger; the effect body must not read it
   useEffect(() => {
     retainedImages.clear();
   }, [folder.path]);
