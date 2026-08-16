@@ -67,7 +67,7 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 - **TTFI_cold**: キャッシュ・preload 無しでの `ttfi`（= P1）
 - **NAV_warm**: preload ヒット時の `ttfi`（= P2 の理想ケース）
 - **NAV_cold**: preload ミス（遠方ジャンプ）時の `ttfi`（preload の効き検証用）
-- 内訳（`ipc` / `decode`）: ボトルネック切り分け用
+- 内訳（`fetch_decode`）: ボトルネック切り分け用
 
 各指標は **N 回実行の中央値と p95** を記録する（単発値は使わない）。
 
