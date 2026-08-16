@@ -21,7 +21,8 @@ export const loadImageViaProtocol = async (
   } else {
     await new Promise<void>((resolve, reject) => {
       element.onload = () => resolve();
-      element.onerror = () => reject(new Error(`Failed to load image: ${path}`));
+      element.onerror = () =>
+        reject(new Error(`Failed to load image: ${path}`));
     });
   }
   return {

@@ -111,9 +111,7 @@ describe("useImagePreloader", () => {
         await result.current.preloadImage("/test/image.jpg");
       });
 
-      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
-        "/test/image.jpg",
-      );
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith("/test/image.jpg");
       expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
         "/test/image.jpg",
         {
