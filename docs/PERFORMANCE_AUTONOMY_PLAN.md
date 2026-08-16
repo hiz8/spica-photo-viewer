@@ -67,7 +67,12 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 - **TTFI_cold**: キャッシュ・preload 無しでの `ttfi`（= P1）
 - **NAV_warm**: preload ヒット時の `ttfi`（= P2 の理想ケース）
 - **NAV_cold**: preload ミス（遠方ジャンプ）時の `ttfi`（preload の効き検証用）
+- **NAV_rapid**: preload の定常化を待たない連続ナビゲーション（large コーパス、12 ステップ × N run、ステップ間隔はフル品質 paint 待ち + 下限 250ms）での各ステップの `open:request` → `paint:done`(thumbnail: false)。**ヒット/ミスを除外せず全ステップを pool する**（n = runs × steps）。固定間隔の fire-and-forget を使わない理由: ImageViewer は後続ナビで進行中ロードを abort するため、固定間隔では MISS ステップのフル品質 paint が発生せず、生存サンプルが preload ヒットに偏って中央値が壊れる。`hit_rate` を診断用に併記。
+- **PLACEHOLDER_dur**: NAV_rapid の同一サンプルにおける「最初の `paint:done`（サムネイル fallback）→ フル品質 `paint:done`」の間隔。プレースホルダー非表示（最初の paint が既にフル品質）のときは **0 が正しい値**。注意: 0 は「ぼやけが見えない」ことしか意味せず「即時」を意味しない（preload Map ヒットでもブラウザ側のデコード済みリソースが失われていると paint まで数百 ms〜1.5s かかる「遅い hit」が存在する）。体感即時の判定は必ず NAV_rapid とペアで行う。
 - 内訳（`fetch_decode`）: ボトルネック切り分け用
+
+> NAV_rapid / PLACEHOLDER_dur の n は runs × steps（既定 7 × 12 = 84）で固定。除外ルールがないため n < runs × steps は計測失敗を意味する（save-baseline がガードする）。n=84 の nearest-rank p95 は n=7 と違い外れ値 1 個では汚染されないため、この 2 指標に限り p95 も参考値以上に使ってよい。
+> **再現性の単位はプロトコル全体**: run 間リセットが保証するのは「index 0 に戻る + preloader 静穏」のみで、メモリキャッシュの中身はセッションを通じて意図的に進化する（run 0 は fresh-preload レジーム、run 1 以降は ImageViewer 経由ロードが retainedImages に入らない既知の非対称により「遅い hit」レジームを含む — これはユーザー苦情「体感 ~1s」の実物）。したがって NAV_rapid は混合分布であり、比較は必ず「同一の固定プロトコル一式（bench 実行 1 回分）」同士で行う。run 単体同士の比較は無効。per-run の内訳は bench ログ（`NAV_rapid run k: ...`）で確認できる。
 
 各指標は **N 回実行の中央値と p95** を記録する（単発値は使わない）。
 
@@ -186,8 +191,17 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
     },
     "NAV_warm": { "median_ms": 0, "p95_ms": 0, "n": 7 },
     "NAV_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
+    "NAV_rapid": {
+      "median_ms": 0,
+      "p95_ms": 0,
+      "n": 84,
+      "steps": 12,
+      "hit_rate": 0.71
+    },
+    "PLACEHOLDER_dur": { "median_ms": 0, "p95_ms": 0, "n": 84 },
     "breakdown": {
-      "fetch_decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 }
+      "fetch_decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
+      "fetch_decode_rapid_miss": { "median_ms": 0, "p95_ms": 0, "n": 0 }
     }
   }
 }
@@ -206,7 +220,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
     "bench:corpus":   "node e2e/scripts/generate-corpus.mjs",
     "test:e2e":       "wdio run e2e/wdio.conf.ts --spec e2e/specs/smoke.e2e.ts --spec e2e/specs/visual.e2e.ts",
     "bench":          "node e2e/scripts/run-bench.mjs",
-    "bench:baseline": "npm run bench && node e2e/scripts/save-baseline.mjs"
+    "bench:baseline": "node e2e/scripts/save-baseline.mjs"
   }
 }
 ```
@@ -236,20 +250,26 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 ---
 
-## 8. 現状 baseline（Phase 6 採否ゲート通過・2026-08-16 更新）
+## 8. 現状 baseline（Phase 6 採否ゲート通過・2026-08-16 更新, NAV_rapid/PLACEHOLDER_dur 追加により再アンカー）
 
-計測元: `bench-results/baseline.json`（`gitSha: 11c01ca`, `timestamp: 2026-08-16T03:44:16.740Z`, `runs: 7`, release ビルド、spica-img プロトコル採用後）。全指標 n=7（欠落サンプルなし）。
+計測元: `bench-results/baseline.json`（`gitSha: adfe42b`, `timestamp: 2026-08-16T07:59:26.445Z`, `runs: 7`, release ビルド、spica-img プロトコル採用後）。全指標が想定 n を満たす（TTFI_cold/NAV_warm/NAV_cold は n=7、NAV_rapid/PLACEHOLDER_dur は n=84、fetch_decode_rapid_miss は n=24、欠落サンプルなし）。
 
 | 指標 | corpus | median (ms) | p95 (ms) | n | 目標 |
 |------|--------|-------------|----------|---|------|
-| TTFI_cold（first paint） | large | 483.8 | 629.2 | 7 | < 500 |
-| NAV_warm  | medium | 23.1 | 32.9 | 7 | < 100 |
-| NAV_cold  | medium | 179.9 | 252.9 | 7 | — |
-| fetch_decode_cold（内訳） | large | 395.4 | 546.3 | 7 | — |
+| TTFI_cold（first paint = full） | large | 334.9 | 499.1 | 7 | < 500 |
+| NAV_warm | medium | 38.7 | 39.0 | 7 | < 100 |
+| NAV_cold | medium | 161.8 | 254.1 | 7 | — |
+| NAV_rapid（steps=12, hit_rate=0.714） | large | 377.25 | 973.6 | 84 | < 100 |
+| PLACEHOLDER_dur | large | 0 | 352.9 | 84 | < 80 または 0 |
+| fetch_decode_cold（内訳） | large | 243.0 | 398.3 | 7 | — |
+| fetch_decode_rapid_miss（内訳） | large | 294.55 | 406.2 | 24 | — |
 
-> **旧 baseline（base64 IPC 時代, `gitSha: 08caaee`, 2026-08-15T16:02:45.827Z, 全 n=7）**: TTFI_cold median 1771.4ms / p95 2106.6ms、NAV_warm median 162.0ms / p95 293.5ms、NAV_cold median 515.6ms / p95 663.4ms、ipc（内訳）median 1266.5ms / p95 1523.8ms、decode（内訳）median 266.3ms / p95 470.7ms。`ipc`/`decode` はプロトコル化により IPC 経路自体がホットパスから消滅したため新 JSON には存在せず、新設の `fetch_decode_cold`（`src:set`→`decode:done`、fetch+ブラウザデコード区間）と直接比較はできない（計測区間が異なる設計変更。詳細は §2 実装注記）。
-> **TTFI_cold の full paint**: 全 7 サンプルでサムネイル先行表示は発生せず、`full`（`thumbnail: false` の paint まで）は `first` と完全に一致（median 483.8ms / p95 629.2ms / n=7）。
-> **p95 に関する注記**: n=7 の nearest-rank p95 は最大値と一致するため、外れ値 1 個の影響を強く受ける。回帰判定では中央値を主指標として扱うこと（詳細は CLAUDE.md 参照）。
+> **再アンカーの経緯（2026-08-16）**: 本 baseline は同日の前回 baseline（`gitSha: 11c01ca`, 2026-08-16T03:44:16.740Z 計測）から、アプリコードを一切変更せずに再計測した結果で置き換えたものである。`11c01ca..adfe42b` の `src/`/`src-tauri/` diff は機能的に無害な 4 件のみ（死コード除去 1 件・コメント追加 1 件・テスト追加 1 件・整形のみ 1 件）と確認済みで、コード起因の変化ではない。にもかかわらず両方向にズレが生じた: TTFI_cold は約 -31%（483.8→334.9ms、参考: run 1 は 321.8ms、fetch_decode_cold も 395.4→232.2/243.0ms）改善し、NAV_warm は +15〜16ms（23.1→38.2/38.7ms）悪化した。改善側は OS ページキャッシュ/電源状態のようなディスク I/O 起因の要因で説明でき、悪化側は NAV_warm が 2 回の独立フルベンチ実行で 38.2〜39.3ms という極めて狭い帯にクラスタしたことから、負荷ノイズというより表示リフレッシュ/vsync 状態の変化で double-rAF の paint マークの量子化点がシフトした可能性が高いと判断した。CLAUDE.md の「同一マシン・同一条件での比較のみ有効」の原則に従えば、旧 baseline は現在の計測条件下では両方向とも再現不能（irreproducible）であり、そのまま残すと将来の全比較が汚染される（存在しない NAV_warm 回帰・存在しない ~30% TTFI_cold 改善が幽霊のように出続ける）。そのため全指標をこの実測値で再アンカーした。**今後、コード変更なしに NAV_warm のような指標が「狭い帯にクラスタしたまま」ジャンプした場合は同種のマシン条件ドリフトを疑い、同じ手順で再度 re-baseline を検討すること。**
+> **NAV_rapid / PLACEHOLDER_dur の読み方**: NAV_rapid median 377.25ms はユーザー苦情「体感 ~1s」を計測値として再現している（run 内には単一ステップの full paint が最大 1497.9ms に達したサンプルもあった）。PLACEHOLDER_dur の pooled median が 0ms なのは、hit_rate 0.714（84 サンプル中 60 ヒット、過半数）と「hit のとき PLACEHOLDER_dur=0」という定義から必然の結果であり、異常ではない（§2 参照）。体感遅延の判定は必ず NAV_rapid と PLACEHOLDER_dur のペアで行うこと（どちらか単独の median だけで判断しない）。サイクル毎の改善ゲート（中央値 ≥10% 改善）は NAV_rapid 中央値で判定する。PLACEHOLDER_dur は hit 優勢の混合分布では中央値が 0 に飽和するため、進捗の追跡は p95（n=84 の rank-80、頑健）で行う。
+> **旧 baseline（spica-img プロトコル採用後, `gitSha: 11c01ca`, 2026-08-16T03:44:16.740Z, 全 n=7）**: TTFI_cold median 483.8ms / p95 629.2ms、NAV_warm median 23.1ms / p95 32.9ms、NAV_cold median 179.9ms / p95 252.9ms、fetch_decode_cold（内訳）median 395.4ms / p95 546.3ms。再アンカー理由は上記「再アンカーの経緯」を参照。
+> **旧々 baseline（base64 IPC 時代, `gitSha: 08caaee`, 2026-08-15T16:02:45.827Z, 全 n=7）**: TTFI_cold median 1771.4ms / p95 2106.6ms、NAV_warm median 162.0ms / p95 293.5ms、NAV_cold median 515.6ms / p95 663.4ms、ipc（内訳）median 1266.5ms / p95 1523.8ms、decode（内訳）median 266.3ms / p95 470.7ms。`ipc`/`decode` はプロトコル化により IPC 経路自体がホットパスから消滅したため新 JSON には存在せず、新設の `fetch_decode_cold`（`src:set`→`decode:done`、fetch+ブラウザデコード区間）と直接比較はできない（計測区間が異なる設計変更。詳細は §2 実装注記）。
+> **TTFI_cold の full paint**: 全 7 サンプルでサムネイル先行表示は発生せず、`full`（`thumbnail: false` の paint まで）は `first` と完全に一致（median 334.9ms / p95 499.1ms / n=7）。
+> **p95 に関する注記**: n=7 の nearest-rank p95 は最大値と一致するため、外れ値 1 個の影響を強く受ける。回帰判定では中央値を主指標として扱うこと（詳細は CLAUDE.md 参照）。NAV_rapid/PLACEHOLDER_dur は n=84 のため、外れ値 1 個に汚染されにくく p95 も参考値以上に使ってよい（§2 参照）。
 
 ---
 

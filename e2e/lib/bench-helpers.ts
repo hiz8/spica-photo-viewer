@@ -133,10 +133,7 @@ export const waitForFullPaint = async (
 };
 
 /** Intervals for `path`, paired offline from the marks in `entries`. */
-export const extractTimings = (
-  entries: PerfEntry[],
-  path: string,
-): Timings => {
+export const extractTimings = (entries: PerfEntry[], path: string): Timings => {
   const open = entries.find(
     (e) => e.name === "open:request" && e.detail?.path === path,
   );
@@ -165,6 +162,15 @@ export const extractTimings = (
     fetchDecode: srcSet && fullDecode ? fullDecode.ts - srcSet.ts : null,
   };
 };
+
+/**
+ * Placeholder visibility interval for one navigation: first paint (usually
+ * the blurry thumbnail fallback) -> full-resolution paint. 0 is a valid
+ * value and means no placeholder was perceivable (the first paint already
+ * was full resolution, e.g. a preload hit).
+ */
+export const placeholderDuration = (timings: Timings): number =>
+  timings.fullPaint - timings.firstPaint;
 
 /** The `preload` event tells us whether the navigation hit the preload cache. */
 export const preloadHit = (

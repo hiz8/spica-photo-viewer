@@ -19,7 +19,7 @@ const mulberry32 = (seed) => () => {
 const SETS = [
   { name: "small", width: 1024, height: 768, count: 8 },
   { name: "medium", width: 3264, height: 2448, count: 30 },
-  { name: "large", width: 5472, height: 3648, count: 8 },
+  { name: "large", width: 5472, height: 3648, count: 16 },
 ];
 
 for (const { name, width, height, count } of SETS) {
