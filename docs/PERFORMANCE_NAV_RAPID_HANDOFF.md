@@ -2,6 +2,8 @@
 
 > このファイルは次セッションへの引き継ぎプロンプト。新セッション開始時にこの全文を読み、まず本ファイルを最初のコミットで永続化すること（未追跡のまま作業すると消失事故の前例あり）。
 
+> **進捗（2026-08-16 更新）**: 「進め方 1」（NAV_rapid / PLACEHOLDER_dur の計測系拡張と baseline 記録）は完了。baseline は `bench-results/baseline.json` と `docs/PERFORMANCE_AUTONOMY_PLAN.md` §8 を参照（NAV_rapid 中央値 377.25ms / hit_rate 0.714 — 苦情の数値再現に成功。ベンチ間でマシン条件ドリフトが観測されたため baseline 全体を現条件で再アンカー済み、詳細は §8）。次は「進め方 2」（profiling）。注意: `fetch_decode_rapid_miss` は稀に preloader 由来の `src:set` を拾う競合があり得るため、進め方 2 では Rust 側 `SPICA_PERF=1` の serve ログで viewer/preloader を区別すること。
+
 ## ゴール
 
 サムネイルバーに表示されている範囲の画像へのナビゲーションで、**ぼやけたプレースホルダーを知覚させず、体感即時にフル品質の画像を表示する**。Picasa Photo Viewer と同等の体感を数値で定義し、計測で裏付けて達成する。
@@ -56,7 +58,7 @@
 - superpowers スキルに従う（brainstorming → writing-plans → subagent-driven-development）。worktree は origin/main から作成。
 - **サブエージェントの編集では biome の PostToolUse hook が発火しない**（既知、CI 落ちの実績 2 回）。各タスクのコミット前検証に `npm run lint` と `npm run format`（差分があれば `format:fix`）を必ず含めるよう dispatch に明記。
 - 意図的な依存配列（リセットトリガ等）には理由付き `// biome-ignore lint/correctness/useExhaustiveDependencies:` を使う（前例: `src/hooks/useImagePreloader.ts`）。
-- park 済み follow-up（PR #267 由来、関連するなら取り込んで良い）: 拡張子 allowlist の 3 箇所重複（`is_supported_image`/`get_image_format`/`mime_for`）統合 / ImageViewer ロードの retainedImages 非対称 / `bench:baseline` が bench を再実行する仕様（判定 run の JSON を直接 baseline 化する方式に変えると良い — 今回のように閾値がタイトな場合に重要）。
+- park 済み follow-up（PR #267 由来、関連するなら取り込んで良い）: 拡張子 allowlist の 3 箇所重複（`is_supported_image`/`get_image_format`/`mime_for`）統合 / ImageViewer ロードの retainedImages 非対称 / `bench:baseline` が bench を再実行する仕様 → **対応済み**（進め方 1 のブランチで直接 canonize 方式に変更済み）。
 - 計測は必ず release ビルド（`npm run bench:build` → `npm run bench`）。ベンチ中は他の重負荷アプリを起動しない。
 - Phase 3 で確定した baseline は同一マシンでのみ有効。
 
@@ -81,7 +83,7 @@
 npm run bench:corpus   # 決定論コーパス生成（46 枚 + exif）
 npm run bench:build    # perf 有効 release ビルド（--features e2e, VITE_PERF_LOG=1）
 npm run bench          # フルベンチ（cold はサンプル毎に別プロセス）
-npm run bench:baseline # bench + baseline.json 更新（縮退 run ガード付き）
+npm run bench:baseline # 直近の判定 run の JSON を baseline 化（bench は再実行しない。縮退 run ガード付き）
 npm run test:e2e       # smoke + visual（視覚ゲート）
 npm run profile:rust   # SPICA_PERF=1 で Rust 側内訳（piped spawn）
 ```

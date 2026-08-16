@@ -42,4 +42,4 @@ For detailed specifications, see [PROJECT_SPEC.md](./PROJECT_SPEC.md).
 - 採用時は `npm run bench:baseline` で `baseline.json` を更新し、同じコミットに含める（bench は再実行されず、判定に使った直近 run の JSON がそのまま baseline になる）。
 - N=7 の nearest-rank p95 は最大値と一致するため外れ値 1 個で汚染される。回帰判定は中央値を主、p95 を参考値とする（特に NAV_warm）。
 - ベンチ実行中は他の重負荷アプリを起動しない（同一マシン・同一条件での比較のみ有効。OS ページキャッシュの影響で再起動直後の初回 run は遅く出る）。
-- 体感ナビゲーション（NAV_rapid ワークストリーム）の目標: NAV_rapid フル品質 paint 中央値 < 100ms かつ PLACEHOLDER_dur 中央値 < 80ms（またはプレースホルダー非表示 = 0）。NAV_rapid / PLACEHOLDER_dur の n は runs × steps（7 × 12 = 84）に満たなければその run は無効。
+- 体感ナビゲーション（NAV_rapid ワークストリーム）の目標: NAV_rapid フル品質 paint 中央値 < 100ms かつ PLACEHOLDER_dur 中央値 < 80ms（またはプレースホルダー非表示 = 0）。NAV_rapid / PLACEHOLDER_dur の n は runs × steps（7 × 12 = 84）に満たなければその run は無効。サイクル毎の改善判定は NAV_rapid 中央値で行い、PLACEHOLDER_dur の進捗は p95 で追う（hit 優勢時に中央値は 0 に飽和するため）。
