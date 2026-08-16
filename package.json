@@ -19,6 +19,7 @@
     "bench:corpus": "node e2e/scripts/generate-corpus.mjs",
     "profile:rust": "node e2e/scripts/profile-rust.mjs",
     "profile:nav-rapid": "node e2e/scripts/profile-nav-rapid.mjs",
+    "profile:nav-rapid:analyze": "node e2e/scripts/analyze-nav-rapid.mjs",
     "test:e2e": "wdio run e2e/wdio.conf.ts --spec e2e/specs/smoke.e2e.ts --spec e2e/specs/visual.e2e.ts",
     "bench": "node e2e/scripts/run-bench.mjs",
     "bench:baseline": "node e2e/scripts/save-baseline.mjs",
