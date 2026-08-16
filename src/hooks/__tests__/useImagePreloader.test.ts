@@ -2,7 +2,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { mockImageData, mockImageList } from "../../utils/testUtils";
 import type { ImageInfo } from "../../types";
+import type { RawImageData } from "../../utils/imageData";
 import { PRELOAD_DELAY_MS } from "../../constants/timing";
+
+// Raw IPC shape that `rawToImageData` converts into `mockImageData` (the
+// same base64 payload, pre-conversion), used as the mocked `invoke`
+// resolved value since `load_image` still returns the raw shape.
+const mockRawImageData: RawImageData = {
+  path: mockImageData.path,
+  base64:
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  width: mockImageData.width,
+  height: mockImageData.height,
+  format: mockImageData.format,
+};
 
 // Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
@@ -81,7 +94,7 @@ describe("useImagePreloader", () => {
 
   describe("preloadImage", () => {
     it("should preload full-resolution image successfully", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      mockInvoke.mockResolvedValue(mockRawImageData);
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -189,7 +202,7 @@ describe("useImagePreloader", () => {
     });
 
     it("should skip already preloaded images in queue", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      mockInvoke.mockResolvedValue(mockRawImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
@@ -210,7 +223,7 @@ describe("useImagePreloader", () => {
     });
 
     it("should not start if thumbnail generation is not complete", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      mockInvoke.mockResolvedValue(mockRawImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
       mockStore.thumbnailGeneration.allGenerated = false; // Not complete
@@ -291,7 +304,7 @@ describe("useImagePreloader", () => {
 
   describe("startPreloading", () => {
     it("should process preload queue with concurrent limit", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      mockInvoke.mockResolvedValue(mockRawImageData);
 
       // Setup many images to exceed concurrent limit
       const manyImages = Array.from({ length: 10 }, (_, i) =>
@@ -319,7 +332,7 @@ describe("useImagePreloader", () => {
 
       // Mock some successful and some failed loads
       mockInvoke
-        .mockResolvedValueOnce(mockImageData) // First call succeeds
+        .mockResolvedValueOnce(mockRawImageData) // First call succeeds
         .mockRejectedValueOnce(new Error("Failed")); // Second call fails
 
       mockStore.folder.images = mockImageList as ImageInfo[];
@@ -364,7 +377,7 @@ describe("useImagePreloader", () => {
     });
 
     it("should delay preloading by 500ms", async () => {
-      mockInvoke.mockResolvedValue(mockImageData);
+      mockInvoke.mockResolvedValue(mockRawImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
@@ -410,7 +423,7 @@ describe("useImagePreloader", () => {
       const consoleLogSpy = vi
         .spyOn(console, "log")
         .mockImplementation(() => {});
-      mockInvoke.mockResolvedValue(mockImageData);
+      mockInvoke.mockResolvedValue(mockRawImageData);
 
       const { result } = renderHook(() => useImagePreloader());
 

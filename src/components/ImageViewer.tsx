@@ -5,7 +5,7 @@ import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 import { useImagePreloader } from "../hooks/useImagePreloader";
 import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
 import { thumbnailToImageData, useAppStore } from "../store";
-import type { ImageData as AppImageData } from "../types";
+import { rawToImageData, type RawImageData } from "../utils/imageData";
 import { getFilename } from "../utils/path";
 import { isPerfEnabled, perfMark } from "../utils/perf";
 
@@ -45,9 +45,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   const invokeLoadImage = useCallback(async (path: string) => {
     perfMark("ipc:sent", { path });
-    const data = await invoke<AppImageData>("load_image", { path });
+    const raw = await invoke<RawImageData>("load_image", { path });
     perfMark("ipc:received", { path });
-    return data;
+    return rawToImageData(raw);
   }, []);
 
   const loadImage = useCallback(
@@ -525,7 +525,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       {currentImage.data && (
         <img
           ref={imageRef}
-          src={`data:${currentImage.data.format};base64,${currentImage.data.base64}`}
+          src={currentImage.data.src}
           alt={getFilename(currentImage.path) || "Current image"}
           style={imageStyle}
           onMouseDown={handleMouseDown}

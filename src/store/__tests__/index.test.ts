@@ -1504,7 +1504,9 @@ describe("AppStore", () => {
       const state = useAppStore.getState();
       // Should have data immediately from thumbnail
       expect(state.currentImage.data).not.toBeNull();
-      expect(state.currentImage.data?.base64).toBe("thumbnailBase64");
+      expect(state.currentImage.data?.src).toBe(
+        "data:jpeg;base64,thumbnailBase64",
+      );
       expect(state.currentImage.data?.width).toBe(800);
       expect(state.currentImage.data?.height).toBe(600);
       expect(state.currentImage.data?.format).toBe("jpeg"); // Thumbnails are always JPEG
@@ -1569,7 +1571,7 @@ describe("AppStore", () => {
       const cachedImage = {
         ...mockImageData,
         path: "/test/image1.jpg",
-        base64: "fullResBase64",
+        src: "data:jpeg;base64,fullResBase64",
       };
       const cachedThumbnail = {
         base64: "thumbnailBase64",
@@ -1596,7 +1598,9 @@ describe("AppStore", () => {
 
       const state = useAppStore.getState();
       // Should use full resolution, not thumbnail
-      expect(state.currentImage.data?.base64).toBe("fullResBase64");
+      expect(state.currentImage.data?.src).toBe(
+        "data:jpeg;base64,fullResBase64",
+      );
       expect(state.ui.thumbnailDisplayed).toBe(false);
     });
 
@@ -1792,7 +1796,7 @@ describe("AppStore", () => {
       ]);
       store.setPreloadedImage("C:\\photos\\b.jpg", {
         path: "C:\\photos\\b.jpg",
-        base64: "xxx",
+        src: "data:jpeg;base64,xxx",
         width: 100,
         height: 100,
         format: "jpeg",

@@ -160,10 +160,7 @@ describe("ImageViewer", () => {
 
       const image = screen.getByRole("img");
       expect(image).toBeInTheDocument();
-      expect(image).toHaveAttribute(
-        "src",
-        `data:${mockImageData.format};base64,${mockImageData.base64}`,
-      );
+      expect(image).toHaveAttribute("src", mockImageData.src);
       expect(image).toHaveAttribute("alt", "image.jpg");
       expect(image).toHaveAttribute("draggable", "false");
     });
@@ -720,7 +717,7 @@ describe("ImageViewer", () => {
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = {
         path: "/test/image.jpg",
-        base64: "thumbnailBase64",
+        src: "data:jpeg;base64,thumbnailBase64",
         width: 800,
         height: 600,
         format: "jpeg",
@@ -844,7 +841,7 @@ describe("ImageViewer", () => {
       mockStore.currentImage.data = null;
       mockStore.cache.preloaded.set("/test/image.jpg", {
         path: "/test/image.jpg",
-        base64: "fullResBase64",
+        src: "data:jpeg;base64,fullResBase64",
         width: 1920,
         height: 1080,
         format: "jpeg",

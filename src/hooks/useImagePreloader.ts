@@ -7,6 +7,7 @@ import {
 } from "../constants/timing";
 import { useAppStore } from "../store";
 import type { ImageData } from "../types";
+import { rawToImageData, type RawImageData } from "../utils/imageData";
 import { getFilename } from "../utils/path";
 import { perfEvent } from "../utils/perf";
 
@@ -46,9 +47,10 @@ export const useImagePreloader = () => {
 
       try {
         // Load full-resolution image
-        const imageData = await invoke<ImageData>("load_image", {
+        const raw = await invoke<RawImageData>("load_image", {
           path: imagePath,
         });
+        const imageData = rawToImageData(raw);
 
         // Store in preload cache
         setPreloadedImage(imagePath, imageData);
@@ -64,7 +66,7 @@ export const useImagePreloader = () => {
         // Mark as error in cache to avoid retry
         const errorData: ImageData = {
           path: imagePath,
-          base64: "",
+          src: "",
           width: 0,
           height: 0,
           format: "error",

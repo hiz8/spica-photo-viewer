@@ -6,8 +6,7 @@ export const createImageData = (
   overrides: Partial<ImageData> = {},
 ): ImageData => ({
   path: "/test/image.jpg",
-  base64:
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  src: "data:jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
   width: 800,
   height: 600,
   format: "jpeg",
@@ -42,7 +41,7 @@ export const createErrorImageData = (
   path: string = "/test/error.jpg",
 ): ImageData => ({
   path,
-  base64: "",
+  src: "",
   width: 0,
   height: 0,
   format: "error",

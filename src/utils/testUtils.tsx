@@ -13,8 +13,7 @@ import type { ImageData, ImageInfo } from "../types";
 // Sample test data
 export const mockImageData: ImageData = {
   path: "/test/image.jpg",
-  base64:
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  src: "data:jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
   width: 800,
   height: 600,
   format: "jpeg",
