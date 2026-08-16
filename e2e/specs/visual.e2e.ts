@@ -19,13 +19,17 @@ describe("visual gate", () => {
     await browser.execute((p: string) => {
       void window.__SPICA_TEST__?.openImage(p);
     }, target);
+    // The viewer moves through display stages (thumbnail <img> -> full <img>
+    // -> possibly a <canvas> swap once the decoded bitmap is retained), so a
+    // "something visible" predicate can sample a transient stage. Wait for
+    // the FULL-RESOLUTION pixels (5472 wide) on whichever element displays.
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
           const img = document.querySelector(".image-viewer img");
           if (
             img instanceof HTMLImageElement &&
-            img.naturalWidth > 0 &&
+            img.naturalWidth === 5472 &&
             img.getBoundingClientRect().width > 100
           ) {
             return true;
@@ -33,11 +37,11 @@ describe("visual gate", () => {
           const canvas = document.querySelector(".image-viewer canvas");
           return (
             canvas instanceof HTMLCanvasElement &&
-            canvas.width > 0 &&
+            canvas.width === 5472 &&
             canvas.getBoundingClientRect().width > 100
           );
         }),
-      { timeout: 60000, timeoutMsg: "image element never became visible" },
+      { timeout: 60000, timeoutMsg: "full-resolution image never displayed" },
     );
 
     mkdirSync(SHOTS, { recursive: true });
@@ -75,23 +79,35 @@ describe("visual gate", () => {
       (p: string) => void window.__SPICA_TEST__?.openImage(p),
       exifPath,
     );
+    // The viewer moves through display stages (unrotated thumbnail preview
+    // -> full <img> -> possibly a <canvas> swap once the decoded bitmap is
+    // retained). Sampling a transient stage flakes, so wait directly for the
+    // full-resolution ORIENTED dimensions on whichever element displays:
+    // encoded 1200x800 + orientation 6 must show as 800x1200. The wait
+    // succeeding IS the EXIF assertion.
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
           const img = document.querySelector(".image-viewer img");
-          return img instanceof HTMLImageElement && img.naturalWidth > 0;
+          if (
+            img instanceof HTMLImageElement &&
+            img.naturalWidth === 800 &&
+            img.naturalHeight === 1200
+          ) {
+            return true;
+          }
+          const canvas = document.querySelector(".image-viewer canvas");
+          return (
+            canvas instanceof HTMLCanvasElement &&
+            canvas.width === 800 &&
+            canvas.height === 1200
+          );
         }),
-      { timeout: 60000, timeoutMsg: "exif image never rendered" },
+      {
+        timeout: 60000,
+        timeoutMsg: "oriented 800x1200 exif image never displayed",
+      },
     );
-    const dims = await browser.execute(() => {
-      const img = document.querySelector(
-        ".image-viewer img",
-      ) as HTMLImageElement;
-      return { w: img.naturalWidth, h: img.naturalHeight };
-    });
-    // encoded 1200x800 + orientation 6 -> browser reports oriented 800x1200
-    expect(dims.w).toBe(800);
-    expect(dims.h).toBe(1200);
   });
 
   it("applies EXIF orientation on the canvas hit path", async function () {
