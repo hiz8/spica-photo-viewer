@@ -494,16 +494,22 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     [zoomAtPoint],
   );
 
-  // A retained decoded bitmap lets us paint at full resolution without the
-  // <img> re-decode. Read at render time: hits have their bitmap by the time
-  // navigation re-renders; cold loads keep the <img> path for their lifetime.
-  const displayBitmap =
-    currentImage.data &&
-    currentImage.data.width > 0 &&
-    !ui.thumbnailDisplayed &&
-    currentImage.data.path === currentImage.path
-      ? getBitmap(currentImage.path)
-      : undefined;
+  // Decide img-vs-canvas once per displayed data. A bitmap that arrives later
+  // (viewer-load retention) must NOT swap the mounted <img> for a canvas: the
+  // draw effect is keyed on the data, so a swap on an unrelated store-driven
+  // re-render would mount a blank, never-painted canvas.
+  const displayBitmap = useMemo(
+    () =>
+      currentImage.data &&
+      currentImage.data.width > 0 &&
+      !ui.thumbnailDisplayed &&
+      currentImage.data.path === currentImage.path
+        ? getBitmap(currentImage.data.path)
+        : undefined,
+    // currentImage.path changes together with data on navigation; listing it
+    // keeps the memo honest for the data.path === currentImage.path guard.
+    [currentImage.data, ui.thumbnailDisplayed, currentImage.path],
+  );
 
   const imageStyle: React.CSSProperties = useMemo(() => {
     // Always use original image dimensions for width/height
@@ -568,7 +574,13 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     >
       {currentImage.data && displayBitmap && (
         <canvas
-          ref={canvasRef}
+          ref={(canvas) => {
+            canvasRef.current = canvas;
+            if (canvas && currentImage.data) {
+              const bitmap = getBitmap(currentImage.data.path);
+              if (bitmap) drawBitmapToCanvas(canvas, bitmap);
+            }
+          }}
           role="img"
           aria-label={getFilename(currentImage.path) || "Current image"}
           style={imageStyle}

@@ -942,7 +942,10 @@ describe("ImageViewer", () => {
 
       expect(container.querySelector("canvas")).toBeInTheDocument();
       expect(container.querySelector("img")).not.toBeInTheDocument();
-      expect(drawBitmapToCanvas).toHaveBeenCalledOnce();
+      // Both the mount ref callback (belt-and-braces) and the data-keyed
+      // useLayoutEffect draw on this initial mount; double-drawing is
+      // idempotent, so assert the paint happened rather than an exact count.
+      expect(drawBitmapToCanvas).toHaveBeenCalled();
     });
 
     it("falls back to <img> when no bitmap is cached", () => {
@@ -963,6 +966,30 @@ describe("ImageViewer", () => {
 
       const { container } = render(<ImageViewer />);
 
+      expect(container.querySelector("img")).toBeInTheDocument();
+      expect(container.querySelector("canvas")).not.toBeInTheDocument();
+    });
+
+    it("does not swap <img> for <canvas> when a bitmap lands later without a data change", () => {
+      // No bitmap cached yet: first render must display the <img>.
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+
+      const { container, rerender } = render(<ImageViewer />);
+
+      expect(container.querySelector("img")).toBeInTheDocument();
+      expect(container.querySelector("canvas")).not.toBeInTheDocument();
+
+      // Bitmap retention lands asynchronously into the module-level cache
+      // (non-reactive) and some unrelated store-driven update (e.g. a
+      // neighbor's preload:done) triggers a re-render WITHOUT
+      // currentImage.data changing identity.
+      setBitmap(path, fakeBitmap(800, 600));
+      rerender(<ImageViewer />);
+
+      // The <img> must still be displayed: swapping to <canvas> here would
+      // mount an undrawn canvas, since the draw effect is keyed on
+      // currentImage.data, which did not change.
       expect(container.querySelector("img")).toBeInTheDocument();
       expect(container.querySelector("canvas")).not.toBeInTheDocument();
     });
