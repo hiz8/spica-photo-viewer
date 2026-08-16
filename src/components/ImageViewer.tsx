@@ -1,9 +1,19 @@
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 import { useImagePreloader } from "../hooks/useImagePreloader";
 import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
 import { thumbnailToImageData, useAppStore } from "../store";
+import { getBitmap } from "../utils/bitmapCache";
+import { retainElementAsBitmap } from "../utils/bitmapLoader";
+import { drawBitmapToCanvas } from "../utils/canvasDraw";
 import { getFilename } from "../utils/path";
 import { isPerfEnabled, perfMark } from "../utils/perf";
 import { loadImageViaProtocol } from "../utils/protocolLoader";
@@ -36,6 +46,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeLoadPathRef = useRef<string | null>(null);
@@ -84,7 +95,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setImageError(null);
 
           // Load full resolution directly
-          const fullImageData = (await loadImageViaProtocol(path)).data;
+          const { data: fullImageData, element } =
+            await loadImageViaProtocol(path);
 
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
@@ -105,6 +117,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
           // Add to preload cache
           setPreloadedImage(path, fullImageData);
+          retainElementAsBitmap(path, element);
 
           // Clear thumbnail flag
           setThumbnailDisplayed(false);
@@ -175,7 +188,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               }
 
               // PHASE 2: Load full resolution image in background
-              const fullImageData = (await loadImageViaProtocol(path)).data;
+              const { data: fullImageData, element } =
+                await loadImageViaProtocol(path);
 
               // Check if loading was cancelled
               if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -197,6 +211,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
               // Add to preload cache
               setPreloadedImage(path, fullImageData);
+              retainElementAsBitmap(path, element);
               return;
             } catch (error) {
               console.warn(
@@ -208,7 +223,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           }
 
           // Direct load (no cached thumbnail)
-          const fullImageData = (await loadImageViaProtocol(path)).data;
+          const { data: fullImageData, element } =
+            await loadImageViaProtocol(path);
 
           // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -226,6 +242,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
           // Add to preload cache
           setPreloadedImage(path, fullImageData);
+          retainElementAsBitmap(path, element);
         } else {
           // GIF files - use direct loading to preserve animation
           const imageData = (await loadImageViaProtocol(path)).data;
@@ -311,6 +328,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     };
   }, [currentImage.path, loadImage]);
 
+  // Paint the retained bitmap before the frame is presented. The canvas owns
+  // its own backing pixels afterwards, so later eviction of the bitmap is safe.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const data = currentImage.data;
+    if (!canvas || !data) return;
+    const bitmap = getBitmap(data.path);
+    if (bitmap) {
+      drawBitmapToCanvas(canvas, bitmap);
+    }
+  }, [currentImage.data]);
+
   // Perf instrumentation: mark decode:done / paint:done when displayed data changes.
   // Double rAF approximates the first frame actually painted with the new image.
   useEffect(() => {
@@ -328,6 +357,14 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         });
       });
     };
+
+    if (canvasRef.current) {
+      // Canvas path: pixels are already decoded; only the paint mark applies.
+      markPaint();
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const img = imageRef.current;
     if (img?.decode) {
@@ -365,7 +402,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const handleContainerClick = useCallback(
     (e: React.MouseEvent) => {
       // Check if click was on the image element
-      const isImageClick = e.target === imageRef.current;
+      const isImageClick =
+        e.target === imageRef.current || e.target === canvasRef.current;
 
       // Only handle clicks outside the image
       if (
@@ -394,7 +432,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Only allow dragging on the image itself
-    if (e.target === imageRef.current) {
+    const isDisplayTarget =
+      e.target === imageRef.current || e.target === canvasRef.current;
+    if (isDisplayTarget) {
       setIsDragging(true);
       setDragStart({
         x: e.clientX,
@@ -426,7 +466,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     // Only reset zoom on image double-click
-    if (e.target === imageRef.current) {
+    const isDisplayTarget =
+      e.target === imageRef.current || e.target === canvasRef.current;
+    if (isDisplayTarget) {
       useAppStore.getState().resetZoom();
     }
   }, []);
@@ -451,6 +493,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     },
     [zoomAtPoint],
   );
+
+  // A retained decoded bitmap lets us paint at full resolution without the
+  // <img> re-decode. Read at render time: hits have their bitmap by the time
+  // navigation re-renders; cold loads keep the <img> path for their lifetime.
+  const displayBitmap =
+    currentImage.data &&
+    currentImage.data.width > 0 &&
+    !ui.thumbnailDisplayed &&
+    currentImage.data.path === currentImage.path
+      ? getBitmap(currentImage.path)
+      : undefined;
 
   const imageStyle: React.CSSProperties = useMemo(() => {
     // Always use original image dimensions for width/height
@@ -513,7 +566,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       onClick={handleContainerClick}
       onKeyDown={handleContainerKeyDown}
     >
-      {currentImage.data && (
+      {currentImage.data && displayBitmap && (
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label={getFilename(currentImage.path) || "Current image"}
+          style={imageStyle}
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClick}
+        />
+      )}
+      {currentImage.data && !displayBitmap && (
         <img
           ref={imageRef}
           src={currentImage.data.src}
