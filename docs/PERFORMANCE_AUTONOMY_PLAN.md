@@ -67,7 +67,12 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 - **TTFI_cold**: キャッシュ・preload 無しでの `ttfi`（= P1）
 - **NAV_warm**: preload ヒット時の `ttfi`（= P2 の理想ケース）
 - **NAV_cold**: preload ミス（遠方ジャンプ）時の `ttfi`（preload の効き検証用）
+- **NAV_rapid**: preload の定常化を待たない連続ナビゲーション（large コーパス、12 ステップ × N run、ステップ間隔はフル品質 paint 待ち + 下限 250ms）での各ステップの `open:request` → `paint:done`(thumbnail: false)。**ヒット/ミスを除外せず全ステップを pool する**（n = runs × steps）。固定間隔の fire-and-forget を使わない理由: ImageViewer は後続ナビで進行中ロードを abort するため、固定間隔では MISS ステップのフル品質 paint が発生せず、生存サンプルが preload ヒットに偏って中央値が壊れる。`hit_rate` を診断用に併記。
+- **PLACEHOLDER_dur**: NAV_rapid の同一サンプルにおける「最初の `paint:done`（サムネイル fallback）→ フル品質 `paint:done`」の間隔。プレースホルダー非表示（最初の paint が既にフル品質）のときは **0 が正しい値**。注意: 0 は「ぼやけが見えない」ことしか意味せず「即時」を意味しない（preload Map ヒットでもブラウザ側のデコード済みリソースが失われていると paint まで数百 ms〜1.5s かかる「遅い hit」が存在する）。体感即時の判定は必ず NAV_rapid とペアで行う。
 - 内訳（`fetch_decode`）: ボトルネック切り分け用
+
+> NAV_rapid / PLACEHOLDER_dur の n は runs × steps（既定 7 × 12 = 84)で固定。除外ルールがないため n < runs × steps は計測失敗を意味する（save-baseline がガードする）。n=84 の nearest-rank p95 は n=7 と違い外れ値 1 個では汚染されないため、この 2 指標に限り p95 も参考値以上に使ってよい。
+> **再現性の単位はプロトコル全体**: run 間リセットが保証するのは「index 0 に戻る + preloader 静穏」のみで、メモリキャッシュの中身はセッションを通じて意図的に進化する（run 0 は fresh-preload レジーム、run 1 以降は ImageViewer 経由ロードが retainedImages に入らない既知の非対称により「遅い hit」レジームを含む — これはユーザー苦情「体感 ~1s」の実物）。したがって NAV_rapid は混合分布であり、比較は必ず「同一の固定プロトコル一式（bench 実行 1 回分）」同士で行う。run 単体同士の比較は無効。per-run の内訳は bench ログ（`NAV_rapid run k: ...`）で確認できる。
 
 各指標は **N 回実行の中央値と p95** を記録する（単発値は使わない）。
 
@@ -186,8 +191,17 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
     },
     "NAV_warm": { "median_ms": 0, "p95_ms": 0, "n": 7 },
     "NAV_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
+    "NAV_rapid": {
+      "median_ms": 0,
+      "p95_ms": 0,
+      "n": 84,
+      "steps": 12,
+      "hit_rate": 0.42
+    },
+    "PLACEHOLDER_dur": { "median_ms": 0, "p95_ms": 0, "n": 84 },
     "breakdown": {
-      "fetch_decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 }
+      "fetch_decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
+      "fetch_decode_rapid_miss": { "median_ms": 0, "p95_ms": 0, "n": 0 }
     }
   }
 }
@@ -206,7 +220,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
     "bench:corpus":   "node e2e/scripts/generate-corpus.mjs",
     "test:e2e":       "wdio run e2e/wdio.conf.ts --spec e2e/specs/smoke.e2e.ts --spec e2e/specs/visual.e2e.ts",
     "bench":          "node e2e/scripts/run-bench.mjs",
-    "bench:baseline": "npm run bench && node e2e/scripts/save-baseline.mjs"
+    "bench:baseline": "node e2e/scripts/save-baseline.mjs"
   }
 }
 ```
