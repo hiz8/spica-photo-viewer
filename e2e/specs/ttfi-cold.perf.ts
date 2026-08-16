@@ -42,8 +42,7 @@ describe("TTFI_cold", () => {
       path: target,
       firstPaint: timings.firstPaint,
       fullPaint: timings.fullPaint,
-      ipc: timings.ipc,
-      decode: timings.decode,
+      fetchDecode: timings.fetchDecode,
     };
 
     mkdirSync(dirname(COLD_SAMPLES_FILE), { recursive: true });

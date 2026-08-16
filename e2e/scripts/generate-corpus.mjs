@@ -43,4 +43,31 @@ for (const { name, width, height, count } of SETS) {
     console.log(`generated ${file}`);
   }
 }
+// EXIF orientation fixture: encoded 1200x800, orientation=6 (rotate 90 CW).
+// The protocol pipeline hands original bytes to the browser, which applies
+// EXIF orientation - displayed size must be 800x1200.
+{
+  const dir = join(OUT, "exif");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "img-000.jpg");
+  if (!existsSync(file)) {
+    const width = 1200;
+    const height = 800;
+    const rand = mulberry32(99001);
+    const raw = Buffer.alloc(width * height * 3);
+    for (let p = 0; p < raw.length; p += 3) {
+      const x = (p / 3) % width;
+      const y = Math.floor(p / 3 / width);
+      raw[p] = (x * 255) / width + rand() * 40;
+      raw[p + 1] = (y * 255) / height + rand() * 40;
+      raw[p + 2] = ((x + y) * 128) / (width + height) + rand() * 40;
+    }
+    await sharp(raw, { raw: { width, height, channels: 3 } })
+      .jpeg({ quality: 88 })
+      .withMetadata({ orientation: 6 })
+      .toFile(file);
+    console.log(`generated ${file}`);
+  }
+}
+
 console.log("corpus ready");

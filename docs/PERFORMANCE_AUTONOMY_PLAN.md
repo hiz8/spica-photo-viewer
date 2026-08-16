@@ -52,16 +52,15 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 | mark / measure 名 | 意味 |
 |-------------------|------|
 | `open:request` | 画像オープン/ナビゲーションのトリガ時刻 |
-| `ipc:sent` | Rust コマンド呼び出し直前 |
-| `ipc:received` | 画像データ（またはURL）受領時 |
+| `src:set` | 画像 URL 設定・fetch 開始直前 |
 | `decode:done` | `img.decode()` 完了 |
 | `paint:done` | 実際に画面へ反映（`requestAnimationFrame` 直後） |
 | `measure: ttfi` | `open:request` → `paint:done` |
-| `measure: ipc` | `ipc:sent` → `ipc:received` |
-| `measure: decode` | `ipc:received` → `decode:done` |
+| `measure: fetch_decode` | `src:set` → `decode:done` |
 
 > **実装注記**: `measure: ttfi` 等の区間はアプリ内では計算しない。アプリは `detail.path` 付きの mark を `window.__PERF__` に積むだけで、対応付け（同一 path の `open:request` → `paint:done` など）はベンチハーネスがオフラインで行う。ナビゲーション中断や abort が起きても計測が壊れないため。
 > また `paint:done` は `detail.thumbnail` フラグを持つ。サムネイル先行表示→フル解像度差し替えの 2 段階描画では、**最初の paint:done（thumbnail 含む）までを TTFI**、`thumbnail: false` の paint までを `TTFI_full` として両方集計する。
+> 2026-08 のプロトコル化以降、IPC 区間はホットパスに存在しない。旧 baseline の `ipc_cold`/`decode_cold` と新 `fetch_decode_cold` は比較不能（パイプライン相違）。
 
 集計する指標:
 
@@ -188,8 +187,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
     "NAV_warm": { "median_ms": 0, "p95_ms": 0, "n": 7 },
     "NAV_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
     "breakdown": {
-      "ipc_cold":    { "median_ms": 0, "p95_ms": 0, "n": 7 },
-      "decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 }
+      "fetch_decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 }
     }
   }
 }
@@ -234,6 +232,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 - **cold/warm を混ぜない**: P1 は cold パス、P2 は warm/preload パス。
 - **asset protocol の CSP/scope 設定漏れ**で 403/404 になりやすい。設定後にまず 1 枚表示できることを確認してから計測へ。
 - **正しさの担保**: 「速いが壊れた」を防ぐため、性能ゲートと正しさ/視覚ゲートを常に併用。
+- **EXIF orientation**: プロトコル化で原本バイトがブラウザに渡るため自動適用される（旧パイプラインは再エンコードで EXIF が落ち、回転付き JPEG は未回転表示だった）。視覚ゲートに exif コーパス検証あり。
 
 ---
 

@@ -56,10 +56,8 @@ export type Timings = {
   firstPaint: number;
   /** open:request -> first paint:done with thumbnail === false. */
   fullPaint: number;
-  /** ipc:sent -> ipc:received, or null when either mark is missing. */
-  ipc: number | null;
-  /** ipc:received -> decode:done, or null when decode() rejected/was skipped. */
-  decode: number | null;
+  /** src:set -> full-res decode:done, or null when either mark is missing. */
+  fetchDecode: number | null;
 };
 
 export type ColdSample = {
@@ -67,8 +65,7 @@ export type ColdSample = {
   path: string;
   firstPaint: number;
   fullPaint: number;
-  ipc: number | null;
-  decode: number | null;
+  fetchDecode: number | null;
 };
 
 export type Summary = {
@@ -152,13 +149,10 @@ export const extractTimings = (
       `incomplete marks for ${path} (open=${!!open} paints=${paints.length} full=${!!full})`,
     );
   }
-  const sent = entries.find(
-    (e) => e.name === "ipc:sent" && e.detail?.path === path,
+  const srcSet = entries.find(
+    (e) => e.name === "src:set" && e.detail?.path === path,
   );
-  const received = entries.find(
-    (e) => e.name === "ipc:received" && e.detail?.path === path,
-  );
-  const decoded = entries.find(
+  const fullDecode = entries.find(
     (e) =>
       e.name === "decode:done" &&
       e.detail?.path === path &&
@@ -167,9 +161,8 @@ export const extractTimings = (
   return {
     firstPaint: paints[0].ts - open.ts,
     fullPaint: full.ts - open.ts,
-    ipc: sent && received ? received.ts - sent.ts : null,
     // decode:done is best-effort: img.decode() rejects on data-URL races.
-    decode: received && decoded ? decoded.ts - received.ts : null,
+    fetchDecode: srcSet && fullDecode ? fullDecode.ts - srcSet.ts : null,
   };
 };
 
