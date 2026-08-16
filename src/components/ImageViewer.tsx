@@ -1,13 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 import { useImagePreloader } from "../hooks/useImagePreloader";
 import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
 import { thumbnailToImageData, useAppStore } from "../store";
-import { rawToImageData, type RawImageData } from "../utils/imageData";
 import { getFilename } from "../utils/path";
 import { isPerfEnabled, perfMark } from "../utils/perf";
+import { loadImageViaProtocol } from "../utils/protocolLoader";
 
 interface ImageViewerProps {
   className?: string;
@@ -42,13 +41,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const activeLoadPathRef = useRef<string | null>(null);
 
   const suppressTransition = ui.suppressTransition;
-
-  const invokeLoadImage = useCallback(async (path: string) => {
-    perfMark("ipc:sent", { path });
-    const raw = await invoke<RawImageData>("load_image", { path });
-    perfMark("ipc:received", { path });
-    return rawToImageData(raw);
-  }, []);
 
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
@@ -92,7 +84,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setImageError(null);
 
           // Load full resolution directly
-          const fullImageData = await invokeLoadImage(path);
+          const fullImageData = (await loadImageViaProtocol(path)).data;
 
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
@@ -183,7 +175,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               }
 
               // PHASE 2: Load full resolution image in background
-              const fullImageData = await invokeLoadImage(path);
+              const fullImageData = (await loadImageViaProtocol(path)).data;
 
               // Check if loading was cancelled
               if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -216,7 +208,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           }
 
           // Direct load (no cached thumbnail)
-          const fullImageData = await invokeLoadImage(path);
+          const fullImageData = (await loadImageViaProtocol(path)).data;
 
           // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -236,7 +228,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setPreloadedImage(path, fullImageData);
         } else {
           // GIF files - use direct loading to preserve animation
-          const imageData = await invokeLoadImage(path);
+          const imageData = (await loadImageViaProtocol(path)).data;
 
           // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -280,7 +272,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       fitToWindow,
       updateImageDimensions,
       setThumbnailDisplayed,
-      invokeLoadImage,
     ],
   );
 

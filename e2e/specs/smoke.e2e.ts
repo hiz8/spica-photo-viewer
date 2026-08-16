@@ -77,15 +77,12 @@ describe("smoke", () => {
     );
 
     // decode:done is intentionally not asserted: it fired in every observed
-    // run, but HTMLImageElement.decode() rejects on data-URL races (see
-    // ImageViewer.tsx) so the app treats it as best-effort - a hard assertion
-    // here would only be a flake source.
-    for (const name of [
-      "open:request",
-      "ipc:sent",
-      "ipc:received",
-      "paint:done",
-    ]) {
+    // run, but HTMLImageElement.decode() rejects on races (see ImageViewer.tsx)
+    // so the app treats it as best-effort - a hard assertion here would only be
+    // a flake source.
+    // ipc:sent/ipc:received are gone: the viewer no longer round-trips base64
+    // through IPC, it points <img> at the spica-img protocol (src:set).
+    for (const name of ["open:request", "src:set", "paint:done"]) {
       expect(markNames).toContain(name);
     }
 
