@@ -28,6 +28,7 @@ import {
   getStatus,
   navigateToImage,
   openImage,
+  placeholderDuration,
   preloadHit,
   waitForFullPaint,
 } from "../lib/bench-helpers.ts";
@@ -38,6 +39,18 @@ const PRELOAD_RANGE = 5;
 
 /** Stride between NAV_cold jumps: > 2 * PRELOAD_RANGE, so never preloaded. */
 const COLD_JUMP_STRIDE = 13;
+
+/** NAV_rapid: sequential steps per run over the large corpus. */
+const RAPID_STEPS = 12;
+
+/**
+ * NAV_rapid pacing floor: never navigate faster than this, but a slow full
+ * paint stretches the interval naturally (the harness waits for the
+ * full-res paint before stepping - see the NAV_rapid block for why).
+ */
+const RAPID_MIN_INTERVAL_MS = Number(
+  process.env.BENCH_RAPID_INTERVAL_MS ?? 250,
+);
 
 /**
  * The bench assumptions only hold for a corpus large enough that N forward
@@ -144,6 +157,15 @@ const results: Record<"NAV_warm" | "NAV_cold", number[]> = {
   NAV_cold: [],
 };
 
+/** NAV_rapid pools every step of every run - hits AND misses both count. */
+const rapid = {
+  fullPaint: [] as number[],
+  placeholderDur: [] as number[],
+  missFetchDecode: [] as number[],
+  hits: 0,
+  total: 0,
+};
+
 const readColdSamples = (): ColdSample[] => {
   if (!existsSync(COLD_SAMPLES_FILE)) {
     console.warn(
@@ -239,6 +261,70 @@ describe("bench", () => {
     console.log(`NAV_cold samples: ${JSON.stringify(results.NAV_cold)}`);
   });
 
+  it("NAV_rapid (large corpus, sustained navigation, >=250ms cadence)", async function () {
+    this.timeout(900_000);
+    const files = corpusFiles("large");
+    if (files.length <= RAPID_STEPS) {
+      throw new Error(
+        `large corpus has ${files.length} images, need > ${RAPID_STEPS} for NAV_rapid`,
+      );
+    }
+
+    // Switch the session to the large-corpus folder. The folder change
+    // resets thumbnails/preload state; waitForPreloadSettled implies
+    // allGenerated for the NEW folder because the preloader only runs after
+    // every thumbnail is generated.
+    await clearPerf();
+    await openImage(files[0]);
+    await waitForFullPaint(files[0]);
+    await waitForPreloadSettled(5);
+    await waitForPreloadQuiet();
+
+    for (let run = 0; run < N; run++) {
+      if (run > 0) {
+        // Reset to the deterministic start state: current = 0, preloader
+        // quiet, preloaded = {0..5} (cleanupCache evicts everything else
+        // during the quiet wait). The reset navigation is not measured.
+        await clearPerf();
+        await navigateToImage(0);
+        await waitForFullPaint(files[0]);
+        await waitForPreloadQuiet();
+      }
+
+      for (let step = 1; step <= RAPID_STEPS; step++) {
+        await clearPerf();
+        const navAt = Date.now();
+        await navigateToImage(step);
+        const entries = await waitForFullPaint(files[step]);
+
+        const timings = extractTimings(entries, files[step]);
+        rapid.total++;
+        rapid.fullPaint.push(timings.fullPaint);
+        rapid.placeholderDur.push(placeholderDuration(timings));
+        const hit = preloadHit(entries, files[step]);
+        if (hit === true) rapid.hits++;
+        if (hit === false && timings.fetchDecode !== null) {
+          rapid.missFetchDecode.push(timings.fetchDecode);
+        }
+
+        // Pacing floor. A fixed fire-and-forget cadence is NOT usable here:
+        // ImageViewer aborts superseded loads, so under rapid stepping most
+        // images would never reach a full-res paint and the surviving
+        // samples would be survivorship-biased toward preload hits.
+        const elapsed = Date.now() - navAt;
+        if (elapsed < RAPID_MIN_INTERVAL_MS) {
+          await browser.pause(RAPID_MIN_INTERVAL_MS - elapsed);
+        }
+      }
+    }
+    console.log(
+      `NAV_rapid samples: ${JSON.stringify(rapid.fullPaint)} (hits ${rapid.hits}/${rapid.total})`,
+    );
+    console.log(
+      `PLACEHOLDER_dur samples: ${JSON.stringify(rapid.placeholderDur)}`,
+    );
+  });
+
   after(() => {
     const cold = readColdSamples();
     mkdirSync(RESULTS_DIR, { recursive: true });
@@ -260,8 +346,15 @@ describe("bench", () => {
         },
         NAV_warm: summarize(results.NAV_warm),
         NAV_cold: summarize(results.NAV_cold),
+        NAV_rapid: {
+          ...summarize(rapid.fullPaint),
+          steps: RAPID_STEPS,
+          hit_rate: rapid.total > 0 ? rapid.hits / rapid.total : null,
+        },
+        PLACEHOLDER_dur: summarize(rapid.placeholderDur),
         breakdown: {
           fetch_decode_cold: summarize(defined(cold.map((s) => s.fetchDecode))),
+          fetch_decode_rapid_miss: summarize(rapid.missFetchDecode),
         },
       },
     };
