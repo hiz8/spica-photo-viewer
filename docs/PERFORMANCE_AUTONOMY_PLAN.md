@@ -258,7 +258,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 - [x] Phase 1: 計測ハーネス（両側 instrumentation）
 - [x] Phase 2: ベンチ駆動（WebdriverIO + release ビルド + 固定コーパス）
 - [x] Phase 3: baseline 確定・コミット
-- [ ] Phase 4: profiling で支配的ボトルネック特定
+- [x] Phase 4: profiling で支配的ボトルネック特定
 - [ ] Phase 5: 最適化（base64→asset protocol を筆頭に、確認済み仮説のみ）
 - [x] Phase 6: 自律ループ & ゲート運用開始
 

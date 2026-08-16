@@ -1,6 +1,4 @@
-use crate::utils::image::{
-    generate_thumbnail, get_image_dimensions, is_supported_image, load_image_as_base64,
-};
+use crate::utils::image::{generate_thumbnail, get_image_dimensions, is_supported_image};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -17,15 +15,6 @@ pub struct ImageInfo {
     pub filename: String,
     pub size: u64,
     pub modified: u64,
-    pub format: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ImageData {
-    pub path: String,
-    pub base64: String,
-    pub width: u32,
-    pub height: u32,
     pub format: String,
 }
 
@@ -75,34 +64,6 @@ fn validate_image_path(path: &Path) -> Result<(), String> {
         return Err("Unsupported file format".to_string());
     }
     Ok(())
-}
-
-#[tauri::command]
-pub async fn load_image(path: String) -> Result<ImageData, String> {
-    let image_path = Path::new(&path);
-    validate_image_path(image_path)?;
-
-    let _t = crate::utils::perf::PerfTimer::start("load_image", &path);
-
-    let base64_data =
-        load_image_as_base64(image_path).map_err(|e| format!("Failed to load image: {}", e))?;
-
-    let (width, height) = get_image_dimensions(image_path)
-        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
-
-    let format = image_path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_lowercase();
-
-    Ok(ImageData {
-        path,
-        base64: base64_data,
-        width,
-        height,
-        format,
-    })
 }
 
 #[tauri::command]
@@ -281,9 +242,9 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         .map_err(|e| format!("Failed to convert time: {}", e))?
         .as_secs();
 
-    // Note: Image validation is deferred to actual image loading time (load_image, generate_thumbnail)
-    // to avoid opening 900+ files during folder scan, which causes significant delays.
-    // Corrupted images will be detected when actually loaded via image::open().
+    // Note: Image validation is deferred to actual image loading time (spica-img protocol serve,
+    // generate_thumbnail) to avoid opening 900+ files during folder scan, which causes significant
+    // delays. Corrupted images will be detected when actually loaded via image::open() / browser decode.
 
     Ok(ImageInfo {
         path: path.to_string_lossy().to_string(),
@@ -410,73 +371,6 @@ mod tests {
 
         let images = result.unwrap();
         assert_eq!(images.len(), 3);
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_valid_file() {
-        let temp_dir = create_temp_dir();
-        let image_path = create_test_jpeg(temp_dir.path(), "test.jpg");
-
-        let result = load_image(image_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-
-        let image_data = result.unwrap();
-        assert_eq!(image_data.path, image_path.to_string_lossy().to_string());
-        assert!(!image_data.base64.is_empty());
-        assert_eq!(image_data.width, 1);
-        assert_eq!(image_data.height, 1);
-        assert_eq!(image_data.format, "jpg");
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_nonexistent_file() {
-        let result = load_image("/nonexistent/image.jpg".to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("File not found"));
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_unsupported_format() {
-        let temp_dir = create_temp_dir();
-        let text_file = temp_dir.path().join("test.txt");
-        fs::write(&text_file, "not an image").unwrap();
-
-        let result = load_image(text_file.to_string_lossy().to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported file format"));
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_corrupted_file() {
-        let temp_dir = create_temp_dir();
-        let corrupted_path = create_fake_image(temp_dir.path(), "corrupted.jpg");
-
-        let result = load_image(corrupted_path.to_string_lossy().to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to load image"));
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_different_formats() {
-        let temp_dir = create_temp_dir();
-
-        // Test JPEG
-        let jpeg_path = create_test_jpeg(temp_dir.path(), "test.jpeg");
-        let result = load_image(jpeg_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().format, "jpeg");
-
-        // Test PNG
-        let png_path = create_test_png(temp_dir.path(), "test.png");
-        let result = load_image(png_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().format, "png");
-
-        // Test GIF
-        let gif_path = create_test_gif(temp_dir.path(), "test.gif");
-        let result = load_image(gif_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().format, "gif");
     }
 
     #[tokio::test]

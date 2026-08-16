@@ -1,7 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use image::{ImageError, ImageFormat};
 use std::path::Path;
-use crate::utils::perf::PerfTimer;
 
 pub fn is_supported_image(path: &Path) -> bool {
     match path.extension().and_then(|s| s.to_str()) {
@@ -24,38 +23,6 @@ pub fn get_image_format(path: &Path) -> Option<ImageFormat> {
         },
         None => None,
     }
-}
-
-pub fn load_image_as_base64(path: &Path) -> Result<String, ImageError> {
-    let path_str = path.to_string_lossy();
-
-    // For GIF files, read the original file to preserve animation
-    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-        if ext.to_lowercase() == "gif" {
-            let file_data = {
-                let _t = PerfTimer::start("read_raw", &path_str);
-                std::fs::read(path).map_err(ImageError::IoError)?
-            };
-            let _t = PerfTimer::start("base64", &path_str);
-            return Ok(general_purpose::STANDARD.encode(&file_data));
-        }
-    }
-
-    // For other formats, use image processing
-    let img = {
-        let _t = PerfTimer::start("decode", &path_str);
-        image::open(path)?
-    };
-
-    let mut buffer = Vec::new();
-    let format = get_image_format(path).unwrap_or(ImageFormat::Jpeg);
-    {
-        let _t = PerfTimer::start("encode", &path_str);
-        img.write_to(&mut std::io::Cursor::new(&mut buffer), format)?;
-    }
-
-    let _t = PerfTimer::start("base64", &path_str);
-    Ok(general_purpose::STANDARD.encode(&buffer))
 }
 
 pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
@@ -223,39 +190,6 @@ mod tests {
         let invalid_path = create_invalid_image(temp_dir.path(), "invalid.jpg");
 
         let result = get_image_dimensions(&invalid_path);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_image_as_base64_with_jpeg() {
-        let temp_dir = create_temp_dir();
-        let jpeg_path = create_test_jpeg(temp_dir.path(), "test.jpg");
-
-        let result = load_image_as_base64(&jpeg_path);
-        assert!(result.is_ok());
-        let base64_data = result.unwrap();
-        assert!(!base64_data.is_empty());
-    }
-
-    #[test]
-    fn test_load_image_as_base64_with_gif() {
-        let temp_dir = create_temp_dir();
-        let gif_path = create_test_gif(temp_dir.path(), "test.gif");
-
-        let result = load_image_as_base64(&gif_path);
-        assert!(result.is_ok());
-        let base64_data = result.unwrap();
-        assert!(!base64_data.is_empty());
-        // GIF should preserve original file data
-        assert!(base64_data.len() > 0);
-    }
-
-    #[test]
-    fn test_load_image_as_base64_with_invalid_file() {
-        let temp_dir = create_temp_dir();
-        let invalid_path = create_invalid_image(temp_dir.path(), "invalid.jpg");
-
-        let result = load_image_as_base64(&invalid_path);
         assert!(result.is_err());
     }
 
