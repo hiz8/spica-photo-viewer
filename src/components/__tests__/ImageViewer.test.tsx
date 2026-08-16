@@ -944,8 +944,8 @@ describe("ImageViewer", () => {
       expect(container.querySelector("img")).not.toBeInTheDocument();
       // Both the mount ref callback (belt-and-braces) and the data-keyed
       // useLayoutEffect draw on this initial mount; double-drawing is
-      // idempotent, so assert the paint happened rather than an exact count.
-      expect(drawBitmapToCanvas).toHaveBeenCalled();
+      // idempotent and expected exactly twice here.
+      expect(drawBitmapToCanvas).toHaveBeenCalledTimes(2);
     });
 
     it("falls back to <img> when no bitmap is cached", () => {
@@ -992,6 +992,30 @@ describe("ImageViewer", () => {
       // currentImage.data, which did not change.
       expect(container.querySelector("img")).toBeInTheDocument();
       expect(container.querySelector("canvas")).not.toBeInTheDocument();
+    });
+
+    it("does not redraw the canvas on an unrelated re-render while mounted", () => {
+      // Canvas is already mounted and drawn with a bitmap in place.
+      setBitmap(path, fakeBitmap(800, 600));
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+
+      const { container, rerender } = render(<ImageViewer />);
+
+      expect(container.querySelector("canvas")).toBeInTheDocument();
+      const callsAfterMount = vi.mocked(drawBitmapToCanvas).mock.calls.length;
+
+      // Simulate an unrelated store-driven re-render (e.g. setPan on every
+      // mousemove during drag) with currentImage.data UNCHANGED. The ref
+      // callback's identity must stay stable so React does not re-invoke it
+      // (which would reallocate the canvas backing store and redraw the full
+      // bitmap on every such re-render).
+      rerender(<ImageViewer />);
+
+      expect(container.querySelector("canvas")).toBeInTheDocument();
+      expect(vi.mocked(drawBitmapToCanvas).mock.calls.length).toBe(
+        callsAfterMount,
+      );
     });
 
     it("emits a full-resolution paint:done from the canvas path", async () => {

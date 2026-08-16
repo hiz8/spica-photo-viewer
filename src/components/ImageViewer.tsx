@@ -511,6 +511,25 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     [currentImage.data, ui.thumbnailDisplayed, currentImage.path],
   );
 
+  // Stable identity keyed on the displayed data: an inline arrow function
+  // here would get a new identity on every render (e.g. setPan on every
+  // mousemove during drag, since ImageViewer subscribes to the whole store),
+  // and React re-invokes a ref callback whose identity changed even though
+  // the canvas stays mounted — reallocating the backing store and redrawing
+  // the full bitmap on every unrelated re-render. Keying on currentImage.data
+  // limits refires to actual data changes, which is harmless (idempotent
+  // draw, and the layout effect below already covers that case).
+  const canvasMountRef = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      canvasRef.current = canvas;
+      if (canvas && currentImage.data) {
+        const bitmap = getBitmap(currentImage.data.path);
+        if (bitmap) drawBitmapToCanvas(canvas, bitmap);
+      }
+    },
+    [currentImage.data],
+  );
+
   const imageStyle: React.CSSProperties = useMemo(() => {
     // Always use original image dimensions for width/height
     const imageWidth = currentImage.data?.width || 0;
@@ -574,13 +593,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     >
       {currentImage.data && displayBitmap && (
         <canvas
-          ref={(canvas) => {
-            canvasRef.current = canvas;
-            if (canvas && currentImage.data) {
-              const bitmap = getBitmap(currentImage.data.path);
-              if (bitmap) drawBitmapToCanvas(canvas, bitmap);
-            }
-          }}
+          ref={canvasMountRef}
           role="img"
           aria-label={getFilename(currentImage.path) || "Current image"}
           style={imageStyle}
