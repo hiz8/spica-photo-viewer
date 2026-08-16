@@ -126,9 +126,14 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 エージェントは修正前に必ずボトルネックを数値で特定する。
 
-- [ ] **フロント**: WebView2 は Chromium 系のため Chrome DevTools Protocol / Performance トレースが利用可。まずは §2 の `ipc` / `decode` 内訳で「転送が支配的か、デコードが支配的か」を判定
-- [ ] **Rust**: `tracing` span、必要に応じ `cargo flamegraph` でディスク I/O・エンコード処理のホットスポットを可視化
-- [ ] 支配的な区間を **1 つだけ**選び、Phase 5 の仮説に対応付ける
+- [x] **フロント**: WebView2 は Chromium 系のため Chrome DevTools Protocol / Performance トレースが利用可。まずは §2 の `ipc` / `decode` 内訳で「転送が支配的か、デコードが支配的か」を判定
+- [x] **Rust**: `tracing` span、必要に応じ `cargo flamegraph` でディスク I/O・エンコード処理のホットスポットを可視化
+- [x] 支配的な区間を **1 つだけ**選び、Phase 5 の仮説に対応付ける
+
+**Phase 4 実測記録（2026-08-16, gitSha a9a3634）**:
+- フロント内訳（baseline より）: TTFI_cold median 1771ms のうち ipc（ipc:sent→ipc:received）1266ms / decode（ブラウザ）266ms — IPC 経路が 71% を占め支配的
+- Rust 内訳（`npm run profile:rust`, large 20MP JPEG, n=6/op: 起動時 1 枚 + preload 近傍分）: decode median=294.9ms(max 350.5ms) / encode median=1454.3ms(max 1538.6ms) / base64 median=6.8ms(max 22.3ms) / load_image 合計 median=1728.9ms(max 1831.4ms) — Rust 内では再エンコード（encode）が最大区間
+- 結論: 支配区間は「Rust フルデコード→再エンコード→base64→JSON IPC→data URL パース」の転送パイプライン全体。Rust 側だけで load_image が 1729ms/枚（うち encode が 84%）に達し、フロント側 ipc 内訳（1266ms）と整合する。Phase 5 は候補 1（base64 over IPC の撤廃）に着手する
 
 ---
 
