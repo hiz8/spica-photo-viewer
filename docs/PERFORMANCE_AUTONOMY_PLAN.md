@@ -133,7 +133,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 **Phase 4 実測記録（2026-08-16, gitSha a9a3634）**:
 - フロント内訳（baseline より）: TTFI_cold median 1771ms のうち ipc（ipc:sent→ipc:received）1266ms / decode（ブラウザ）266ms — IPC 経路が 71% を占め支配的
 - Rust 内訳（`npm run profile:rust`, large 20MP JPEG, n=6/op: 起動時 1 枚 + preload 近傍分）: decode median=294.9ms(max 350.5ms) / encode median=1454.3ms(max 1538.6ms) / base64 median=6.8ms(max 22.3ms) / load_image 合計 median=1728.9ms(max 1831.4ms) — Rust 内では再エンコード（encode）が最大区間
-- 結論: 支配区間は「Rust フルデコード→再エンコード→base64→JSON IPC→data URL パース」の転送パイプライン全体。Rust 側だけで load_image が 1729ms/枚（うち encode が 84%）に達し、フロント側 ipc 内訳（1266ms）と整合する。Phase 5 は候補 1（base64 over IPC の撤廃）に着手する
+- 結論: 支配区間は「Rust フルデコード→再エンコード→base64→JSON IPC→data URL パース」の転送パイプライン全体。Rust 側の load_image は 1729ms/枚（うち encode が 84%。preload による同時ロード下の実測であり、baseline の ipc 中央値 1266ms とは計測条件が異なるため直接比較はしない）。Phase 5 は候補 1（base64 over IPC の撤廃）に着手する
 
 ---
 
