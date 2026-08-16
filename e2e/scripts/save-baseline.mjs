@@ -21,5 +21,26 @@ for (const key of ["TTFI_cold", "NAV_warm", "NAV_cold"]) {
   }
 }
 
+// NAV_rapid / PLACEHOLDER_dur pool steps x runs samples with no exclusion
+// rule, so anything short of a full pool means steps failed to paint.
+// median_ms === 0 is legitimate for PLACEHOLDER_dur (no placeholder shown).
+const rapid = data.metrics?.NAV_rapid;
+const expectedRapidN = data.runs * (rapid?.steps ?? 0);
+for (const [key, m] of [
+  ["NAV_rapid", rapid],
+  ["PLACEHOLDER_dur", data.metrics?.PLACEHOLDER_dur],
+]) {
+  if (
+    !m ||
+    m.median_ms === null ||
+    m.n !== expectedRapidN ||
+    expectedRapidN === 0
+  ) {
+    throw new Error(
+      `${newest.f}: ${key} is degenerate (median_ms=${m?.median_ms}, n=${m?.n}, expected n=${expectedRapidN}) - refusing to save as baseline`,
+    );
+  }
+}
+
 copyFileSync(join(dir, newest.f), join(dir, "baseline.json"));
 console.log(`baseline.json <- ${newest.f}`);
