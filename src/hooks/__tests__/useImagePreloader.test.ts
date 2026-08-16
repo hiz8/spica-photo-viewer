@@ -2,20 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { mockImageData, mockImageList } from "../../utils/testUtils";
 import type { ImageInfo } from "../../types";
-import type { RawImageData } from "../../utils/imageData";
 import { PRELOAD_DELAY_MS } from "../../constants/timing";
-
-// Raw IPC shape that `rawToImageData` converts into `mockImageData` (the
-// same base64 payload, pre-conversion), used as the mocked `invoke`
-// resolved value since `load_image` still returns the raw shape.
-const mockRawImageData: RawImageData = {
-  path: mockImageData.path,
-  base64:
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
-  width: mockImageData.width,
-  height: mockImageData.height,
-  format: mockImageData.format,
-};
+import { _setPerfEnabledForTests } from "../../utils/perf";
 
 // Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
@@ -30,24 +18,28 @@ const createMockImageInfo = (
   ...overrides,
 });
 
-// Type guard for invoke parameters with path
-function hasPath(arg: unknown): arg is { path: string } {
-  return (
-    typeof arg === "object" &&
-    arg !== null &&
-    "path" in arg &&
-    typeof (arg as Record<string, unknown>).path === "string"
-  );
-}
-
-// Mock the invoke function before importing
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+// Mock the protocol loader (replaces the old IPC invoke boundary).
+// Default implementation echoes the requested path into a src-based
+// ImageData, mirroring what `loadImageViaProtocol` resolves with after
+// decode. Individual tests override with mockResolvedValueOnce/
+// mockRejectedValueOnce for specific scenarios.
+vi.mock("../../utils/protocolLoader", () => ({
+  loadImageViaProtocol: vi.fn(async (path: string) => ({
+    data: {
+      path,
+      src: `http://spica-img.localhost/x`,
+      width: 10,
+      height: 10,
+      format: "jpg",
+    },
+    element: new Image(),
+  })),
 }));
 
 // Mock the store
 const mockStore = {
   folder: {
+    path: "/test",
     images: [] as ImageInfo[],
   },
   currentImage: {
@@ -70,18 +62,33 @@ vi.mock("../../store", () => ({
 }));
 
 import { useImagePreloader } from "../useImagePreloader";
-import { invoke } from "@tauri-apps/api/core";
+import { loadImageViaProtocol } from "../../utils/protocolLoader";
 
-const mockInvoke = vi.mocked(invoke);
+const mockLoadImageViaProtocol = vi.mocked(loadImageViaProtocol);
 
 describe("useImagePreloader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockStore.folder.path = "/test";
     mockStore.folder.images = [] as ImageInfo[];
     mockStore.currentImage.index = -1;
     mockStore.cache.preloaded = new Map();
     mockStore.thumbnailGeneration.allGenerated = true;
-    mockInvoke.mockClear();
+
+    // Reinstate the default success implementation: clearAllMocks() wipes
+    // call history but a prior test's mockRejectedValue/mockResolvedValueOnce
+    // queue could otherwise leak into the next test.
+    mockLoadImageViaProtocol.mockReset();
+    mockLoadImageViaProtocol.mockImplementation(async (path: string) => ({
+      data: {
+        path,
+        src: `http://spica-img.localhost/x`,
+        width: 10,
+        height: 10,
+        format: "jpg",
+      },
+      element: new Image(),
+    }));
 
     // Clear console spy to avoid interference between tests
     vi.clearAllTimers();
@@ -90,11 +97,13 @@ describe("useImagePreloader", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    _setPerfEnabledForTests(null);
+    window.__PERF__ = [];
   });
 
   describe("preloadImage", () => {
     it("should preload full-resolution image successfully", async () => {
-      mockInvoke.mockResolvedValue(mockRawImageData);
+      _setPerfEnabledForTests(true);
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -102,13 +111,26 @@ describe("useImagePreloader", () => {
         await result.current.preloadImage("/test/image.jpg");
       });
 
-      expect(mockInvoke).toHaveBeenCalledWith("load_image", {
-        path: "/test/image.jpg",
-      });
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
+        "/test/image.jpg",
+      );
       expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
         "/test/image.jpg",
-        mockImageData,
+        {
+          path: "/test/image.jpg",
+          src: "http://spica-img.localhost/x",
+          width: 10,
+          height: 10,
+          format: "jpg",
+        },
       );
+
+      // preload:done perf event fires after the store is updated
+      const events = window.__PERF__ ?? [];
+      const doneEvent = events.find((e) => e.name === "preload:done");
+      expect(doneEvent).toBeDefined();
+      expect(doneEvent?.type).toBe("event");
+      expect(doneEvent?.detail).toEqual({ path: "/test/image.jpg" });
     });
 
     it("should not preload if image already in cache", async () => {
@@ -121,7 +143,7 @@ describe("useImagePreloader", () => {
         await result.current.preloadImage("/test/image.jpg");
       });
 
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
       expect(mockStore.setPreloadedImage).not.toHaveBeenCalled();
     });
 
@@ -129,7 +151,9 @@ describe("useImagePreloader", () => {
       const consoleWarnSpy = vi
         .spyOn(console, "warn")
         .mockImplementation(() => {});
-      mockInvoke.mockRejectedValue(new Error("Failed to load image"));
+      mockLoadImageViaProtocol.mockRejectedValueOnce(
+        new Error("Failed to load image"),
+      );
 
       const { result } = renderHook(() => useImagePreloader());
 
@@ -137,20 +161,24 @@ describe("useImagePreloader", () => {
         await result.current.preloadImage("/test/failed-image.jpg");
       });
 
-      expect(mockInvoke).toHaveBeenCalledWith("load_image", {
-        path: "/test/failed-image.jpg",
-      });
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
+        "/test/failed-image.jpg",
+      );
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         "Failed to preload image: failed-image.jpg",
         expect.any(Error),
       );
 
-      // Should mark as error in cache
+      // Should mark as error in cache with the exact error-entry shape
       expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
         "/test/failed-image.jpg",
-        expect.objectContaining({
+        {
+          path: "/test/failed-image.jpg",
+          src: "",
+          width: 0,
+          height: 0,
           format: "error",
-        }),
+        },
       );
 
       consoleWarnSpy.mockRestore();
@@ -169,7 +197,7 @@ describe("useImagePreloader", () => {
         result.current.startPreloading();
       });
 
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
     });
 
     it("should return empty queue when no images in folder", () => {
@@ -182,12 +210,10 @@ describe("useImagePreloader", () => {
         result.current.startPreloading();
       });
 
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
     });
 
     it("should prioritize next and previous images", async () => {
-      const mockThumbnail = "thumbnail_data";
-      mockInvoke.mockResolvedValue(mockThumbnail);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1; // Middle image
 
@@ -198,11 +224,10 @@ describe("useImagePreloader", () => {
       });
 
       // Should try to preload images around current index
-      expect(mockInvoke).toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
     });
 
     it("should skip already preloaded images in queue", async () => {
-      mockInvoke.mockResolvedValue(mockRawImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
@@ -216,14 +241,11 @@ describe("useImagePreloader", () => {
       });
 
       // Should not try to preload the already preloaded image
-      const calls = mockInvoke.mock.calls.map((call) =>
-        hasPath(call[1]) ? call[1].path : undefined,
-      );
+      const calls = mockLoadImageViaProtocol.mock.calls.map((call) => call[0]);
       expect(calls).not.toContain(mockImageList[0].path);
     });
 
     it("should not start if thumbnail generation is not complete", async () => {
-      mockInvoke.mockResolvedValue(mockRawImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
       mockStore.thumbnailGeneration.allGenerated = false; // Not complete
@@ -242,7 +264,7 @@ describe("useImagePreloader", () => {
       expect(consoleLogSpy).toHaveBeenCalledWith(
         "Waiting for thumbnail generation to complete before preloading...",
       );
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
 
       consoleLogSpy.mockRestore();
     });
@@ -304,8 +326,6 @@ describe("useImagePreloader", () => {
 
   describe("startPreloading", () => {
     it("should process preload queue with concurrent limit", async () => {
-      mockInvoke.mockResolvedValue(mockRawImageData);
-
       // Setup many images to exceed concurrent limit
       const manyImages = Array.from({ length: 10 }, (_, i) =>
         createMockImageInfo(i),
@@ -321,7 +341,7 @@ describe("useImagePreloader", () => {
       });
 
       // Should have been called for multiple images
-      expect(mockInvoke).toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
       expect(mockStore.setPreloadedImage).toHaveBeenCalled();
     });
 
@@ -330,10 +350,9 @@ describe("useImagePreloader", () => {
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
-      // Mock some successful and some failed loads
-      mockInvoke
-        .mockResolvedValueOnce(mockRawImageData) // First call succeeds
-        .mockRejectedValueOnce(new Error("Failed")); // Second call fails
+      // Mock some successful and some failed loads: first call succeeds
+      // (default implementation), second call fails.
+      mockLoadImageViaProtocol.mockRejectedValueOnce(new Error("Failed"));
 
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
@@ -345,7 +364,7 @@ describe("useImagePreloader", () => {
       });
 
       // Should have attempted loads for available images
-      expect(mockInvoke).toHaveBeenCalledTimes(2);
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledTimes(2);
       expect(consoleWarnSpy).toHaveBeenCalled();
 
       consoleWarnSpy.mockRestore();
@@ -354,8 +373,6 @@ describe("useImagePreloader", () => {
 
   describe("useEffect integration", () => {
     it("should start preloading when current image changes", async () => {
-      const mockThumbnail = "thumbnail_data";
-      mockInvoke.mockResolvedValue(mockThumbnail);
       mockStore.folder.images = mockImageList as ImageInfo[];
 
       const { rerender } = renderHook(() => useImagePreloader());
@@ -373,32 +390,31 @@ describe("useImagePreloader", () => {
         vi.runAllTimers();
       });
 
-      expect(mockInvoke).toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
     });
 
     it("should delay preloading by 500ms", async () => {
-      mockInvoke.mockResolvedValue(mockRawImageData);
       mockStore.folder.images = mockImageList as ImageInfo[];
       mockStore.currentImage.index = 1;
 
       renderHook(() => useImagePreloader());
 
       // Should not have called immediately
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
 
       // Fast-forward just before delay - still should not have called
       await act(async () => {
         vi.advanceTimersByTime(PRELOAD_DELAY_MS - 1);
         await Promise.resolve();
       });
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
 
       // Fast-forward remaining 1ms - now should have called
       await act(async () => {
         vi.advanceTimersByTime(1);
         await Promise.resolve();
       });
-      expect(mockInvoke).toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
     });
 
     it("should cleanup timeout on unmount", () => {
@@ -414,7 +430,7 @@ describe("useImagePreloader", () => {
         vi.runAllTimers();
       });
 
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
     });
   });
 
@@ -423,7 +439,6 @@ describe("useImagePreloader", () => {
       const consoleLogSpy = vi
         .spyOn(console, "log")
         .mockImplementation(() => {});
-      mockInvoke.mockResolvedValue(mockRawImageData);
 
       const { result } = renderHook(() => useImagePreloader());
 

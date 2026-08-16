@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef } from "react";
 import {
   MAX_CONCURRENT_LOADS,
@@ -7,9 +6,15 @@ import {
 } from "../constants/timing";
 import { useAppStore } from "../store";
 import type { ImageData } from "../types";
-import { rawToImageData, type RawImageData } from "../utils/imageData";
 import { getFilename } from "../utils/path";
 import { perfEvent } from "../utils/perf";
+import { loadImageViaProtocol } from "../utils/protocolLoader";
+
+// Holding the decoded elements keeps the encoded resources (and usually the
+// decoded bitmaps) alive in the browser cache, so a preload-hit navigation
+// repaints without refetching. Mirrors cache.preloaded: entries are dropped
+// together in cleanupCache and cleared on folder change.
+const retainedImages = new Map<string, HTMLImageElement>();
 
 /**
  * Hook for preloading full-resolution images
@@ -46,14 +51,12 @@ export const useImagePreloader = () => {
       pendingLoadsRef.current.add(imagePath);
 
       try {
-        // Load full-resolution image
-        const raw = await invoke<RawImageData>("load_image", {
-          path: imagePath,
-        });
-        const imageData = rawToImageData(raw);
+        // Load full-resolution image via the spica-img protocol
+        const { data, element } = await loadImageViaProtocol(imagePath);
+        retainedImages.set(imagePath, element);
 
         // Store in preload cache
-        setPreloadedImage(imagePath, imageData);
+        setPreloadedImage(imagePath, data);
         perfEvent("preload:done", { path: imagePath });
 
         console.log(`Preloaded full image: ${getFilename(imagePath)}`);
@@ -147,6 +150,7 @@ export const useImagePreloader = () => {
 
     keysToRemove.forEach((path) => {
       removePreloadedImage(path);
+      retainedImages.delete(path);
       console.log(`Cleaned from preload cache: ${getFilename(path)}`);
     });
   }, [
@@ -196,6 +200,12 @@ export const useImagePreloader = () => {
     cleanupCache,
     preloadImage,
   ]);
+
+  // Drop retained decoded elements when the folder changes; they belong to
+  // paths that are no longer navigable, so keeping them alive would leak.
+  useEffect(() => {
+    retainedImages.clear();
+  }, [folder.path]);
 
   // Start preloading when current image changes or all thumbnails are generated
   useEffect(() => {
