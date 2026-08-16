@@ -2,6 +2,13 @@
 
 > このファイルは次セッションへの引き継ぎプロンプト。新セッション開始時にこの全文を読み、origin/main から worktree を作成した上で、まず本ファイルを `docs/PERFORMANCE_NAV_RAPID_PHASE2_HANDOFF.md` として最初のコミットで永続化すること（未追跡のまま作業すると消失事故の前例あり）。
 
+## 進捗（2026-08-16 更新）
+
+- [x] worktree 作成・handoff 永続化
+- [x] profiling ハーネス（`e2e/scripts/profile-nav-rapid.mjs` / `analyze-nav-rapid.mjs`、プラン: `docs/superpowers/plans/2026-08-16-nav-rapid-profiling.md`）
+- [x] 本計測 7×12 完了（n=84） — 結果と仮説選定: `docs/PERFORMANCE_NAV_RAPID_PHASE2_PROFILING.md`。**仮説 C 採用（R1 成立）。ただし機序は再フェッチではなくブラウザ側再デコード（34/40）— 対策はデコード済みビットマップの明示的保持が必要**。serve 競合（事実 5 の疑い）は棄却。
+- [ ] 仮説 C の brainstorming → writing-plans → 実装（レビュー待ち）
+
 ## ゴール（不変）
 
 サムネイルバーに表示されている範囲の画像へのナビゲーションで、ぼやけたプレースホルダーを知覚させず体感即時にフル品質を表示する。数値ゲート（CLAUDE.md「Performance changes」に記載済み）:
