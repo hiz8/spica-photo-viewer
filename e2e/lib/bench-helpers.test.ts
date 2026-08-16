@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractTimings, type PerfEntry } from "./bench-helpers";
+import {
+  extractTimings,
+  type PerfEntry,
+  placeholderDuration,
+} from "./bench-helpers";
 
 describe("extractTimings", () => {
   it("scopes the fetchDecode interval to the full-res (thumbnail: false) decode:done mark", () => {
@@ -52,5 +56,48 @@ describe("extractTimings", () => {
 
     expect(timings.fetchDecode).toBe(60); // 160 (full-res decode) - 100 (src:set)
     expect(timings.fetchDecode).not.toBeLessThan(0);
+  });
+});
+
+describe("placeholderDuration", () => {
+  const path = "/corpus/large/img-01.jpg";
+
+  it("returns the thumbnail->full-res gap for a two-stage paint", () => {
+    const entries: PerfEntry[] = [
+      { type: "mark", name: "open:request", ts: 0, detail: { path } },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 30,
+        detail: { path, thumbnail: true },
+      },
+      { type: "mark", name: "src:set", ts: 35, detail: { path } },
+      {
+        type: "mark",
+        name: "decode:done",
+        ts: 400,
+        detail: { path, thumbnail: false },
+      },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 430,
+        detail: { path, thumbnail: false },
+      },
+    ];
+    expect(placeholderDuration(extractTimings(entries, path))).toBe(400); // 430 - 30
+  });
+
+  it("returns 0 when the first paint is already full resolution (preload hit)", () => {
+    const entries: PerfEntry[] = [
+      { type: "mark", name: "open:request", ts: 0, detail: { path } },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 25,
+        detail: { path, thumbnail: false },
+      },
+    ];
+    expect(placeholderDuration(extractTimings(entries, path))).toBe(0);
   });
 });
