@@ -140,7 +140,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 以下は候補。**全部やらない。** Phase 4 で支配的と確認できたものから 1 つずつ。
 
-- [ ] **[最有力] base64 over IPC の撤廃**
+- [x] **[最有力] base64 over IPC の撤廃**
   - 現状の「Rust で読む → base64 化 → JSON IPC で巨大文字列 → フロントでデコード」を、`convertFileSrc` / `asset://` プロトコル（または独自 `register_uri_scheme_protocol`）に置換
   - PROJECT_SPEC の既知の制限「2000px+ images load slower due to base64 encoding」と一致する第一候補
   - `tauri.conf.json` の `security.assetProtocol.enable = true` と `scope` 設定、CSP の `img-src` に `asset: http://asset.localhost` を追加
@@ -236,20 +236,20 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 ---
 
-## 8. 現状 baseline（Phase 3 完了時に記入）
+## 8. 現状 baseline（Phase 6 採否ゲート通過・2026-08-16 更新）
 
-計測元: `bench-results/baseline.json`（`gitSha: 08caaee`, `timestamp: 2026-08-15T16:02:45.827Z`, `runs: 7`, release ビルド）。全指標 n=7（欠落サンプルなし）。
+計測元: `bench-results/baseline.json`（`gitSha: 11c01ca`, `timestamp: 2026-08-16T03:44:16.740Z`, `runs: 7`, release ビルド、spica-img プロトコル採用後）。全指標 n=7（欠落サンプルなし）。
 
 | 指標 | corpus | median (ms) | p95 (ms) | n | 目標 |
 |------|--------|-------------|----------|---|------|
-| TTFI_cold（first paint） | large | 1771.4 | 2106.6 | 7 | < 500 |
-| NAV_warm  | medium | 162.0 | 293.5 | 7 | < 100 |
-| NAV_cold  | medium | 515.6 | 663.4 | 7 | — |
-| ipc（内訳） | large | 1266.5 | 1523.8 | 7 | — |
-| decode（内訳） | large | 266.3 | 470.7 | 7 | — |
+| TTFI_cold（first paint） | large | 483.8 | 629.2 | 7 | < 500 |
+| NAV_warm  | medium | 23.1 | 32.9 | 7 | < 100 |
+| NAV_cold  | medium | 179.9 | 252.9 | 7 | — |
+| fetch_decode_cold（内訳） | large | 395.4 | 546.3 | 7 | — |
 
-> **TTFI_cold の full paint**: 全 7 サンプルでサムネイル先行表示は発生せず、`full`（`thumbnail: false` の paint まで）は `first` と完全に一致（median 1771.4ms / p95 2106.6ms / n=7）。したがって large コーパスでは 2 段階描画のオーバーヘッドは現状観測されていない。
-> **p95 に関する注記**: n=7 の nearest-rank p95 は最大値と一致するため、外れ値 1 個の影響を強く受ける（例: NAV_warm は 7 サンプル中の最大値 293.5ms がそのまま p95 になっている）。回帰判定では中央値を主指標として扱うこと（詳細は CLAUDE.md 参照）。
+> **旧 baseline（base64 IPC 時代, `gitSha: 08caaee`, 2026-08-15T16:02:45.827Z, 全 n=7）**: TTFI_cold median 1771.4ms / p95 2106.6ms、NAV_warm median 162.0ms / p95 293.5ms、NAV_cold median 515.6ms / p95 663.4ms、ipc（内訳）median 1266.5ms / p95 1523.8ms、decode（内訳）median 266.3ms / p95 470.7ms。`ipc`/`decode` はプロトコル化により IPC 経路自体がホットパスから消滅したため新 JSON には存在せず、新設の `fetch_decode_cold`（`src:set`→`decode:done`、fetch+ブラウザデコード区間）と直接比較はできない（計測区間が異なる設計変更。詳細は §2 実装注記）。
+> **TTFI_cold の full paint**: 全 7 サンプルでサムネイル先行表示は発生せず、`full`（`thumbnail: false` の paint まで）は `first` と完全に一致（median 483.8ms / p95 629.2ms / n=7）。
+> **p95 に関する注記**: n=7 の nearest-rank p95 は最大値と一致するため、外れ値 1 個の影響を強く受ける。回帰判定では中央値を主指標として扱うこと（詳細は CLAUDE.md 参照）。
 
 ---
 
@@ -260,7 +260,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 - [x] Phase 3: baseline 確定・コミット
 - [ ] Phase 4: profiling で支配的ボトルネック特定
 - [ ] Phase 5: 最適化（base64→asset protocol を筆頭に、確認済み仮説のみ）
-- [ ] Phase 6: 自律ループ & ゲート運用開始
+- [x] Phase 6: 自律ループ & ゲート運用開始
 
 ---
 
