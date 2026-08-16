@@ -299,4 +299,89 @@ describe("useImagePreloader (bitmap window scheduler)", () => {
     rerender();
     expect(getBitmap("/test/image1.jpg")).toBeUndefined();
   });
+
+  it("runs eviction while the fill phase is gated, launching no loads", () => {
+    // Regression: eviction/budget enforcement must never be skippable, even
+    // while thumbnailGeneration.allGenerated is false (e.g. browsing during
+    // a new folder's thumbnail-generation window). retainElementAsBitmap
+    // retains unconditionally, so maintenance must too.
+    const far = fakeBitmap();
+    setBitmap("/test/image15.jpg", far);
+    mockStore.cache.preloaded.set(
+      "/test/image15.jpg",
+      fullData("/test/image15.jpg"),
+    );
+    showFullRes(0);
+    mockStore.thumbnailGeneration.allGenerated = false; // gate the fill phase
+    renderHook(() => useImagePreloader());
+    expect(far.close).toHaveBeenCalledOnce();
+    expect(hasBitmap("/test/image15.jpg")).toBe(false);
+    expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      "/test/image15.jpg",
+    );
+    expect(mockLoad).not.toHaveBeenCalled();
+  });
+
+  it("enforces the byte budget by evicting farthest-first, keeping the current bitmap", () => {
+    // ~169MB per bitmap (6500 * 6500 * 4 bytes); 5 of them (current + the
+    // 4-wide window for index 0) total ~805MB, over the 500MB budget.
+    const bigBitmap = () => fakeBitmap(6500, 6500);
+    const current = bigBitmap();
+    const b1 = bigBitmap();
+    const b2 = bigBitmap();
+    const b3 = bigBitmap();
+    const b4 = bigBitmap();
+    setBitmap("/test/image0.jpg", current);
+    setBitmap("/test/image1.jpg", b1);
+    setBitmap("/test/image2.jpg", b2);
+    setBitmap("/test/image3.jpg", b3);
+    setBitmap("/test/image4.jpg", b4);
+
+    showFullRes(0); // window (direction +1) = [1, 2, 3, 4], farthest = 4
+    renderHook(() => useImagePreloader());
+
+    // Farthest-priority victims evicted until bytes <= budget...
+    expect(b4.close).toHaveBeenCalledOnce();
+    expect(b3.close).toHaveBeenCalledOnce();
+    expect(hasBitmap("/test/image4.jpg")).toBe(false);
+    expect(hasBitmap("/test/image3.jpg")).toBe(false);
+    // ...nearer neighbors and the current image survive.
+    expect(b1.close).not.toHaveBeenCalled();
+    expect(b2.close).not.toHaveBeenCalled();
+    expect(current.close).not.toHaveBeenCalled();
+    expect(hasBitmap("/test/image1.jpg")).toBe(true);
+    expect(hasBitmap("/test/image2.jpg")).toBe(true);
+    expect(hasBitmap("/test/image0.jpg")).toBe(true);
+  });
+
+  it("sweeps bitmap-less preload entries (error and plain) outside the window", () => {
+    // Eviction historically only walked bitmapPaths(), so preload entries
+    // with no bitmap (permanent error entries, stale entries surviving a
+    // folder switch) were invisible to it and never left cache.preloaded.
+    mockStore.cache.preloaded.set("/test/image14.jpg", {
+      path: "/test/image14.jpg",
+      src: "",
+      width: 0,
+      height: 0,
+      format: "error",
+    });
+    mockStore.cache.preloaded.set(
+      "/test/image15.jpg",
+      fullData("/test/image15.jpg"),
+    );
+    expect(hasBitmap("/test/image14.jpg")).toBe(false);
+    expect(hasBitmap("/test/image15.jpg")).toBe(false);
+
+    showFullRes(0);
+    renderHook(() => useImagePreloader());
+
+    expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      "/test/image14.jpg",
+    );
+    expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      "/test/image15.jpg",
+    );
+    expect(mockStore.cache.preloaded.has("/test/image14.jpg")).toBe(false);
+    expect(mockStore.cache.preloaded.has("/test/image15.jpg")).toBe(false);
+  });
 });

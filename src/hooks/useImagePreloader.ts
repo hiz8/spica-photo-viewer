@@ -29,6 +29,15 @@ import { computeWindow } from "../utils/preloadWindow";
  * waiting for (protects NAV_cold / TTFI_cold).
  * Invariant (non-GIF): cache.preloaded ⊆ bitmapCache ∪ {current} — eviction
  * always removes both, so a "preloaded" hit implies decoded pixels exist.
+ *
+ * pump() is split into two phases so eviction/budget enforcement can never
+ * be silently skipped: the maintenance phase (evict outside the window,
+ * enforce the byte budget, abort stale fetches) runs unconditionally
+ * whenever there's a valid current index; the fill phase (launch new
+ * decodes) is gated on allGenerated + full-res display. Without this split,
+ * browsing during a folder's thumbnail-generation window would retain
+ * ~80MB decoded bitmaps per image (ImageViewer's retainElementAsBitmap
+ * retains unconditionally) with no eviction and no budget enforcement.
  */
 export const useImagePreloader = (): void => {
   const { folder, currentImage, thumbnailGeneration, ui } = useAppStore();
@@ -47,17 +56,15 @@ export const useImagePreloader = (): void => {
 
   /**
    * Recomputes the retained set from live state, evicts what fell out,
-   * and fills free load slots in priority order. Called from the index
-   * effect and from every load completion (to pump queued targets).
+   * enforces the byte budget, and (once gated open) fills free load slots
+   * in priority order. Called from the index effect and from every load
+   * completion (to pump queued targets).
    */
   const pump = useCallback(() => {
     const state = useAppStore.getState();
     const images = state.folder.images;
     const index = state.currentImage.index;
     if (index < 0 || index >= images.length) return;
-    if (!state.thumbnailGeneration.allGenerated) return;
-    const data = state.currentImage.data;
-    if (!data || data.width <= 0 || state.ui.thumbnailDisplayed) return;
 
     const windowIndices = computeWindow(
       index,
@@ -69,10 +76,24 @@ export const useImagePreloader = (): void => {
     const keep = new Set<string>([currentPath]);
     for (const i of windowIndices) keep.add(images[i].path);
 
-    // Evict decoded bitmaps (and their preload entries) outside the window.
-    for (const path of bitmapPaths()) {
+    // --- Maintenance phase: always runs while the index is valid, even
+    // while the fill phase below is gated off (e.g. during a folder's
+    // thumbnail-generation window). Eviction and the budget guard must
+    // never be skippable, or unbounded ~80MB decoded bitmaps accumulate.
+
+    // Evict decoded bitmaps AND bitmap-less preload entries outside the
+    // window. Sweeping the union of bitmapPaths() and cache.preloaded keys
+    // (not just bitmapPaths()) also catches entries the bitmap cache never
+    // knew about: stale entries surviving a folder switch via
+    // openImageFromPath, GIF entries, and permanent error entries — without
+    // this, an error entry parked outside the window would never leave
+    // cache.preloaded, so a transient failure could never retry even after
+    // the path re-enters the window.
+    const trackedPaths = new Set<string>(bitmapPaths());
+    for (const path of state.cache.preloaded.keys()) trackedPaths.add(path);
+    for (const path of trackedPaths) {
       if (!keep.has(path)) {
-        deleteBitmap(path);
+        deleteBitmap(path); // no-op if the path has no bitmap
         state.removePreloadedImage(path);
         console.log(`Cleaned from preload cache: ${getFilename(path)}`);
       }
@@ -94,6 +115,14 @@ export const useImagePreloader = (): void => {
         pendingRef.current.delete(path);
       }
     }
+
+    // --- Fill phase: only launch new decodes once all thumbnails are
+    // generated and the current image itself is already displayed at full
+    // resolution, so window decodes never compete with the decode the user
+    // is waiting for (protects NAV_cold / TTFI_cold).
+    if (!state.thumbnailGeneration.allGenerated) return;
+    const data = state.currentImage.data;
+    if (!data || data.width <= 0 || state.ui.thumbnailDisplayed) return;
 
     // Fill free slots in priority order.
     for (const i of windowIndices) {
@@ -144,6 +173,10 @@ export const useImagePreloader = (): void => {
           if (pendingRef.current.get(path) === controller) {
             pendingRef.current.delete(path);
           }
+          // Re-pump to fill the slot this load just freed. Assumes the
+          // hook stays mounted for the app's lifetime (ImageViewer is
+          // permanently mounted, App.tsx) — if it ever unmounted mid-flight
+          // this could launch an owner-less load.
           pump();
         });
     }
@@ -163,7 +196,7 @@ export const useImagePreloader = (): void => {
     directionRef.current = 1;
   }, [folder.path]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: folder.images isn't read in the closure (pump() re-reads it fresh via useAppStore.getState()), but it must stay a dependency so this effect re-fires — and pumps — when the image list itself changes (e.g. populates asynchronously) even while currentImage.index stays put.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: folder.images isn't read in the closure (pump() re-reads it fresh via useAppStore.getState()), but it must stay a dependency so this effect re-fires — and pumps — when the image list itself changes (e.g. populates asynchronously) even while currentImage.index stays put. thumbnailGeneration.allGenerated and currentReady are also unread here but must stay dependencies so the effect re-fires — and unlocks the fill phase inside pump() — when the fill gate opens without the index itself changing.
   useEffect(() => {
     const index = currentImage.index;
     if (index !== prevIndexRef.current) {
@@ -172,7 +205,10 @@ export const useImagePreloader = (): void => {
       }
       prevIndexRef.current = index;
     }
-    if (index === -1 || !thumbnailGeneration.allGenerated || !currentReady) {
+    // pump() itself decides which phases run (maintenance always runs for
+    // a valid index; fill is gated inside pump on allGenerated/currentReady)
+    // — this effect only needs to know there's an index to pump for.
+    if (index === -1) {
       return;
     }
     pump();

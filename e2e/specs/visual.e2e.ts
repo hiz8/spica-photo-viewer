@@ -23,10 +23,18 @@ describe("visual gate", () => {
       async () =>
         browser.execute(() => {
           const img = document.querySelector(".image-viewer img");
-          return (
+          if (
             img instanceof HTMLImageElement &&
             img.naturalWidth > 0 &&
             img.getBoundingClientRect().width > 100
+          ) {
+            return true;
+          }
+          const canvas = document.querySelector(".image-viewer canvas");
+          return (
+            canvas instanceof HTMLCanvasElement &&
+            canvas.width > 0 &&
+            canvas.getBoundingClientRect().width > 100
           );
         }),
       { timeout: 60000, timeoutMsg: "image element never became visible" },
