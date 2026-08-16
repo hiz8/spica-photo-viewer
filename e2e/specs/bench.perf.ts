@@ -282,14 +282,20 @@ describe("bench", () => {
 
     for (let run = 0; run < N; run++) {
       if (run > 0) {
-        // Reset to the deterministic start state: current = 0, preloader
-        // quiet, preloaded = {0..5} (cleanupCache evicts everything else
-        // during the quiet wait). The reset navigation is not measured.
+        // Reset only guarantees: current index back to 0, preloader
+        // quiescent. In-memory cache contents are NOT pinned to a fixed
+        // state - they evolve over the session by design. The measured
+        // protocol is the whole fixed sequence; compare full protocol
+        // executions, not individual runs. The reset navigation itself is
+        // not measured.
         await clearPerf();
         await navigateToImage(0);
         await waitForFullPaint(files[0]);
         await waitForPreloadQuiet();
       }
+
+      const runFullPaints: number[] = [];
+      let runHits = 0;
 
       for (let step = 1; step <= RAPID_STEPS; step++) {
         await clearPerf();
@@ -301,8 +307,12 @@ describe("bench", () => {
         rapid.total++;
         rapid.fullPaint.push(timings.fullPaint);
         rapid.placeholderDur.push(placeholderDuration(timings));
+        runFullPaints.push(timings.fullPaint);
         const hit = preloadHit(entries, files[step]);
-        if (hit === true) rapid.hits++;
+        if (hit === true) {
+          rapid.hits++;
+          runHits++;
+        }
         if (hit === false && timings.fetchDecode !== null) {
           rapid.missFetchDecode.push(timings.fetchDecode);
         }
@@ -316,6 +326,9 @@ describe("bench", () => {
           await browser.pause(RAPID_MIN_INTERVAL_MS - elapsed);
         }
       }
+      console.log(
+        `NAV_rapid run ${run}: ${JSON.stringify(runFullPaints)} (hits ${runHits}/${RAPID_STEPS})`,
+      );
     }
     console.log(
       `NAV_rapid samples: ${JSON.stringify(rapid.fullPaint)} (hits ${rapid.hits}/${rapid.total})`,
