@@ -7,7 +7,9 @@
 - [x] worktree 作成・handoff 永続化
 - [x] profiling ハーネス（`e2e/scripts/profile-nav-rapid.mjs` / `analyze-nav-rapid.mjs`、プラン: `docs/superpowers/plans/2026-08-16-nav-rapid-profiling.md`）
 - [x] 本計測 7×12 完了（n=84） — 結果と仮説選定: `docs/PERFORMANCE_NAV_RAPID_PHASE2_PROFILING.md`。**仮説 C 採用（R1 成立）。ただし機序は再フェッチではなくブラウザ側再デコード（34/40）— 対策はデコード済みビットマップの明示的保持が必要**。serve 競合（事実 5 の疑い）は棄却。
-- [ ] 仮説 C の brainstorming → writing-plans → 実装（レビュー待ち）
+- [x] 仮説 C の brainstorming → spec（`docs/superpowers/specs/2026-08-16-nav-rapid-bitmap-window-design.md`）→ writing-plans（`docs/superpowers/plans/2026-08-16-nav-rapid-bitmap-window.md`）→ subagent-driven 実装 完了
+- [x] **採否ゲート通過・採用（2026-08-16, gitSha c4dc4d8）**: NAV_rapid median 377.25→**33.7ms（−91.1%、最終目標 <100ms 達成）**、hit_rate 1.0、PLACEHOLDER_dur p95 352.9→**0**。NAV_warm 25.8（改善）。TTFI_cold/fetch_decode_cold は環境ドリフトで上方（無変更経路の fetch_decode_cold +49% が証拠、§8 注記参照）だが旧 p95 帯内。vitest 272/272・cargo 62/62・test:e2e 3 連続 green。baseline canonize 済み
+- 実装後に発見・修正した合成バグ 2 件（サブエージェント単体レビューでは不可視、最終レビュー+ゲート実行で検出）: (1) eviction が allGenerated ゲート内で無制限保持の穴 → maintenance phase 無条件化 + preloaded 掃引、(2) 無関係な store 再レンダーで未描画 canvas に切替わるブランク表示 → 表示要素の data 毎ラッチ + mount 時描画。教訓: 「retention は無条件・eviction はゲート付き」「render 時キャッシュ読み + effect キー」のような**別タスク由来の非対称の合成**は per-task レビューをすり抜ける
 
 ## ゴール（不変）
 
