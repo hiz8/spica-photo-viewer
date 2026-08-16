@@ -1,234 +1,182 @@
 import { useCallback, useEffect, useRef } from "react";
 import {
-  MAX_CONCURRENT_LOADS,
-  PRELOAD_DELAY_MS,
-  PRELOAD_RANGE,
-} from "../constants/timing";
+  BITMAP_CACHE_BUDGET_BYTES,
+  BITMAP_WINDOW_SIZE,
+} from "../constants/memory";
+import { MAX_CONCURRENT_LOADS } from "../constants/timing";
 import { useAppStore } from "../store";
 import type { ImageData } from "../types";
+import {
+  bitmapBytes,
+  bitmapPaths,
+  clearBitmaps,
+  deleteBitmap,
+  hasBitmap,
+  setBitmap,
+} from "../utils/bitmapCache";
+import { loadBitmapViaProtocol } from "../utils/bitmapLoader";
 import { getFilename } from "../utils/path";
 import { perfEvent } from "../utils/perf";
-import { loadImageViaProtocol } from "../utils/protocolLoader";
-
-// Holding the decoded elements keeps the encoded resources (and usually the
-// decoded bitmaps) alive in the browser cache, so a preload-hit navigation
-// repaints without refetching. Mirrors cache.preloaded: entries are dropped
-// together in cleanupCache and cleared on folder change.
-const retainedImages = new Map<string, HTMLImageElement>();
+import { computeWindow } from "../utils/preloadWindow";
 
 /**
- * Hook for preloading full-resolution images
- * Only starts after all thumbnails are generated
- * Preloads up to ±5 images around current position
+ * Decoded-bitmap window scheduler (hypothesis C). Keeps the current image's
+ * neighbors decoded as ImageBitmaps so a preload-hit navigation paints at
+ * full resolution without re-decoding. Launches immediately on index change
+ * (the old PRELOAD_DELAY_MS timer meant nothing ever preloaded during rapid
+ * navigation), but only once the current image itself is displayed at full
+ * resolution, so window decodes never compete with the decode the user is
+ * waiting for (protects NAV_cold / TTFI_cold).
+ * Invariant (non-GIF): cache.preloaded ⊆ bitmapCache ∪ {current} — eviction
+ * always removes both, so a "preloaded" hit implies decoded pixels exist.
  */
-export const useImagePreloader = () => {
-  const {
-    folder,
-    currentImage,
-    cache,
-    thumbnailGeneration,
-    setPreloadedImage,
-    removePreloadedImage,
-  } = useAppStore();
+export const useImagePreloader = (): void => {
+  const { folder, currentImage, thumbnailGeneration, ui } = useAppStore();
 
-  // Track pending loads to prevent duplicate requests
-  const pendingLoadsRef = useRef<Set<string>>(new Set());
+  const directionRef = useRef<1 | -1>(1);
+  const prevIndexRef = useRef(-1);
+  const pendingRef = useRef(new Map<string, AbortController>());
+  // Captured from the first render, so the folder-change effect below can
+  // tell a genuine folder switch apart from its own initial-mount firing.
+  const prevFolderPathRef = useRef(folder.path);
 
-  /**
-   * Preload full-resolution image
-   */
-  const preloadImage = useCallback(
-    async (imagePath: string): Promise<void> => {
-      // Check if already preloaded or currently loading
-      if (
-        cache.preloaded.has(imagePath) ||
-        pendingLoadsRef.current.has(imagePath)
-      ) {
-        return;
-      }
-
-      // Mark as pending to prevent duplicate loads
-      pendingLoadsRef.current.add(imagePath);
-
-      try {
-        // Load full-resolution image via the spica-img protocol
-        const { data, element } = await loadImageViaProtocol(imagePath);
-        retainedImages.set(imagePath, element);
-
-        // Store in preload cache
-        setPreloadedImage(imagePath, data);
-        perfEvent("preload:done", { path: imagePath });
-
-        console.log(`Preloaded full image: ${getFilename(imagePath)}`);
-      } catch (error) {
-        console.warn(
-          `Failed to preload image: ${getFilename(imagePath)}`,
-          error,
-        );
-
-        // Mark as error in cache to avoid retry
-        const errorData: ImageData = {
-          path: imagePath,
-          src: "",
-          width: 0,
-          height: 0,
-          format: "error",
-        };
-        setPreloadedImage(imagePath, errorData);
-      } finally {
-        // Remove from pending loads
-        pendingLoadsRef.current.delete(imagePath);
-      }
-    },
-    [cache.preloaded, setPreloadedImage],
-  );
+  const currentReady =
+    currentImage.data !== null &&
+    currentImage.data.width > 0 &&
+    !ui.thumbnailDisplayed;
 
   /**
-   * Build preload queue: ±1, ±2, ±3... up to ±PRELOAD_RANGE
+   * Recomputes the retained set from live state, evicts what fell out,
+   * and fills free load slots in priority order. Called from the index
+   * effect and from every load completion (to pump queued targets).
    */
-  const getPreloadQueue = useCallback(() => {
-    if (currentImage.index === -1 || !folder.images.length) {
-      return [];
+  const pump = useCallback(() => {
+    const state = useAppStore.getState();
+    const images = state.folder.images;
+    const index = state.currentImage.index;
+    if (index < 0 || index >= images.length) return;
+    if (!state.thumbnailGeneration.allGenerated) return;
+    const data = state.currentImage.data;
+    if (!data || data.width <= 0 || state.ui.thumbnailDisplayed) return;
+
+    const windowIndices = computeWindow(
+      index,
+      directionRef.current,
+      images.length,
+      BITMAP_WINDOW_SIZE,
+    );
+    const currentPath = images[index].path;
+    const keep = new Set<string>([currentPath]);
+    for (const i of windowIndices) keep.add(images[i].path);
+
+    // Evict decoded bitmaps (and their preload entries) outside the window.
+    for (const path of bitmapPaths()) {
+      if (!keep.has(path)) {
+        deleteBitmap(path);
+        state.removePreloadedImage(path);
+        console.log(`Cleaned from preload cache: ${getFilename(path)}`);
+      }
     }
-
-    const queue: string[] = [];
-    const currentIndex = currentImage.index;
-
-    // Add images in order of priority:
-    // ±1, ±2, ±3... up to ±PRELOAD_RANGE
-
-    for (let range = 1; range <= PRELOAD_RANGE; range++) {
-      // Add next image (+range)
-      const nextIndex = currentIndex + range;
-      if (nextIndex < folder.images.length) {
-        const nextPath = folder.images[nextIndex].path;
-        if (!cache.preloaded.has(nextPath)) {
-          queue.push(nextPath);
-        }
-      }
-
-      // Add previous image (-range)
-      const prevIndex = currentIndex - range;
-      if (prevIndex >= 0) {
-        const prevPath = folder.images[prevIndex].path;
-        if (!cache.preloaded.has(prevPath)) {
-          queue.push(prevPath);
-        }
+    // Budget guard for oversized images: evict farthest-first, never current.
+    const ranked = [currentPath, ...windowIndices.map((i) => images[i].path)];
+    while (bitmapBytes() > BITMAP_CACHE_BUDGET_BYTES) {
+      const victim = [...ranked]
+        .reverse()
+        .find((p) => p !== currentPath && hasBitmap(p));
+      if (!victim) break;
+      deleteBitmap(victim);
+      state.removePreloadedImage(victim);
+    }
+    // Abort loads whose target left the window.
+    for (const [path, controller] of pendingRef.current) {
+      if (!keep.has(path)) {
+        controller.abort();
+        pendingRef.current.delete(path);
       }
     }
 
-    return queue;
-  }, [currentImage.index, folder.images, cache.preloaded]);
+    // Fill free slots in priority order.
+    for (const i of windowIndices) {
+      if (pendingRef.current.size >= MAX_CONCURRENT_LOADS) break;
+      const info = images[i];
+      if (info.format === "gif") continue;
+      const path = info.path;
+      if (hasBitmap(path) || pendingRef.current.has(path)) continue;
+      if (state.cache.preloaded.get(path)?.format === "error") continue;
 
-  /**
-   * Clean up preloaded images outside the range
-   */
-  const cleanupCache = useCallback(() => {
-    if (currentImage.index === -1 || !folder.images.length) {
+      const controller = new AbortController();
+      pendingRef.current.set(path, controller);
+      void loadBitmapViaProtocol(path, controller.signal)
+        .then(({ data: loaded, bitmap }) => {
+          if (!pendingRef.current.has(path)) {
+            bitmap.close(); // aborted or evicted while decoding
+            return;
+          }
+          setBitmap(path, bitmap);
+          useAppStore.getState().setPreloadedImage(path, loaded);
+          perfEvent("preload:done", { path });
+          console.log(`Preloaded bitmap: ${getFilename(path)}`);
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.warn(`Failed to preload image: ${getFilename(path)}`, error);
+          const errorData: ImageData = {
+            path,
+            src: "",
+            width: 0,
+            height: 0,
+            format: "error",
+          };
+          useAppStore.getState().setPreloadedImage(path, errorData);
+        })
+        .finally(() => {
+          pendingRef.current.delete(path);
+          pump();
+        });
+    }
+  }, []);
+
+  // Folder change invalidates every retained bitmap and in-flight load.
+  // Guarded against the initial-mount firing (prevFolderPathRef starts
+  // equal to folder.path) so remounting the hook against an unchanged
+  // folder never wipes bitmaps a caller may have already retained.
+  useEffect(() => {
+    if (prevFolderPathRef.current === folder.path) return;
+    prevFolderPathRef.current = folder.path;
+    clearBitmaps();
+    for (const controller of pendingRef.current.values()) controller.abort();
+    pendingRef.current.clear();
+    prevIndexRef.current = -1;
+    directionRef.current = 1;
+  }, [folder.path]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: folder.images isn't read in the closure (pump() re-reads it fresh via useAppStore.getState()), but it must stay a dependency so this effect re-fires — and pumps — when the image list itself changes (e.g. populates asynchronously) even while currentImage.index stays put.
+  useEffect(() => {
+    const index = currentImage.index;
+    if (index !== prevIndexRef.current) {
+      if (prevIndexRef.current !== -1 && index !== -1) {
+        directionRef.current = index > prevIndexRef.current ? 1 : -1;
+      }
+      prevIndexRef.current = index;
+    }
+    if (index === -1 || !thumbnailGeneration.allGenerated || !currentReady) {
       return;
     }
-
-    const currentIndex = currentImage.index;
-    const imagesToKeep = new Set<string>();
-
-    // Keep current image and ±PRELOAD_RANGE images
-    for (
-      let i = Math.max(0, currentIndex - PRELOAD_RANGE);
-      i <= Math.min(folder.images.length - 1, currentIndex + PRELOAD_RANGE);
-      i++
-    ) {
-      imagesToKeep.add(folder.images[i].path);
-    }
-
-    // Remove preloaded images outside the range
-    const keysToRemove: string[] = [];
-    cache.preloaded.forEach((_, path) => {
-      if (!imagesToKeep.has(path)) {
-        keysToRemove.push(path);
-      }
-    });
-
-    keysToRemove.forEach((path) => {
-      removePreloadedImage(path);
-      retainedImages.delete(path);
-      console.log(`Cleaned from preload cache: ${getFilename(path)}`);
-    });
+    pump();
   }, [
     currentImage.index,
     folder.images,
-    cache.preloaded,
-    removePreloadedImage,
-  ]);
-
-  /**
-   * Start preloading full-resolution images
-   */
-  const startPreloading = useCallback(async () => {
-    // Only start if all thumbnails are generated
-    if (!thumbnailGeneration.allGenerated) {
-      console.log(
-        "Waiting for thumbnail generation to complete before preloading...",
-      );
-      return;
-    }
-
-    const queue = getPreloadQueue();
-
-    if (queue.length === 0) {
-      return;
-    }
-
-    console.log(`Starting preload of ${queue.length} images...`);
-
-    // Clean up cache before preloading new images
-    cleanupCache();
-
-    // Process queue with concurrent loading limit
-    const chunks = [];
-    for (let i = 0; i < queue.length; i += MAX_CONCURRENT_LOADS) {
-      chunks.push(queue.slice(i, i + MAX_CONCURRENT_LOADS));
-    }
-
-    for (const chunk of chunks) {
-      await Promise.allSettled(chunk.map(preloadImage));
-    }
-
-    console.log("Preloading complete");
-  }, [
     thumbnailGeneration.allGenerated,
-    getPreloadQueue,
-    cleanupCache,
-    preloadImage,
+    currentReady,
+    pump,
   ]);
 
-  // Drop retained decoded elements when the folder changes; they belong to
-  // paths that are no longer navigable, so keeping them alive would leak.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: folder.path is the intentional reset trigger; the effect body must not read it
-  useEffect(() => {
-    retainedImages.clear();
-  }, [folder.path]);
-
-  // Start preloading when current image changes or all thumbnails are generated
-  useEffect(() => {
-    if (
-      currentImage.index !== -1 &&
-      folder.images.length > 0 &&
-      thumbnailGeneration.allGenerated
-    ) {
-      // Delay preloading to avoid interfering with rapid navigation
-      const timeoutId = setTimeout(startPreloading, PRELOAD_DELAY_MS);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [
-    currentImage.index,
-    folder.images.length,
-    thumbnailGeneration.allGenerated,
-    startPreloading,
-  ]);
-
-  return {
-    preloadImage,
-    startPreloading,
-    cleanupCache,
-  };
+  // Abort in-flight loads on unmount.
+  useEffect(
+    () => () => {
+      for (const controller of pendingRef.current.values()) controller.abort();
+      pendingRef.current.clear();
+    },
+    [],
+  );
 };
