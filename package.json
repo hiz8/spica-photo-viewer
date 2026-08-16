@@ -20,7 +20,7 @@
     "profile:rust": "node e2e/scripts/profile-rust.mjs",
     "test:e2e": "wdio run e2e/wdio.conf.ts --spec e2e/specs/smoke.e2e.ts --spec e2e/specs/visual.e2e.ts",
     "bench": "node e2e/scripts/run-bench.mjs",
-    "bench:baseline": "npm run bench && node e2e/scripts/save-baseline.mjs",
+    "bench:baseline": "node e2e/scripts/save-baseline.mjs",
     "type-check": "tsc --noEmit",
     "type-check:test": "tsc --project tsconfig.test.json --noEmit",
     "lint": "biome lint src/",

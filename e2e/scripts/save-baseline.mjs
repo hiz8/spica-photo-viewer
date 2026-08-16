@@ -1,4 +1,7 @@
-// Copies the newest bench result to bench-results/baseline.json.
+// Canonizes the newest bench result as bench-results/baseline.json.
+// Intentionally does NOT re-run the bench: the JSON that passed the
+// adoption gate must itself become the baseline (a re-run under tight
+// thresholds can land on the other side of the gate by noise alone).
 import { copyFileSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
