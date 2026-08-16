@@ -110,5 +110,23 @@ mod tests {
         let response = error_response(404, "file not found");
         assert_eq!(response.status(), 404);
         assert_eq!(response.body(), b"file not found");
+        assert_eq!(acao_header(&response), Some(ALLOW_ORIGIN));
+    }
+
+    #[test]
+    fn test_error_response_500_carries_acao_header() {
+        let response = error_response(500, "internal error");
+        assert_eq!(response.status(), 500);
+        assert_eq!(response.body(), b"internal error");
+        assert_eq!(acao_header(&response), Some(ALLOW_ORIGIN));
+    }
+
+    /// `response.headers().get(...)` returns an `Option<&HeaderValue>`;
+    /// convert to `&str` for a plain string comparison in assertions above.
+    fn acao_header(response: &tauri::http::Response<Vec<u8>>) -> Option<&str> {
+        response
+            .headers()
+            .get("Access-Control-Allow-Origin")
+            .and_then(|v| v.to_str().ok())
     }
 }

@@ -56,7 +56,7 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 | `decode:done` | `img.decode()` 完了 |
 | `paint:done` | 実際に画面へ反映（`requestAnimationFrame` 直後） |
 | `measure: ttfi` | `open:request` → `paint:done` |
-| `measure: fetch_decode` | `src:set` → `decode:done` |
+| `measure: fetch_decode` | `src:set` → `decode:done`（`thumbnail: false` のフル解像度側と対応付け） |
 
 > **実装注記**: `measure: ttfi` 等の区間はアプリ内では計算しない。アプリは `detail.path` 付きの mark を `window.__PERF__` に積むだけで、対応付け（同一 path の `open:request` → `paint:done` など）はベンチハーネスがオフラインで行う。ナビゲーション中断や abort が起きても計測が壊れないため。
 > また `paint:done` は `detail.thumbnail` フラグを持つ。サムネイル先行表示→フル解像度差し替えの 2 段階描画では、**最初の paint:done（thumbnail 含む）までを TTFI**、`thumbnail: false` の paint までを `TTFI_full` として両方集計する。
@@ -232,7 +232,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 - **cold/warm を混ぜない**: P1 は cold パス、P2 は warm/preload パス。
 - **asset protocol の CSP/scope 設定漏れ**で 403/404 になりやすい。設定後にまず 1 枚表示できることを確認してから計測へ。
 - **正しさの担保**: 「速いが壊れた」を防ぐため、性能ゲートと正しさ/視覚ゲートを常に併用。
-- **EXIF orientation**: プロトコル化で原本バイトがブラウザに渡るため自動適用される（旧パイプラインは再エンコードで EXIF が落ち、回転付き JPEG は未回転表示だった）。視覚ゲートに exif コーパス検証あり。
+- **EXIF orientation**: プロトコル化で原本バイトがブラウザに渡るため自動適用される（旧パイプラインは再エンコードで EXIF が落ち、回転付き JPEG は未回転表示だった）。視覚ゲートに exif コーパス検証あり。ただし Rust 側のサムネイル生成（`generate_thumbnail`、`image::open` → `img.thumbnail()`）は依然 EXIF 非対応のため、回転付き JPEG はサムネイル先行表示の間だけ未回転で見え、フル解像度のプロトコル画像に差し替わった時点で正しい向きに補正される（自己修復）。
 
 ---
 
