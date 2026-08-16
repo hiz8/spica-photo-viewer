@@ -563,7 +563,7 @@ All four implementation phases have been completed successfully:
 
 ### Known Limitations
 
-1. **Large Image Performance**: 2000px+ images load slower due to base64 encoding
+1. ~~**Large Image Performance**: 2000px+ images load slower due to base64 encoding~~ — Resolved: images are served as raw bytes over the custom `spica-img` protocol (see docs/PERFORMANCE_AUTONOMY_PLAN.md §8 for measured results)
 2. **Console Warnings**: Passive event listener warnings (no functional impact)
 3. **Drag & Drop**: Disabled due to browser security limitations (file dialog alternative provided)
 

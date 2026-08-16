@@ -57,4 +57,27 @@ describe("visual gate", () => {
       },
     );
   });
+
+  it("applies EXIF orientation from original bytes", async () => {
+    const exifPath = join(CORPUS, "exif", "img-000.jpg");
+    await browser.execute(
+      (p: string) => void window.__SPICA_TEST__?.openImage(p),
+      exifPath,
+    );
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const img = document.querySelector(".image-viewer img");
+          return img instanceof HTMLImageElement && img.naturalWidth > 0;
+        }),
+      { timeout: 60000, timeoutMsg: "exif image never rendered" },
+    );
+    const dims = await browser.execute(() => {
+      const img = document.querySelector(".image-viewer img") as HTMLImageElement;
+      return { w: img.naturalWidth, h: img.naturalHeight };
+    });
+    // encoded 1200x800 + orientation 6 -> browser reports oriented 800x1200
+    expect(dims.w).toBe(800);
+    expect(dims.h).toBe(1200);
+  });
 });

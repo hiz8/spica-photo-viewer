@@ -52,7 +52,7 @@ export const thumbnailToImageData = (
   thumbnailCache: { base64: string; width: number; height: number },
 ): ImageData => ({
   path,
-  base64: thumbnailCache.base64,
+  src: `data:jpeg;base64,${thumbnailCache.base64}`,
   width: thumbnailCache.width,
   height: thumbnailCache.height,
   format: "jpeg",

@@ -261,8 +261,7 @@ describe("bench", () => {
         NAV_warm: summarize(results.NAV_warm),
         NAV_cold: summarize(results.NAV_cold),
         breakdown: {
-          ipc_cold: summarize(defined(cold.map((s) => s.ipc))),
-          decode_cold: summarize(defined(cold.map((s) => s.decode))),
+          fetch_decode_cold: summarize(defined(cold.map((s) => s.fetchDecode))),
         },
       },
     };

@@ -5,9 +5,29 @@ import { mockImageData } from "../../utils/testUtils";
 import type { ImageData as AppImageData } from "../../types";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
 
-// Mock the invoke function
+// Mock the invoke function (ImageViewer no longer calls it directly, but the
+// mock keeps any transitive Tauri IPC out of jsdom).
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+}));
+
+// jsdom never fetches resources nor fires load/error events for an <img>, so
+// the protocol loader is mocked at the import boundary. The real network path
+// is covered by E2E (e2e/specs/smoke.e2e.ts).
+const PROTOCOL_SRC = (path: string) =>
+  `http://spica-img.localhost/${encodeURIComponent(path)}`;
+
+vi.mock("../../utils/protocolLoader", () => ({
+  loadImageViaProtocol: vi.fn(async (path: string) => ({
+    data: {
+      path,
+      src: `http://spica-img.localhost/${encodeURIComponent(path)}`,
+      width: 800,
+      height: 600,
+      format: "jpg",
+    },
+    element: new Image(),
+  })),
 }));
 
 // Mock the useThumbnailGenerator hook
@@ -61,6 +81,7 @@ const mockStore = {
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
   setPreloadedImage: vi.fn(),
+  setThumbnailDisplayed: vi.fn(),
 };
 
 vi.mock("../../store", () => {
@@ -70,13 +91,25 @@ vi.mock("../../store", () => {
 
   return {
     useAppStore: mockUseAppStore,
+    // Pure helper - use the real shape so the two-phase (thumbnail preview)
+    // branch is exercised instead of throwing on an undefined import.
+    thumbnailToImageData: (
+      path: string,
+      thumbnailCache: { base64: string; width: number; height: number },
+    ) => ({
+      path,
+      src: `data:jpeg;base64,${thumbnailCache.base64}`,
+      width: thumbnailCache.width,
+      height: thumbnailCache.height,
+      format: "jpeg",
+    }),
   };
 });
 
 import ImageViewer from "../ImageViewer";
-import { invoke } from "@tauri-apps/api/core";
+import { loadImageViaProtocol } from "../../utils/protocolLoader";
 
-const mockInvoke = vi.mocked(invoke);
+const mockLoadImageViaProtocol = vi.mocked(loadImageViaProtocol);
 
 describe("ImageViewer", () => {
   beforeEach(() => {
@@ -160,10 +193,7 @@ describe("ImageViewer", () => {
 
       const image = screen.getByRole("img");
       expect(image).toBeInTheDocument();
-      expect(image).toHaveAttribute(
-        "src",
-        `data:${mockImageData.format};base64,${mockImageData.base64}`,
-      );
+      expect(image).toHaveAttribute("src", mockImageData.src);
       expect(image).toHaveAttribute("alt", "image.jpg");
       expect(image).toHaveAttribute("draggable", "false");
     });
@@ -209,16 +239,13 @@ describe("ImageViewer", () => {
   describe("Image loading", () => {
     it("should load image on mount when path exists but no data", async () => {
       vi.useFakeTimers();
-      // Mock image loading (no thumbnail in cache, so direct load)
-      mockInvoke.mockResolvedValue(mockImageData);
+      // No thumbnail in cache, so this takes the direct-load branch
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
       // No thumbnail in cache
       mockStore.cache.thumbnails = new Map();
 
-      await act(async () => {
-        render(<ImageViewer />);
-      });
+      const { rerender } = render(<ImageViewer />);
 
       // Advance past the debounce delay
       await act(async () => {
@@ -232,19 +259,33 @@ describe("ImageViewer", () => {
       // Wait for async operation
       await act(async () => {
         await vi.waitFor(() => {
-          // Should call load_image for full resolution (no thumbnail cached)
-          expect(mockInvoke).toHaveBeenCalledWith("load_image", {
-            path: "/test/image.jpg",
-          });
-          // Should set image data
-          expect(mockStore.setImageData).toHaveBeenCalled();
-          expect(mockStore.fitToWindow).toHaveBeenCalledWith(
-            mockImageData.width,
-            mockImageData.height,
+          // Should load via the spica-img protocol (no thumbnail cached)
+          expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
+            "/test/image.jpg",
           );
+          // Should set image data carrying the protocol URL
+          expect(mockStore.setImageData).toHaveBeenCalledWith(
+            expect.objectContaining({
+              path: "/test/image.jpg",
+              src: PROTOCOL_SRC("/test/image.jpg"),
+              width: 800,
+              height: 600,
+            }),
+          );
+          expect(mockStore.fitToWindow).toHaveBeenCalledWith(800, 600);
           expect(mockStore.setLoading).toHaveBeenCalledWith(false);
         });
       });
+
+      // The store is mocked, so feed the produced data back in to prove the
+      // rendered <img> ends up pointing at the protocol URL.
+      mockStore.currentImage.data = mockStore.setImageData.mock
+        .calls[0][0] as AppImageData;
+      rerender(<ImageViewer />);
+      expect(screen.getByRole("img")).toHaveAttribute(
+        "src",
+        PROTOCOL_SRC("/test/image.jpg"),
+      );
 
       vi.useRealTimers();
     });
@@ -268,7 +309,7 @@ describe("ImageViewer", () => {
         mockImageData.width,
         mockImageData.height,
       );
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
 
       vi.useRealTimers();
     });
@@ -302,22 +343,28 @@ describe("ImageViewer", () => {
       const consoleErrorSpy = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
-      mockInvoke.mockRejectedValue(new Error("Load failed"));
+      // A rejected decode() (404 / corrupt file) must surface as an error
+      mockLoadImageViaProtocol.mockRejectedValueOnce(new Error("boom"));
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
 
-      await act(async () => {
-        render(<ImageViewer />);
-      });
+      const { rerender } = render(<ImageViewer />);
 
       await act(async () => {
         await vi.waitFor(() => {
           expect(mockStore.setImageError).toHaveBeenCalledWith(
-            expect.any(Error),
+            expect.objectContaining({ message: "boom" }),
           );
           expect(mockStore.setLoading).toHaveBeenCalledWith(false);
         });
       });
+
+      // Feed the error back into the mocked store to prove it is displayed
+      mockStore.currentImage.error = new Error("boom");
+      rerender(<ImageViewer />);
+      expect(screen.getByText("Failed to load image: boom")).toHaveClass(
+        "error-message",
+      );
 
       consoleErrorSpy.mockRestore();
     });
@@ -691,14 +738,6 @@ describe("ImageViewer", () => {
         height: 600,
       });
 
-      mockInvoke.mockResolvedValue({
-        path: "/test/image.jpg",
-        base64: "fullResBase64",
-        width: 1920,
-        height: 1080,
-        format: "jpeg",
-      });
-
       await act(async () => {
         render(<ImageViewer />);
       });
@@ -709,8 +748,26 @@ describe("ImageViewer", () => {
         await Promise.resolve();
       });
 
-      // setImageData should have been called with preview first
+      // PHASE 1: the cached thumbnail is shown first
       expect(mockStore.setImageData).toHaveBeenCalled();
+      expect(mockStore.setImageData.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          path: "/test/image.jpg",
+          src: "data:jpeg;base64,thumbnailBase64",
+        }),
+      );
+
+      // PHASE 2: the full resolution arrives over the protocol
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockStore.setImageData).toHaveBeenCalledWith(
+            expect.objectContaining({
+              path: "/test/image.jpg",
+              src: PROTOCOL_SRC("/test/image.jpg"),
+            }),
+          );
+        });
+      });
 
       vi.useRealTimers();
     });
@@ -720,7 +777,7 @@ describe("ImageViewer", () => {
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = {
         path: "/test/image.jpg",
-        base64: "thumbnailBase64",
+        src: "data:jpeg;base64,thumbnailBase64",
         width: 800,
         height: 600,
         format: "jpeg",
@@ -732,26 +789,19 @@ describe("ImageViewer", () => {
         height: 600,
       });
 
-      mockInvoke.mockResolvedValue({
-        path: "/test/image.jpg",
-        base64: "fullResBase64",
-        width: 1920,
-        height: 1080,
-        format: "jpeg",
-      });
-
       await act(async () => {
         render(<ImageViewer />);
       });
 
-      // Should call load_image immediately (skipping debounce)
+      // Should load the full resolution immediately (skipping debounce)
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockInvoke).toHaveBeenCalledWith("load_image", {
-            path: "/test/image.jpg",
-          });
+          expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
+            "/test/image.jpg",
+          );
         });
       });
+      expect(mockStore.setThumbnailDisplayed).toHaveBeenCalledWith(false);
 
       vi.useRealTimers();
     });
@@ -767,16 +817,6 @@ describe("ImageViewer", () => {
         height: 600,
       });
 
-      const fullImageData = {
-        path: "/test/image.jpg",
-        base64: "fullResBase64",
-        width: 1920,
-        height: 1080,
-        format: "jpeg",
-      };
-
-      mockInvoke.mockResolvedValue(fullImageData);
-
       await act(async () => {
         render(<ImageViewer />);
       });
@@ -790,10 +830,16 @@ describe("ImageViewer", () => {
       // Wait for async operations
       await act(async () => {
         await vi.waitFor(() => {
-          // Should have called setImageData (possibly multiple times for preview then full)
-          expect(mockStore.setImageData).toHaveBeenCalled();
+          // Should have called setImageData (preview then full resolution)
+          expect(mockStore.setImageData).toHaveBeenCalledWith(
+            expect.objectContaining({ src: PROTOCOL_SRC("/test/image.jpg") }),
+          );
         });
       });
+      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+        "/test/image.jpg",
+        expect.objectContaining({ src: PROTOCOL_SRC("/test/image.jpg") }),
+      );
 
       vi.useRealTimers();
     });
@@ -810,14 +856,6 @@ describe("ImageViewer", () => {
         height: 2160,
       });
 
-      mockInvoke.mockResolvedValue({
-        path: "/test/image.jpg",
-        base64: "fullResBase64",
-        width: 3840,
-        height: 2160,
-        format: "jpeg",
-      });
-
       await act(async () => {
         render(<ImageViewer />);
       });
@@ -828,10 +866,11 @@ describe("ImageViewer", () => {
         await vi.runAllTimersAsync();
       });
 
-      // fitToWindow should have been called
+      // fitToWindow should have been called with the cached thumbnail's
+      // dimensions before the full-resolution load resolves
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockStore.fitToWindow).toHaveBeenCalled();
+          expect(mockStore.fitToWindow).toHaveBeenCalledWith(3840, 2160);
         });
       });
 
@@ -844,7 +883,7 @@ describe("ImageViewer", () => {
       mockStore.currentImage.data = null;
       mockStore.cache.preloaded.set("/test/image.jpg", {
         path: "/test/image.jpg",
-        base64: "fullResBase64",
+        src: PROTOCOL_SRC("/test/image.jpg"),
         width: 1920,
         height: 1080,
         format: "jpeg",

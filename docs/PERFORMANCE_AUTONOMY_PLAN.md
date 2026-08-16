@@ -52,23 +52,22 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 | mark / measure 名 | 意味 |
 |-------------------|------|
 | `open:request` | 画像オープン/ナビゲーションのトリガ時刻 |
-| `ipc:sent` | Rust コマンド呼び出し直前 |
-| `ipc:received` | 画像データ（またはURL）受領時 |
+| `src:set` | 画像 URL 設定・fetch 開始直前 |
 | `decode:done` | `img.decode()` 完了 |
 | `paint:done` | 実際に画面へ反映（`requestAnimationFrame` 直後） |
 | `measure: ttfi` | `open:request` → `paint:done` |
-| `measure: ipc` | `ipc:sent` → `ipc:received` |
-| `measure: decode` | `ipc:received` → `decode:done` |
+| `measure: fetch_decode` | `src:set` → `decode:done`（`thumbnail: false` のフル解像度側と対応付け） |
 
 > **実装注記**: `measure: ttfi` 等の区間はアプリ内では計算しない。アプリは `detail.path` 付きの mark を `window.__PERF__` に積むだけで、対応付け（同一 path の `open:request` → `paint:done` など）はベンチハーネスがオフラインで行う。ナビゲーション中断や abort が起きても計測が壊れないため。
 > また `paint:done` は `detail.thumbnail` フラグを持つ。サムネイル先行表示→フル解像度差し替えの 2 段階描画では、**最初の paint:done（thumbnail 含む）までを TTFI**、`thumbnail: false` の paint までを `TTFI_full` として両方集計する。
+> 2026-08 のプロトコル化以降、IPC 区間はホットパスに存在しない。旧 baseline の `ipc_cold`/`decode_cold` と新 `fetch_decode_cold` は比較不能（パイプライン相違）。
 
 集計する指標:
 
 - **TTFI_cold**: キャッシュ・preload 無しでの `ttfi`（= P1）
 - **NAV_warm**: preload ヒット時の `ttfi`（= P2 の理想ケース）
 - **NAV_cold**: preload ミス（遠方ジャンプ）時の `ttfi`（preload の効き検証用）
-- 内訳（`ipc` / `decode`）: ボトルネック切り分け用
+- 内訳（`fetch_decode`）: ボトルネック切り分け用
 
 各指標は **N 回実行の中央値と p95** を記録する（単発値は使わない）。
 
@@ -126,9 +125,14 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 エージェントは修正前に必ずボトルネックを数値で特定する。
 
-- [ ] **フロント**: WebView2 は Chromium 系のため Chrome DevTools Protocol / Performance トレースが利用可。まずは §2 の `ipc` / `decode` 内訳で「転送が支配的か、デコードが支配的か」を判定
-- [ ] **Rust**: `tracing` span、必要に応じ `cargo flamegraph` でディスク I/O・エンコード処理のホットスポットを可視化
-- [ ] 支配的な区間を **1 つだけ**選び、Phase 5 の仮説に対応付ける
+- [x] **フロント**: WebView2 は Chromium 系のため Chrome DevTools Protocol / Performance トレースが利用可。まずは §2 の `ipc` / `decode` 内訳で「転送が支配的か、デコードが支配的か」を判定
+- [x] **Rust**: `tracing` span、必要に応じ `cargo flamegraph` でディスク I/O・エンコード処理のホットスポットを可視化
+- [x] 支配的な区間を **1 つだけ**選び、Phase 5 の仮説に対応付ける
+
+**Phase 4 実測記録（2026-08-16, gitSha a9a3634）**:
+- フロント内訳（baseline より）: TTFI_cold median 1771ms のうち ipc（ipc:sent→ipc:received）1266ms / decode（ブラウザ）266ms — IPC 経路が 71% を占め支配的
+- Rust 内訳（`npm run profile:rust`, large 20MP JPEG, n=6/op: 起動時 1 枚 + preload 近傍分）: decode median=294.9ms(max 350.5ms) / encode median=1454.3ms(max 1538.6ms) / base64 median=6.8ms(max 22.3ms) / load_image 合計 median=1728.9ms(max 1831.4ms) — Rust 内では再エンコード（encode）が最大区間
+- 結論: 支配区間は「Rust フルデコード→再エンコード→base64→JSON IPC→data URL パース」の転送パイプライン全体。Rust 側の load_image は 1729ms/枚（うち encode が 84%。preload による同時ロード下の実測であり、baseline の ipc 中央値 1266ms とは計測条件が異なるため直接比較はしない）。Phase 5 は候補 1（base64 over IPC の撤廃）に着手する
 
 ---
 
@@ -136,7 +140,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 以下は候補。**全部やらない。** Phase 4 で支配的と確認できたものから 1 つずつ。
 
-- [ ] **[最有力] base64 over IPC の撤廃**
+- [x] **[最有力] base64 over IPC の撤廃**
   - 現状の「Rust で読む → base64 化 → JSON IPC で巨大文字列 → フロントでデコード」を、`convertFileSrc` / `asset://` プロトコル（または独自 `register_uri_scheme_protocol`）に置換
   - PROJECT_SPEC の既知の制限「2000px+ images load slower due to base64 encoding」と一致する第一候補
   - `tauri.conf.json` の `security.assetProtocol.enable = true` と `scope` 設定、CSP の `img-src` に `asset: http://asset.localhost` を追加
@@ -183,8 +187,7 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
     "NAV_warm": { "median_ms": 0, "p95_ms": 0, "n": 7 },
     "NAV_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
     "breakdown": {
-      "ipc_cold":    { "median_ms": 0, "p95_ms": 0, "n": 7 },
-      "decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 }
+      "fetch_decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 }
     }
   }
 }
@@ -229,23 +232,24 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 - **cold/warm を混ぜない**: P1 は cold パス、P2 は warm/preload パス。
 - **asset protocol の CSP/scope 設定漏れ**で 403/404 になりやすい。設定後にまず 1 枚表示できることを確認してから計測へ。
 - **正しさの担保**: 「速いが壊れた」を防ぐため、性能ゲートと正しさ/視覚ゲートを常に併用。
+- **EXIF orientation**: プロトコル化で原本バイトがブラウザに渡るため自動適用される（旧パイプラインは再エンコードで EXIF が落ち、回転付き JPEG は未回転表示だった）。視覚ゲートに exif コーパス検証あり。ただし Rust 側のサムネイル生成（`generate_thumbnail`、`image::open` → `img.thumbnail()`）は依然 EXIF 非対応のため、回転付き JPEG はサムネイル先行表示の間だけ未回転で見え、フル解像度のプロトコル画像に差し替わった時点で正しい向きに補正される（自己修復）。
 
 ---
 
-## 8. 現状 baseline（Phase 3 完了時に記入）
+## 8. 現状 baseline（Phase 6 採否ゲート通過・2026-08-16 更新）
 
-計測元: `bench-results/baseline.json`（`gitSha: 08caaee`, `timestamp: 2026-08-15T16:02:45.827Z`, `runs: 7`, release ビルド）。全指標 n=7（欠落サンプルなし）。
+計測元: `bench-results/baseline.json`（`gitSha: 11c01ca`, `timestamp: 2026-08-16T03:44:16.740Z`, `runs: 7`, release ビルド、spica-img プロトコル採用後）。全指標 n=7（欠落サンプルなし）。
 
 | 指標 | corpus | median (ms) | p95 (ms) | n | 目標 |
 |------|--------|-------------|----------|---|------|
-| TTFI_cold（first paint） | large | 1771.4 | 2106.6 | 7 | < 500 |
-| NAV_warm  | medium | 162.0 | 293.5 | 7 | < 100 |
-| NAV_cold  | medium | 515.6 | 663.4 | 7 | — |
-| ipc（内訳） | large | 1266.5 | 1523.8 | 7 | — |
-| decode（内訳） | large | 266.3 | 470.7 | 7 | — |
+| TTFI_cold（first paint） | large | 483.8 | 629.2 | 7 | < 500 |
+| NAV_warm  | medium | 23.1 | 32.9 | 7 | < 100 |
+| NAV_cold  | medium | 179.9 | 252.9 | 7 | — |
+| fetch_decode_cold（内訳） | large | 395.4 | 546.3 | 7 | — |
 
-> **TTFI_cold の full paint**: 全 7 サンプルでサムネイル先行表示は発生せず、`full`（`thumbnail: false` の paint まで）は `first` と完全に一致（median 1771.4ms / p95 2106.6ms / n=7）。したがって large コーパスでは 2 段階描画のオーバーヘッドは現状観測されていない。
-> **p95 に関する注記**: n=7 の nearest-rank p95 は最大値と一致するため、外れ値 1 個の影響を強く受ける（例: NAV_warm は 7 サンプル中の最大値 293.5ms がそのまま p95 になっている）。回帰判定では中央値を主指標として扱うこと（詳細は CLAUDE.md 参照）。
+> **旧 baseline（base64 IPC 時代, `gitSha: 08caaee`, 2026-08-15T16:02:45.827Z, 全 n=7）**: TTFI_cold median 1771.4ms / p95 2106.6ms、NAV_warm median 162.0ms / p95 293.5ms、NAV_cold median 515.6ms / p95 663.4ms、ipc（内訳）median 1266.5ms / p95 1523.8ms、decode（内訳）median 266.3ms / p95 470.7ms。`ipc`/`decode` はプロトコル化により IPC 経路自体がホットパスから消滅したため新 JSON には存在せず、新設の `fetch_decode_cold`（`src:set`→`decode:done`、fetch+ブラウザデコード区間）と直接比較はできない（計測区間が異なる設計変更。詳細は §2 実装注記）。
+> **TTFI_cold の full paint**: 全 7 サンプルでサムネイル先行表示は発生せず、`full`（`thumbnail: false` の paint まで）は `first` と完全に一致（median 483.8ms / p95 629.2ms / n=7）。
+> **p95 に関する注記**: n=7 の nearest-rank p95 は最大値と一致するため、外れ値 1 個の影響を強く受ける。回帰判定では中央値を主指標として扱うこと（詳細は CLAUDE.md 参照）。
 
 ---
 
@@ -254,9 +258,9 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 - [x] Phase 1: 計測ハーネス（両側 instrumentation）
 - [x] Phase 2: ベンチ駆動（WebdriverIO + release ビルド + 固定コーパス）
 - [x] Phase 3: baseline 確定・コミット
-- [ ] Phase 4: profiling で支配的ボトルネック特定
+- [x] Phase 4: profiling で支配的ボトルネック特定
 - [ ] Phase 5: 最適化（base64→asset protocol を筆頭に、確認済み仮説のみ）
-- [ ] Phase 6: 自律ループ & ゲート運用開始
+- [x] Phase 6: 自律ループ & ゲート運用開始
 
 ---
 

@@ -8,7 +8,8 @@ export interface ImageInfo {
 
 export interface ImageData {
   path: string;
-  base64: string;
+  /** Renderable URL: a data: URL (thumbnails / legacy pipeline) or a spica-img protocol URL */
+  src: string;
   width: number;
   height: number;
   format: string;

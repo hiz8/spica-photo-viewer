@@ -21,6 +21,14 @@ const writeSmokeImage = (): string => {
 };
 
 describe("smoke", () => {
+  // Shared by the perf-mark test and the protocol test, so it is created once
+  // at describe scope rather than inside a single `it`.
+  let tempPngPath: string;
+
+  before(() => {
+    tempPngPath = writeSmokeImage();
+  });
+
   it("launches the app and exposes perf/test hooks", async () => {
     const hooks = await browser.execute(() => ({
       hasTestHooks: typeof window.__SPICA_TEST__ !== "undefined",
@@ -31,7 +39,7 @@ describe("smoke", () => {
   });
 
   it("records the full perf mark chain when opening an image", async () => {
-    const imagePath = writeSmokeImage();
+    const imagePath = tempPngPath;
 
     await browser.execute(() => {
       window.__SPICA_TEST__?.clearPerf();
@@ -69,15 +77,12 @@ describe("smoke", () => {
     );
 
     // decode:done is intentionally not asserted: it fired in every observed
-    // run, but HTMLImageElement.decode() rejects on data-URL races (see
-    // ImageViewer.tsx) so the app treats it as best-effort - a hard assertion
-    // here would only be a flake source.
-    for (const name of [
-      "open:request",
-      "ipc:sent",
-      "ipc:received",
-      "paint:done",
-    ]) {
+    // run, but HTMLImageElement.decode() rejects on races (see ImageViewer.tsx)
+    // so the app treats it as best-effort - a hard assertion here would only be
+    // a flake source.
+    // ipc:sent/ipc:received are gone: the viewer no longer round-trips base64
+    // through IPC, it points <img> at the spica-img protocol (src:set).
+    for (const name of ["open:request", "src:set", "paint:done"]) {
       expect(markNames).toContain(name);
     }
 
@@ -86,5 +91,55 @@ describe("smoke", () => {
     );
     expect(status?.hasData).toBe(true);
     expect(status?.path).toBe(imagePath);
+  });
+
+  it("serves image bytes over the spica-img protocol", async () => {
+    // URL construction is inlined rather than imported from src/utils/imageSrc:
+    // e2e specs deliberately do not import app source, so this doubles as an
+    // independent check that the builder's format is what the handler expects.
+    const src = `http://spica-img.localhost/${encodeURIComponent(tempPngPath)}`;
+    const result = await browser.executeAsync(
+      (
+        url: string,
+        done: (r: {
+          ok: boolean;
+          status: number;
+          size: number;
+          type: string;
+        }) => void,
+      ) => {
+        fetch(url)
+          .then((r) =>
+            r
+              .blob()
+              .then((b) =>
+                done({
+                  ok: r.ok,
+                  status: r.status,
+                  size: b.size,
+                  type: b.type,
+                }),
+              ),
+          )
+          .catch(() =>
+            done({ ok: false, status: -1, size: 0, type: "fetch-error" }),
+          );
+      },
+      src,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe(200);
+    expect(result.size).toBeGreaterThan(0);
+    expect(result.type).toBe("image/png");
+
+    const missing = await browser.executeAsync(
+      (url: string, done: (status: number) => void) => {
+        fetch(url)
+          .then((r) => done(r.status))
+          .catch(() => done(-1));
+      },
+      `http://spica-img.localhost/${encodeURIComponent("C:\\nope\\missing.jpg")}`,
+    );
+    expect(missing).toBe(404);
   });
 });

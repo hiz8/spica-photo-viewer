@@ -4085,6 +4085,7 @@ version = "1.0.0"
 dependencies = [
  "base64 0.23.1",
  "image",
+ "percent-encoding",
  "rayon",
  "serde",
  "serde_json",
