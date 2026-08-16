@@ -1,12 +1,13 @@
-import type React from "react";
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore, thumbnailToImageData } from "../store";
-import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
-import { useImagePreloader } from "../hooks/useImagePreloader";
-import type { ImageData as AppImageData } from "../types";
+import type React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
+import { useImagePreloader } from "../hooks/useImagePreloader";
+import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
+import { thumbnailToImageData, useAppStore } from "../store";
+import type { ImageData as AppImageData } from "../types";
 import { getFilename } from "../utils/path";
+import { isPerfEnabled, perfMark } from "../utils/perf";
 
 interface ImageViewerProps {
   className?: string;
@@ -41,6 +42,13 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const activeLoadPathRef = useRef<string | null>(null);
 
   const suppressTransition = ui.suppressTransition;
+
+  const invokeLoadImage = useCallback(async (path: string) => {
+    perfMark("ipc:sent", { path });
+    const data = await invoke<AppImageData>("load_image", { path });
+    perfMark("ipc:received", { path });
+    return data;
+  }, []);
 
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
@@ -84,9 +92,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setImageError(null);
 
           // Load full resolution directly
-          const fullImageData = await invoke<AppImageData>("load_image", {
-            path,
-          });
+          const fullImageData = await invokeLoadImage(path);
 
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
@@ -177,9 +183,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               }
 
               // PHASE 2: Load full resolution image in background
-              const fullImageData = await invoke<AppImageData>("load_image", {
-                path,
-              });
+              const fullImageData = await invokeLoadImage(path);
 
               // Check if loading was cancelled
               if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -212,9 +216,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           }
 
           // Direct load (no cached thumbnail)
-          const fullImageData = await invoke<AppImageData>("load_image", {
-            path,
-          });
+          const fullImageData = await invokeLoadImage(path);
 
           // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -234,7 +236,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           setPreloadedImage(path, fullImageData);
         } else {
           // GIF files - use direct loading to preserve animation
-          const imageData = await invoke<AppImageData>("load_image", { path });
+          const imageData = await invokeLoadImage(path);
 
           // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
@@ -278,6 +280,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       fitToWindow,
       updateImageDimensions,
       setThumbnailDisplayed,
+      invokeLoadImage,
     ],
   );
 
@@ -316,6 +319,45 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       }
     };
   }, [currentImage.path, loadImage]);
+
+  // Perf instrumentation: mark decode:done / paint:done when displayed data changes.
+  // Double rAF approximates the first frame actually painted with the new image.
+  useEffect(() => {
+    const data = currentImage.data;
+    if (!data || !isPerfEnabled()) return;
+    const thumbnail = !!useAppStore.getState().ui.thumbnailDisplayed;
+    let cancelled = false;
+
+    const markPaint = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!cancelled) {
+            perfMark("paint:done", { path: data.path, thumbnail });
+          }
+        });
+      });
+    };
+
+    const img = imageRef.current;
+    if (img?.decode) {
+      img
+        .decode()
+        .then(() => {
+          if (!cancelled)
+            perfMark("decode:done", { path: data.path, thumbnail });
+        })
+        .catch(() => {
+          /* decode() rejects for data-URL races; paint mark still fires */
+        })
+        .finally(markPaint);
+    } else {
+      markPaint();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentImage.data]);
 
   // Handle window resize to re-fit image
   useEffect(() => {

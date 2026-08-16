@@ -1,17 +1,18 @@
-import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  AppState,
-  ImageInfo,
-  ImageData,
-  ViewState,
-  ThumbnailGenerationState,
-} from "../types";
+import { create } from "zustand";
 import {
   RAPID_NAVIGATION_THRESHOLD_MS,
   SUPPRESS_TRANSITION_MS,
 } from "../constants/timing";
+import type {
+  AppState,
+  ImageData,
+  ImageInfo,
+  ThumbnailGenerationState,
+  ViewState,
+} from "../types";
 import { getFilename, getFolderPath } from "../utils/path";
+import { perfEvent, perfMark } from "../utils/perf";
 
 // Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
@@ -290,6 +291,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (index >= 0 && index < images.length) {
       const image = images[index];
 
+      perfMark("open:request", { path: image.path, index, trigger: "nav" });
+
       // Check if navigating quickly (within threshold of last navigation)
       const now = Date.now();
       const lastNavTime = state.cache.lastNavigationTime;
@@ -332,6 +335,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
             );
           }
         }
+
+        perfEvent("preload", {
+          path: image.path,
+          hit: !!(cachedImage && cachedImage.format !== "error"),
+          thumbnailFallback: thumbnailDisplayed,
+        });
 
         // Determine zoom value
         let viewZoom = savedViewState?.zoom ?? 100;
@@ -539,6 +548,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   openImageFromPath: async (imagePath: string) => {
     try {
+      perfMark("open:request", { path: imagePath, trigger: "open" });
+
       const folderPath = getFolderPath(imagePath);
 
       // OPTIMIZATION: Immediately set the image path to hide welcome screen

@@ -1,16 +1,23 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { mockImageData, mockImageList } from "../../utils/testUtils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RAPID_NAVIGATION_THRESHOLD_MS } from "../../constants/timing";
+import { _setPerfEnabledForTests } from "../../utils/perf";
+import { createImageInfo } from "../../utils/testFactories";
+import { mockImageData, mockImageList } from "../../utils/testUtils";
 
 // Mock the invoke function before importing the store
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-import { useAppStore } from "../index";
 import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../index";
 
 const mockInvoke = vi.mocked(invoke);
+
+// Reuse the existing ImageInfo factory, keyed by path (matches the brief's
+// perf test fixtures without duplicating factory logic).
+const makeImageInfo = (path: string) =>
+  createImageInfo({ path, filename: path.split("\\").pop() ?? "" });
 
 describe("AppStore", () => {
   beforeEach(() => {
@@ -1740,6 +1747,61 @@ describe("AppStore", () => {
 
       // Thumbnails should be preserved
       expect(useAppStore.getState().cache.thumbnails.size).toBe(1);
+    });
+  });
+
+  describe("performance instrumentation", () => {
+    beforeEach(() => {
+      _setPerfEnabledForTests(true);
+      window.__PERF__ = [];
+    });
+
+    afterEach(() => {
+      _setPerfEnabledForTests(null);
+      window.__PERF__ = [];
+    });
+
+    it("navigateToImage marks open:request with path and preload event", () => {
+      const store = useAppStore.getState();
+      store.setFolderImages("C:\\photos", [
+        makeImageInfo("C:\\photos\\a.jpg"),
+        makeImageInfo("C:\\photos\\b.jpg"),
+      ]);
+
+      store.navigateToImage(1);
+
+      const marks = window.__PERF__ ?? [];
+      const open = marks.find((e) => e.name === "open:request");
+      expect(open?.detail).toMatchObject({
+        path: "C:\\photos\\b.jpg",
+        index: 1,
+        trigger: "nav",
+      });
+      const preload = marks.find((e) => e.name === "preload");
+      expect(preload?.detail).toMatchObject({
+        path: "C:\\photos\\b.jpg",
+        hit: false,
+      });
+    });
+
+    it("navigateToImage reports preload hit when image is preloaded", () => {
+      const store = useAppStore.getState();
+      store.setFolderImages("C:\\photos", [
+        makeImageInfo("C:\\photos\\a.jpg"),
+        makeImageInfo("C:\\photos\\b.jpg"),
+      ]);
+      store.setPreloadedImage("C:\\photos\\b.jpg", {
+        path: "C:\\photos\\b.jpg",
+        base64: "xxx",
+        width: 100,
+        height: 100,
+        format: "jpeg",
+      });
+
+      store.navigateToImage(1);
+
+      const preload = (window.__PERF__ ?? []).find((e) => e.name === "preload");
+      expect(preload?.detail).toMatchObject({ hit: true });
     });
   });
 });
