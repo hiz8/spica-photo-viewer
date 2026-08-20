@@ -69,5 +69,28 @@ for (const { name, width, height, count } of SETS) {
     console.log(`generated ${file}`);
   }
 }
+// Plain companion image in the exif set, so the hit-canvas visual test can
+// open it first and then navigate to img-000 as a preload hit.
+{
+  const dir = join(OUT, "exif");
+  const file = join(dir, "img-001.jpg");
+  if (!existsSync(file)) {
+    const width = 1200;
+    const height = 800;
+    const rand = mulberry32(99002);
+    const raw = Buffer.alloc(width * height * 3);
+    for (let p = 0; p < raw.length; p += 3) {
+      const x = (p / 3) % width;
+      const y = Math.floor(p / 3 / width);
+      raw[p] = (x * 255) / width + rand() * 40;
+      raw[p + 1] = (y * 255) / height + rand() * 40;
+      raw[p + 2] = ((x + y) * 128) / (width + height) + rand() * 40;
+    }
+    await sharp(raw, { raw: { width, height, channels: 3 } })
+      .jpeg({ quality: 88 })
+      .toFile(file);
+    console.log(`generated ${file}`);
+  }
+}
 
 console.log("corpus ready");

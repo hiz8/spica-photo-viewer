@@ -30,6 +30,10 @@ vi.mock("../../utils/protocolLoader", () => ({
   })),
 }));
 
+vi.mock("../../utils/canvasDraw", () => ({
+  drawBitmapToCanvas: vi.fn(),
+}));
+
 // Mock the useThumbnailGenerator hook
 vi.mock("../../hooks/useThumbnailGenerator", () => ({
   useThumbnailGenerator: vi.fn(),
@@ -108,8 +112,14 @@ vi.mock("../../store", () => {
 
 import ImageViewer from "../ImageViewer";
 import { loadImageViaProtocol } from "../../utils/protocolLoader";
+import { drawBitmapToCanvas } from "../../utils/canvasDraw";
+import { clearBitmaps, setBitmap } from "../../utils/bitmapCache";
+import { _setPerfEnabledForTests } from "../../utils/perf";
 
 const mockLoadImageViaProtocol = vi.mocked(loadImageViaProtocol);
+
+const fakeBitmap = (width: number, height: number) =>
+  ({ width, height, close: vi.fn() }) as unknown as ImageBitmap;
 
 describe("ImageViewer", () => {
   beforeEach(() => {
@@ -130,6 +140,7 @@ describe("ImageViewer", () => {
     mockStore.cache.preloaded = new Map();
     mockStore.cache.imageViewStates = new Map();
     mockStore.ui.thumbnailDisplayed = false;
+    clearBitmaps();
   });
 
   describe("Empty state", () => {
@@ -909,6 +920,124 @@ describe("ImageViewer", () => {
       expect(mockStore.updateImageDimensions).toHaveBeenCalledWith(1920, 1080);
 
       vi.useRealTimers();
+    });
+  });
+
+  describe("Canvas hit path (decoded bitmap window)", () => {
+    const path = "C:\\photos\\hit.jpg";
+    const data = {
+      path,
+      src: PROTOCOL_SRC(path),
+      width: 800,
+      height: 600,
+      format: "jpg",
+    };
+
+    it("renders a canvas and draws the retained bitmap when available", () => {
+      setBitmap(path, fakeBitmap(800, 600));
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+
+      const { container } = render(<ImageViewer />);
+
+      expect(container.querySelector("canvas")).toBeInTheDocument();
+      expect(container.querySelector("img")).not.toBeInTheDocument();
+      // Both the mount ref callback (belt-and-braces) and the data-keyed
+      // useLayoutEffect draw on this initial mount; double-drawing is
+      // idempotent and expected exactly twice here.
+      expect(drawBitmapToCanvas).toHaveBeenCalledTimes(2);
+    });
+
+    it("falls back to <img> when no bitmap is cached", () => {
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+
+      const { container } = render(<ImageViewer />);
+
+      expect(container.querySelector("img")).toBeInTheDocument();
+      expect(container.querySelector("canvas")).not.toBeInTheDocument();
+    });
+
+    it("falls back to <img> while a thumbnail placeholder is displayed", () => {
+      setBitmap(path, fakeBitmap(800, 600));
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+      mockStore.ui.thumbnailDisplayed = true;
+
+      const { container } = render(<ImageViewer />);
+
+      expect(container.querySelector("img")).toBeInTheDocument();
+      expect(container.querySelector("canvas")).not.toBeInTheDocument();
+    });
+
+    it("does not swap <img> for <canvas> when a bitmap lands later without a data change", () => {
+      // No bitmap cached yet: first render must display the <img>.
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+
+      const { container, rerender } = render(<ImageViewer />);
+
+      expect(container.querySelector("img")).toBeInTheDocument();
+      expect(container.querySelector("canvas")).not.toBeInTheDocument();
+
+      // Bitmap retention lands asynchronously into the module-level cache
+      // (non-reactive) and some unrelated store-driven update (e.g. a
+      // neighbor's preload:done) triggers a re-render WITHOUT
+      // currentImage.data changing identity.
+      setBitmap(path, fakeBitmap(800, 600));
+      rerender(<ImageViewer />);
+
+      // The <img> must still be displayed: swapping to <canvas> here would
+      // mount an undrawn canvas, since the draw effect is keyed on
+      // currentImage.data, which did not change.
+      expect(container.querySelector("img")).toBeInTheDocument();
+      expect(container.querySelector("canvas")).not.toBeInTheDocument();
+    });
+
+    it("does not redraw the canvas on an unrelated re-render while mounted", () => {
+      // Canvas is already mounted and drawn with a bitmap in place.
+      setBitmap(path, fakeBitmap(800, 600));
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+
+      const { container, rerender } = render(<ImageViewer />);
+
+      expect(container.querySelector("canvas")).toBeInTheDocument();
+      const callsAfterMount = vi.mocked(drawBitmapToCanvas).mock.calls.length;
+
+      // Simulate an unrelated store-driven re-render (e.g. setPan on every
+      // mousemove during drag) with currentImage.data UNCHANGED. The ref
+      // callback's identity must stay stable so React does not re-invoke it
+      // (which would reallocate the canvas backing store and redraw the full
+      // bitmap on every such re-render).
+      rerender(<ImageViewer />);
+
+      expect(container.querySelector("canvas")).toBeInTheDocument();
+      expect(vi.mocked(drawBitmapToCanvas).mock.calls.length).toBe(
+        callsAfterMount,
+      );
+    });
+
+    it("emits a full-resolution paint:done from the canvas path", async () => {
+      _setPerfEnabledForTests(true);
+      window.__PERF__ = [];
+      vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+      setBitmap(path, fakeBitmap(800, 600));
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = data;
+
+      render(<ImageViewer />);
+
+      const paint = (window.__PERF__ ?? []).find(
+        (e) => e.name === "paint:done",
+      );
+      expect(paint?.detail).toEqual({ path, thumbnail: false });
+      vi.unstubAllGlobals();
+      _setPerfEnabledForTests(null);
+      window.__PERF__ = [];
     });
   });
 });

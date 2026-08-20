@@ -1,478 +1,387 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
-import { mockImageData, mockImageList } from "../../utils/testUtils";
-import type { ImageInfo } from "../../types";
-import { PRELOAD_DELAY_MS } from "../../constants/timing";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ImageData, ImageInfo } from "../../types";
+import {
+  clearBitmaps,
+  getBitmap,
+  hasBitmap,
+  setBitmap,
+} from "../../utils/bitmapCache";
 import { _setPerfEnabledForTests } from "../../utils/perf";
 
-// Helper function to create mock ImageInfo objects
-const createMockImageInfo = (
-  index: number,
+const fakeBitmap = (width = 10, height = 10) =>
+  ({ width, height, close: vi.fn() }) as unknown as ImageBitmap;
+
+const imageInfo = (
+  i: number,
   overrides: Partial<ImageInfo> = {},
 ): ImageInfo => ({
-  path: `/test/image${index}.jpg`,
-  filename: `image${index}.jpg`,
+  path: `/test/image${i}.jpg`,
+  filename: `image${i}.jpg`,
   size: 1024,
-  modified: Date.now() - index * 1000,
+  modified: 1700000000000 - i,
   format: "jpeg",
   ...overrides,
 });
 
-// Mock the protocol loader (replaces the old IPC invoke boundary).
-// Default implementation echoes the requested path into a src-based
-// ImageData, mirroring what `loadImageViaProtocol` resolves with after
-// decode. Individual tests override with mockResolvedValueOnce/
-// mockRejectedValueOnce for specific scenarios.
-vi.mock("../../utils/protocolLoader", () => ({
-  loadImageViaProtocol: vi.fn(async (path: string) => ({
-    data: {
-      path,
-      src: `http://spica-img.localhost/x`,
-      width: 10,
-      height: 10,
-      format: "jpg",
-    },
-    element: new Image(),
-  })),
-}));
+const fullData = (path: string): ImageData => ({
+  path,
+  src: `http://spica-img.localhost/x`,
+  width: 800,
+  height: 600,
+  format: "jpg",
+});
 
-// Mock the store
+// The scheduler reads live state via useAppStore.getState(), so the mock
+// exposes the same object through both the hook call and getState.
 const mockStore = {
-  folder: {
-    path: "/test",
-    images: [] as ImageInfo[],
-  },
+  folder: { path: "/test", images: [] as ImageInfo[] },
   currentImage: {
     index: -1,
+    path: "",
+    data: null as ImageData | null,
   },
-  cache: {
-    preloaded: new Map(),
-  },
-  thumbnailGeneration: {
-    isGenerating: false,
-    allGenerated: true,
-    currentGeneratingPath: null,
-  },
-  setPreloadedImage: vi.fn(),
-  removePreloadedImage: vi.fn(),
+  cache: { preloaded: new Map<string, ImageData>() },
+  thumbnailGeneration: { allGenerated: true },
+  ui: { thumbnailDisplayed: false },
+  // Mirrors the real store: the scheduler's no-retry guard reads
+  // cache.preloaded, so the mock MUST actually write the entry — otherwise
+  // a rejected load pumps itself forever.
+  setPreloadedImage: vi.fn((path: string, data: ImageData) => {
+    mockStore.cache.preloaded.set(path, data);
+  }),
+  removePreloadedImage: vi.fn((path: string) => {
+    mockStore.cache.preloaded.delete(path);
+  }),
 };
 
-vi.mock("../../store", () => ({
-  useAppStore: vi.fn(() => mockStore),
+vi.mock("../../store", () => {
+  const mockUseAppStore = vi.fn(() => mockStore);
+  (
+    mockUseAppStore as unknown as { getState: () => typeof mockStore }
+  ).getState = () => mockStore;
+  return { useAppStore: mockUseAppStore };
+});
+
+vi.mock("../../utils/bitmapLoader", () => ({
+  loadBitmapViaProtocol: vi.fn(),
+  retainElementAsBitmap: vi.fn(),
 }));
 
 import { useImagePreloader } from "../useImagePreloader";
-import { loadImageViaProtocol } from "../../utils/protocolLoader";
+import { loadBitmapViaProtocol } from "../../utils/bitmapLoader";
 
-const mockLoadImageViaProtocol = vi.mocked(loadImageViaProtocol);
+const mockLoad = vi.mocked(loadBitmapViaProtocol);
 
-describe("useImagePreloader", () => {
+/** Configure the store as "index navigated to i, full-res displayed". */
+const showFullRes = (index: number) => {
+  mockStore.currentImage.index = index;
+  mockStore.currentImage.path = mockStore.folder.images[index]?.path ?? "";
+  mockStore.currentImage.data = fullData(mockStore.currentImage.path);
+  mockStore.ui.thumbnailDisplayed = false;
+};
+
+const flush = async () => {
+  // Drain chained load->settle->pump microtask rounds (launch, settle,
+  // finally-pump, second launch, ...).
+  await act(async () => {
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+    }
+  });
+};
+
+describe("useImagePreloader (bitmap window scheduler)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearBitmaps();
     mockStore.folder.path = "/test";
-    mockStore.folder.images = [] as ImageInfo[];
+    mockStore.folder.images = Array.from({ length: 16 }, (_, i) =>
+      imageInfo(i),
+    );
     mockStore.currentImage.index = -1;
+    mockStore.currentImage.path = "";
+    mockStore.currentImage.data = null;
     mockStore.cache.preloaded = new Map();
     mockStore.thumbnailGeneration.allGenerated = true;
-
-    // Reinstate the default success implementation: clearAllMocks() wipes
-    // call history but a prior test's mockRejectedValue/mockResolvedValueOnce
-    // queue could otherwise leak into the next test.
-    mockLoadImageViaProtocol.mockReset();
-    mockLoadImageViaProtocol.mockImplementation(async (path: string) => ({
-      data: {
-        path,
-        src: `http://spica-img.localhost/x`,
-        width: 10,
-        height: 10,
-        format: "jpg",
-      },
-      element: new Image(),
+    mockStore.ui.thumbnailDisplayed = false;
+    mockLoad.mockImplementation(async (path: string) => ({
+      data: fullData(path),
+      bitmap: fakeBitmap(),
     }));
-
-    // Clear console spy to avoid interference between tests
-    vi.clearAllTimers();
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    clearBitmaps();
     _setPerfEnabledForTests(null);
     window.__PERF__ = [];
   });
 
-  describe("preloadImage", () => {
-    it("should preload full-resolution image successfully", async () => {
-      _setPerfEnabledForTests(true);
+  it("launches window decodes immediately (no delay timer), capped at 3", async () => {
+    showFullRes(0);
+    renderHook(() => useImagePreloader());
+    // synchronous launch on mount: [1,2,3,4] capped at MAX_CONCURRENT_LOADS
+    expect(mockLoad.mock.calls.map((c) => c[0])).toEqual([
+      "/test/image1.jpg",
+      "/test/image2.jpg",
+      "/test/image3.jpg",
+    ]);
+  });
 
-      const { result } = renderHook(() => useImagePreloader());
+  it("pumps the next target when a slot frees, and caches + reports results", async () => {
+    _setPerfEnabledForTests(true);
+    showFullRes(0);
+    renderHook(() => useImagePreloader());
+    await flush();
+    // 4th target launched after a completion freed a slot
+    expect(mockLoad.mock.calls.map((c) => c[0])).toContain("/test/image4.jpg");
+    await flush();
+    expect(hasBitmap("/test/image1.jpg")).toBe(true);
+    expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+      "/test/image1.jpg",
+      fullData("/test/image1.jpg"),
+    );
+    const done = (window.__PERF__ ?? []).filter(
+      (e) => e.name === "preload:done",
+    );
+    expect(done.map((e) => e.detail?.path)).toContain("/test/image1.jpg");
+  });
 
-      await act(async () => {
-        await result.current.preloadImage("/test/image.jpg");
-      });
+  it("does not start while a thumbnail placeholder is displayed", () => {
+    showFullRes(0);
+    mockStore.ui.thumbnailDisplayed = true;
+    renderHook(() => useImagePreloader());
+    expect(mockLoad).not.toHaveBeenCalled();
+  });
 
-      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith("/test/image.jpg");
-      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
-        "/test/image.jpg",
-        {
-          path: "/test/image.jpg",
-          src: "http://spica-img.localhost/x",
-          width: 10,
-          height: 10,
-          format: "jpg",
+  it("does not start before all thumbnails are generated", () => {
+    showFullRes(0);
+    mockStore.thumbnailGeneration.allGenerated = false;
+    renderHook(() => useImagePreloader());
+    expect(mockLoad).not.toHaveBeenCalled();
+  });
+
+  it("prefers the backward neighbor first when navigating backward", async () => {
+    showFullRes(8);
+    const { rerender } = renderHook(() => useImagePreloader());
+    await flush();
+    mockLoad.mockClear();
+    clearBitmaps();
+    showFullRes(7); // 8 -> 7 = backward
+    rerender();
+    expect(mockLoad.mock.calls[0][0]).toBe("/test/image6.jpg");
+  });
+
+  it("skips GIFs", async () => {
+    mockStore.folder.images[1] = imageInfo(1, { format: "gif" });
+    showFullRes(0);
+    renderHook(() => useImagePreloader());
+    const paths = mockLoad.mock.calls.map((c) => c[0]);
+    expect(paths).not.toContain("/test/image1.jpg");
+  });
+
+  it("evicts bitmap + preload entry when a path leaves the window", async () => {
+    const far = fakeBitmap();
+    setBitmap("/test/image15.jpg", far);
+    mockStore.cache.preloaded.set(
+      "/test/image15.jpg",
+      fullData("/test/image15.jpg"),
+    );
+    showFullRes(0);
+    renderHook(() => useImagePreloader());
+    expect(far.close).toHaveBeenCalledOnce();
+    expect(hasBitmap("/test/image15.jpg")).toBe(false);
+    expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      "/test/image15.jpg",
+    );
+  });
+
+  it("does not let a stale (superseded) load win over a fresh load for the same path", async () => {
+    // bitmapLoader only passes the AbortSignal to fetch(); once the
+    // response has arrived, abort() cannot stop blob()/createImageBitmap().
+    // So: P's load starts (L1), P leaves the window (aborted + dropped from
+    // pendingRef), P re-enters the window before L1 settles (fresh load
+    // L2, new controller), then L1 finally resolves. L1 must lose: its
+    // bitmap gets close()'d and discarded, and it must not evict L2's
+    // pending-map entry. L2 must still win when it resolves afterward.
+    type Deferred = {
+      promise: Promise<{ data: ImageData; bitmap: ImageBitmap }>;
+      resolve: (v: { data: ImageData; bitmap: ImageBitmap }) => void;
+    };
+    const makeDeferred = (): Deferred => {
+      let resolve!: Deferred["resolve"];
+      const promise = new Promise<{ data: ImageData; bitmap: ImageBitmap }>(
+        (res) => {
+          resolve = res;
         },
       );
+      return { promise, resolve };
+    };
 
-      // preload:done perf event fires after the store is updated
-      const events = window.__PERF__ ?? [];
-      const doneEvent = events.find((e) => e.name === "preload:done");
-      expect(doneEvent).toBeDefined();
-      expect(doneEvent?.type).toBe("event");
-      expect(doneEvent?.detail).toEqual({ path: "/test/image.jpg" });
+    const target = "/test/image1.jpg";
+    const deferredCalls: Deferred[] = [];
+    mockLoad.mockImplementation((path: string) => {
+      if (path === target) {
+        const deferred = makeDeferred();
+        deferredCalls.push(deferred);
+        return deferred.promise;
+      }
+      return Promise.resolve({ data: fullData(path), bitmap: fakeBitmap() });
     });
 
-    it("should not preload if image already in cache", async () => {
-      // Setup cache with existing preloaded image
-      mockStore.cache.preloaded.set("/test/image.jpg", mockImageData);
+    showFullRes(0);
+    const { rerender } = renderHook(() => useImagePreloader());
+    // Initial window [1,2,3] (capped at 3) launches L1 for the target path.
+    expect(deferredCalls).toHaveLength(1);
 
-      const { result } = renderHook(() => useImagePreloader());
+    // P leaves the window: pump() aborts L1's controller and drops it from
+    // pendingRef, but our deferred (standing in for an unstoppable
+    // in-flight decode) stays unsettled.
+    showFullRes(10);
+    rerender();
 
-      await act(async () => {
-        await result.current.preloadImage("/test/image.jpg");
-      });
+    // P re-enters the window: pump() starts a fresh load (L2) for the same
+    // path under a new controller.
+    showFullRes(0);
+    rerender();
+    expect(deferredCalls).toHaveLength(2);
 
-      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
-      expect(mockStore.setPreloadedImage).not.toHaveBeenCalled();
-    });
+    // L1 (stale) resolves after L2 has already started.
+    const staleBitmap = fakeBitmap();
+    deferredCalls[0].resolve({ data: fullData(target), bitmap: staleBitmap });
+    await flush();
+    expect(staleBitmap.close).toHaveBeenCalledOnce();
+    expect(getBitmap(target)).not.toBe(staleBitmap);
 
-    it("should handle preload error gracefully", async () => {
-      const consoleWarnSpy = vi
-        .spyOn(console, "warn")
-        .mockImplementation(() => {});
-      mockLoadImageViaProtocol.mockRejectedValueOnce(
-        new Error("Failed to load image"),
-      );
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      await act(async () => {
-        await result.current.preloadImage("/test/failed-image.jpg");
-      });
-
-      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
-        "/test/failed-image.jpg",
-      );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        "Failed to preload image: failed-image.jpg",
-        expect.any(Error),
-      );
-
-      // Should mark as error in cache with the exact error-entry shape
-      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
-        "/test/failed-image.jpg",
-        {
-          path: "/test/failed-image.jpg",
-          src: "",
-          width: 0,
-          height: 0,
-          format: "error",
-        },
-      );
-
-      consoleWarnSpy.mockRestore();
-    });
+    // L2 (fresh) resolves; it must win — cached and reported.
+    const freshBitmap = fakeBitmap();
+    deferredCalls[1].resolve({ data: fullData(target), bitmap: freshBitmap });
+    await flush();
+    expect(getBitmap(target)).toBe(freshBitmap);
+    expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+      target,
+      fullData(target),
+    );
   });
 
-  describe("getPreloadQueue", () => {
-    it("should return empty queue when no current image", () => {
-      mockStore.folder.images = mockImageList as ImageInfo[];
-      mockStore.currentImage.index = -1;
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      // Can't directly test getPreloadQueue as it's not exposed, but we can test startPreloading
-      act(() => {
-        result.current.startPreloading();
-      });
-
-      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
-    });
-
-    it("should return empty queue when no images in folder", () => {
-      mockStore.folder.images = [];
-      mockStore.currentImage.index = 0;
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      act(() => {
-        result.current.startPreloading();
-      });
-
-      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
-    });
-
-    it("should prioritize next and previous images", async () => {
-      mockStore.folder.images = mockImageList as ImageInfo[];
-      mockStore.currentImage.index = 1; // Middle image
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      await act(async () => {
-        await result.current.startPreloading();
-      });
-
-      // Should try to preload images around current index
-      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
-    });
-
-    it("should skip already preloaded images in queue", async () => {
-      mockStore.folder.images = mockImageList as ImageInfo[];
-      mockStore.currentImage.index = 1;
-
-      // Mark first image as already preloaded
-      mockStore.cache.preloaded.set(mockImageList[0].path, mockImageData);
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      await act(async () => {
-        await result.current.startPreloading();
-      });
-
-      // Should not try to preload the already preloaded image
-      const calls = mockLoadImageViaProtocol.mock.calls.map((call) => call[0]);
-      expect(calls).not.toContain(mockImageList[0].path);
-    });
-
-    it("should not start if thumbnail generation is not complete", async () => {
-      mockStore.folder.images = mockImageList as ImageInfo[];
-      mockStore.currentImage.index = 1;
-      mockStore.thumbnailGeneration.allGenerated = false; // Not complete
-
-      const consoleLogSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => {});
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      await act(async () => {
-        await result.current.startPreloading();
-      });
-
-      // Should log waiting message and not start preloading
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        "Waiting for thumbnail generation to complete before preloading...",
-      );
-      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
-
-      consoleLogSpy.mockRestore();
-    });
+  it("marks failed loads as error entries and does not retry them", async () => {
+    const consoleWarnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => {});
+    mockLoad.mockRejectedValue(new Error("boom"));
+    showFullRes(0);
+    const { rerender } = renderHook(() => useImagePreloader());
+    await flush();
+    expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+      "/test/image1.jpg",
+      {
+        path: "/test/image1.jpg",
+        src: "",
+        width: 0,
+        height: 0,
+        format: "error",
+      },
+    );
+    // the mock wrote the error entries into cache.preloaded; re-render: no retry
+    mockLoad.mockClear();
+    rerender();
+    await flush();
+    expect(mockLoad).not.toHaveBeenCalled();
+    consoleWarnSpy.mockRestore();
   });
 
-  describe("cleanupCache", () => {
-    it("should remove preloaded images outside preload range", () => {
-      const consoleLogSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => {});
-
-      // Setup cache with many images
-      const manyImages = Array.from({ length: 50 }, (_, i) =>
-        createMockImageInfo(i),
-      );
-
-      mockStore.folder.images = manyImages as ImageInfo[];
-      mockStore.currentImage.index = 25; // Middle position
-
-      // Add preloaded images to cache that are outside range
-      mockStore.cache.preloaded.set("/test/image0.jpg", mockImageData); // Far from current
-      mockStore.cache.preloaded.set("/test/image49.jpg", mockImageData); // Far from current
-      mockStore.cache.preloaded.set("/test/image25.jpg", mockImageData); // Current image
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      act(() => {
-        result.current.cleanupCache();
-      });
-
-      // Should remove images outside ±5 range
-      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
-        "/test/image0.jpg",
-      );
-      expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
-        "/test/image49.jpg",
-      );
-      // Should not remove current image
-      expect(mockStore.removePreloadedImage).not.toHaveBeenCalledWith(
-        "/test/image25.jpg",
-      );
-
-      consoleLogSpy.mockRestore();
-    });
-
-    it("should handle cleanup when no current image", () => {
-      mockStore.currentImage.index = -1;
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      act(() => {
-        result.current.cleanupCache();
-      });
-
-      // Should not remove anything
-      expect(mockStore.removePreloadedImage).not.toHaveBeenCalled();
-    });
+  it("clears all bitmaps when the folder changes", async () => {
+    showFullRes(0);
+    const { rerender } = renderHook(() => useImagePreloader());
+    await flush();
+    expect(getBitmap("/test/image1.jpg")).toBeDefined();
+    mockStore.folder.path = "/other";
+    rerender();
+    expect(getBitmap("/test/image1.jpg")).toBeUndefined();
   });
 
-  describe("startPreloading", () => {
-    it("should process preload queue with concurrent limit", async () => {
-      // Setup many images to exceed concurrent limit
-      const manyImages = Array.from({ length: 10 }, (_, i) =>
-        createMockImageInfo(i),
-      );
-
-      mockStore.folder.images = manyImages as ImageInfo[];
-      mockStore.currentImage.index = 5;
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      await act(async () => {
-        await result.current.startPreloading();
-      });
-
-      // Should have been called for multiple images
-      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
-      expect(mockStore.setPreloadedImage).toHaveBeenCalled();
-    });
-
-    it("should handle partial failures in concurrent loading", async () => {
-      const consoleWarnSpy = vi
-        .spyOn(console, "warn")
-        .mockImplementation(() => {});
-
-      // Mock some successful and some failed loads: first call succeeds
-      // (default implementation), second call fails.
-      mockLoadImageViaProtocol.mockRejectedValueOnce(new Error("Failed"));
-
-      mockStore.folder.images = mockImageList as ImageInfo[];
-      mockStore.currentImage.index = 1;
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      await act(async () => {
-        await result.current.startPreloading();
-      });
-
-      // Should have attempted loads for available images
-      expect(mockLoadImageViaProtocol).toHaveBeenCalledTimes(2);
-      expect(consoleWarnSpy).toHaveBeenCalled();
-
-      consoleWarnSpy.mockRestore();
-    });
+  it("runs eviction while the fill phase is gated, launching no loads", () => {
+    // Regression: eviction/budget enforcement must never be skippable, even
+    // while thumbnailGeneration.allGenerated is false (e.g. browsing during
+    // a new folder's thumbnail-generation window). retainElementAsBitmap
+    // retains unconditionally, so maintenance must too.
+    const far = fakeBitmap();
+    setBitmap("/test/image15.jpg", far);
+    mockStore.cache.preloaded.set(
+      "/test/image15.jpg",
+      fullData("/test/image15.jpg"),
+    );
+    showFullRes(0);
+    mockStore.thumbnailGeneration.allGenerated = false; // gate the fill phase
+    renderHook(() => useImagePreloader());
+    expect(far.close).toHaveBeenCalledOnce();
+    expect(hasBitmap("/test/image15.jpg")).toBe(false);
+    expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      "/test/image15.jpg",
+    );
+    expect(mockLoad).not.toHaveBeenCalled();
   });
 
-  describe("useEffect integration", () => {
-    it("should start preloading when current image changes", async () => {
-      mockStore.folder.images = mockImageList as ImageInfo[];
+  it("enforces the byte budget by evicting farthest-first, keeping the current bitmap", () => {
+    // ~169MB per bitmap (6500 * 6500 * 4 bytes); 5 of them (current + the
+    // 4-wide window for index 0) total ~805MB, over the 500MB budget.
+    const bigBitmap = () => fakeBitmap(6500, 6500);
+    const current = bigBitmap();
+    const b1 = bigBitmap();
+    const b2 = bigBitmap();
+    const b3 = bigBitmap();
+    const b4 = bigBitmap();
+    setBitmap("/test/image0.jpg", current);
+    setBitmap("/test/image1.jpg", b1);
+    setBitmap("/test/image2.jpg", b2);
+    setBitmap("/test/image3.jpg", b3);
+    setBitmap("/test/image4.jpg", b4);
 
-      const { rerender } = renderHook(() => useImagePreloader());
+    showFullRes(0); // window (direction +1) = [1, 2, 3, 4], farthest = 4
+    renderHook(() => useImagePreloader());
 
-      // Initially no current image
-      mockStore.currentImage.index = -1;
-      rerender();
-
-      // Change to have current image
-      mockStore.currentImage.index = 1;
-      rerender();
-
-      // Fast-forward timers to trigger delayed preloading
-      await act(async () => {
-        vi.runAllTimers();
-      });
-
-      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
-    });
-
-    it("should delay preloading by 500ms", async () => {
-      mockStore.folder.images = mockImageList as ImageInfo[];
-      mockStore.currentImage.index = 1;
-
-      renderHook(() => useImagePreloader());
-
-      // Should not have called immediately
-      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
-
-      // Fast-forward just before delay - still should not have called
-      await act(async () => {
-        vi.advanceTimersByTime(PRELOAD_DELAY_MS - 1);
-        await Promise.resolve();
-      });
-      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
-
-      // Fast-forward remaining 1ms - now should have called
-      await act(async () => {
-        vi.advanceTimersByTime(1);
-        await Promise.resolve();
-      });
-      expect(mockLoadImageViaProtocol).toHaveBeenCalled();
-    });
-
-    it("should cleanup timeout on unmount", () => {
-      mockStore.folder.images = mockImageList as ImageInfo[];
-      mockStore.currentImage.index = 1;
-
-      const { unmount } = renderHook(() => useImagePreloader());
-
-      unmount();
-
-      // Fast-forward timers - should not call since unmounted
-      act(() => {
-        vi.runAllTimers();
-      });
-
-      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
-    });
+    // Farthest-priority victims evicted until bytes <= budget...
+    expect(b4.close).toHaveBeenCalledOnce();
+    expect(b3.close).toHaveBeenCalledOnce();
+    expect(hasBitmap("/test/image4.jpg")).toBe(false);
+    expect(hasBitmap("/test/image3.jpg")).toBe(false);
+    // ...nearer neighbors and the current image survive.
+    expect(b1.close).not.toHaveBeenCalled();
+    expect(b2.close).not.toHaveBeenCalled();
+    expect(current.close).not.toHaveBeenCalled();
+    expect(hasBitmap("/test/image1.jpg")).toBe(true);
+    expect(hasBitmap("/test/image2.jpg")).toBe(true);
+    expect(hasBitmap("/test/image0.jpg")).toBe(true);
   });
 
-  describe("console logging", () => {
-    it("should log successful preload", async () => {
-      const consoleLogSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => {});
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      await act(async () => {
-        await result.current.preloadImage("/test/subfolder/image.jpg");
-      });
-
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        "Preloaded full image: image.jpg",
-      );
-
-      consoleLogSpy.mockRestore();
+  it("sweeps bitmap-less preload entries (error and plain) outside the window", () => {
+    // Eviction historically only walked bitmapPaths(), so preload entries
+    // with no bitmap (permanent error entries, stale entries surviving a
+    // folder switch) were invisible to it and never left cache.preloaded.
+    mockStore.cache.preloaded.set("/test/image14.jpg", {
+      path: "/test/image14.jpg",
+      src: "",
+      width: 0,
+      height: 0,
+      format: "error",
     });
+    mockStore.cache.preloaded.set(
+      "/test/image15.jpg",
+      fullData("/test/image15.jpg"),
+    );
+    expect(hasBitmap("/test/image14.jpg")).toBe(false);
+    expect(hasBitmap("/test/image15.jpg")).toBe(false);
 
-    it("should log cleanup operations", () => {
-      const consoleLogSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => {});
+    showFullRes(0);
+    renderHook(() => useImagePreloader());
 
-      mockStore.folder.images = [mockImageList[1]] as ImageInfo[]; // Only one image
-      mockStore.currentImage.index = 0;
-
-      // Add an image that will be cleaned up
-      mockStore.cache.preloaded.set("/test/old-image.jpg", mockImageData);
-
-      const { result } = renderHook(() => useImagePreloader());
-
-      act(() => {
-        result.current.cleanupCache();
-      });
-
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        "Cleaned from preload cache: old-image.jpg",
-      );
-
-      consoleLogSpy.mockRestore();
-    });
+    expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      "/test/image14.jpg",
+    );
+    expect(mockStore.removePreloadedImage).toHaveBeenCalledWith(
+      "/test/image15.jpg",
+    );
+    expect(mockStore.cache.preloaded.has("/test/image14.jpg")).toBe(false);
+    expect(mockStore.cache.preloaded.has("/test/image15.jpg")).toBe(false);
   });
 });
