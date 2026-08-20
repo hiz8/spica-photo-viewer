@@ -5,6 +5,7 @@
  * measured interval (open:request -> paint:done) identical to real usage.
  */
 import { useAppStore } from "../store";
+import { bitmapPaths } from "./bitmapCache";
 import { isPerfEnabled } from "./perf";
 
 export interface SpicaTestHooks {
@@ -18,6 +19,13 @@ export interface SpicaTestHooks {
     isLoading: boolean;
     thumbnailDisplayed: boolean;
     preloadedCount: number;
+    /**
+     * Paths with a retained decoded bitmap. A cache.preloaded entry alone
+     * does not imply one (viewer-loaded entries survive a folder switch and
+     * their bitmap retention races clearBitmaps()), and only a path listed
+     * here paints via <canvas> on navigation.
+     */
+    bitmapPaths: string[];
   };
   clearPerf: () => void;
 }
@@ -45,6 +53,7 @@ export const installTestHooks = (): void => {
         // to match the SpicaTestHooks#getStatus contract.
         thumbnailDisplayed: !!state.ui.thumbnailDisplayed,
         preloadedCount: state.cache.preloaded.size,
+        bitmapPaths: bitmapPaths(),
       };
     },
     clearPerf: () => {

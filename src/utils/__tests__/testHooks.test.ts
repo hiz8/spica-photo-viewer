@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { clearBitmaps, setBitmap } from "../bitmapCache";
 import { _setPerfEnabledForTests } from "../perf";
 import { installTestHooks } from "../testHooks";
 
@@ -10,6 +11,7 @@ describe("testHooks", () => {
 
   afterEach(() => {
     _setPerfEnabledForTests(null);
+    clearBitmaps();
   });
 
   it("installs window.__SPICA_TEST__ when perf is enabled", () => {
@@ -32,9 +34,23 @@ describe("testHooks", () => {
     window.__PERF__ = [{ type: "mark", name: "x", ts: 1 }];
 
     const status = window.__SPICA_TEST__?.getStatus();
-    expect(status).toMatchObject({ index: -1, hasData: false });
+    expect(status).toMatchObject({
+      index: -1,
+      hasData: false,
+      bitmapPaths: [],
+    });
 
     window.__SPICA_TEST__?.clearPerf();
     expect(window.__PERF__).toHaveLength(0);
+  });
+
+  it("getStatus lists the paths with a retained bitmap", () => {
+    _setPerfEnabledForTests(true);
+    installTestHooks();
+    setBitmap("C:\\pics\\a.jpg", { close: () => {} } as ImageBitmap);
+
+    expect(window.__SPICA_TEST__?.getStatus().bitmapPaths).toEqual([
+      "C:\\pics\\a.jpg",
+    ]);
   });
 });

@@ -113,7 +113,12 @@ describe("visual gate", () => {
   it("applies EXIF orientation on the canvas hit path", async function () {
     this.timeout(180_000);
     // Open the plain companion; img-000 (orientation 6) becomes the window
-    // neighbor and is decoded into the bitmap cache by the scheduler.
+    // neighbor and is decoded into the bitmap cache by the scheduler. Wait
+    // for THAT bitmap, not for cache.preloaded: the previous test's
+    // viewer-loaded img-000 entry already sits in cache.preloaded while its
+    // bitmap retention races the folder-change clearBitmaps(), and a hit
+    // navigation without a retained bitmap latches onto <img> for good.
+    const exifTarget = join(CORPUS, "exif", "img-000.jpg");
     const companion = join(CORPUS, "exif", "img-001.jpg");
     await browser.execute(
       (p: string) => void window.__SPICA_TEST__?.openImage(p),
@@ -121,11 +126,18 @@ describe("visual gate", () => {
     );
     await browser.waitUntil(
       async () =>
-        browser.execute(() => {
+        browser.execute((p: string) => {
           const status = window.__SPICA_TEST__?.getStatus();
-          return (status?.preloadedCount ?? 0) >= 1 && !status?.isLoading;
-        }),
-      { timeout: 120_000, timeoutMsg: "exif neighbor was never preloaded" },
+          return (
+            status !== undefined &&
+            !status.isLoading &&
+            status.bitmapPaths.includes(p)
+          );
+        }, exifTarget),
+      {
+        timeout: 120_000,
+        timeoutMsg: "exif neighbor bitmap was never retained",
+      },
     );
     await browser.execute(() => window.__SPICA_TEST__?.navigateToImage(0));
     await browser.waitUntil(

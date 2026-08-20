@@ -15,6 +15,8 @@ export interface SpicaTestHooks {
     isLoading: boolean;
     thumbnailDisplayed: boolean;
     preloadedCount: number;
+    /** Paths with a retained decoded bitmap (the <canvas> hit set). */
+    bitmapPaths: string[];
   };
   clearPerf: () => void;
 }
