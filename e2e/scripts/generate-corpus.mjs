@@ -20,6 +20,9 @@ const SETS = [
   { name: "small", width: 1024, height: 768, count: 8 },
   { name: "medium", width: 3264, height: 2448, count: 30 },
   { name: "large", width: 5472, height: 3648, count: 16 },
+  // Portrait set for the centering gate (e2e/specs/centering.e2e.ts). Two
+  // images, so the second one is a bitmap-window hit.
+  { name: "portrait", width: 1200, height: 1600, count: 2 },
 ];
 
 for (const { name, width, height, count } of SETS) {

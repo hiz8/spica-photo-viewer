@@ -100,7 +100,11 @@ body {
   z-index: 10;
 }
 
-.image-viewer img {
+/* Both display elements - <img> (bitmap-cache miss / thumbnail placeholder)
+   and <canvas> (hit) - take their left/top from fitToWindow(), which only
+   applies to a positioned box. */
+.image-viewer img,
+.image-viewer canvas {
   position: absolute;
   transform-origin: center;
 }
