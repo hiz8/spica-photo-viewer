@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bitmapBytes,
   bitmapPaths,
+  bitmapTier,
   clearBitmaps,
   deleteBitmap,
+  fullBitmapPaths,
   getBitmap,
+  getBitmapOfTier,
+  getRetained,
   hasBitmap,
   setBitmap,
 } from "../bitmapCache";
@@ -70,5 +74,105 @@ describe("bitmapCache", () => {
     setBitmap("/a.jpg", fakeBitmap(1, 1));
     setBitmap("/b.jpg", fakeBitmap(1, 1));
     expect(bitmapPaths().sort()).toEqual(["/a.jpg", "/b.jpg"]);
+  });
+
+  it("defaults the tier to full when omitted (backward compat)", () => {
+    setBitmap("/a.jpg", fakeBitmap(1, 1));
+    expect(hasBitmap("/a.jpg", "full")).toBe(true);
+    expect(hasBitmap("/a.jpg", "preview")).toBe(false);
+    expect(bitmapTier("/a.jpg")).toBe("full");
+  });
+
+  it("keeps preview and full as independent slots per path", () => {
+    const preview = fakeBitmap(1620, 1080);
+    const full = fakeBitmap(5472, 3648);
+    setBitmap("/a.jpg", preview, "preview");
+    setBitmap("/a.jpg", full, "full");
+    expect(preview.close).not.toHaveBeenCalled();
+    expect(getBitmapOfTier("/a.jpg", "preview")).toBe(preview);
+    expect(getBitmapOfTier("/a.jpg", "full")).toBe(full);
+  });
+
+  it("replacing the same tier closes only that tier's previous bitmap", () => {
+    const preview = fakeBitmap(1620, 1080);
+    const previewReplacement = fakeBitmap(1620, 1080);
+    const full = fakeBitmap(5472, 3648);
+    setBitmap("/a.jpg", preview, "preview");
+    setBitmap("/a.jpg", full, "full");
+    setBitmap("/a.jpg", previewReplacement, "preview");
+    expect(preview.close).toHaveBeenCalledOnce();
+    expect(full.close).not.toHaveBeenCalled();
+    expect(getBitmapOfTier("/a.jpg", "preview")).toBe(previewReplacement);
+    expect(getBitmapOfTier("/a.jpg", "full")).toBe(full);
+  });
+
+  it("getBitmap and getRetained prefer full over preview", () => {
+    const preview = fakeBitmap(1620, 1080);
+    const full = fakeBitmap(5472, 3648);
+    setBitmap("/a.jpg", preview, "preview");
+    setBitmap("/a.jpg", full, "full");
+    expect(getBitmap("/a.jpg")).toBe(full);
+    expect(getRetained("/a.jpg")).toEqual({ bitmap: full, tier: "full" });
+  });
+
+  it("getBitmap and getRetained fall back to preview when full is absent", () => {
+    const preview = fakeBitmap(1620, 1080);
+    setBitmap("/a.jpg", preview, "preview");
+    expect(getBitmap("/a.jpg")).toBe(preview);
+    expect(getRetained("/a.jpg")).toEqual({ bitmap: preview, tier: "preview" });
+    expect(bitmapTier("/a.jpg")).toBe("preview");
+  });
+
+  it("deleteBitmap(path, 'full') closes only full and leaves preview retained", () => {
+    const preview = fakeBitmap(1620, 1080);
+    const full = fakeBitmap(5472, 3648);
+    setBitmap("/a.jpg", preview, "preview");
+    setBitmap("/a.jpg", full, "full");
+    deleteBitmap("/a.jpg", "full");
+    expect(full.close).toHaveBeenCalledOnce();
+    expect(preview.close).not.toHaveBeenCalled();
+    expect(hasBitmap("/a.jpg", "full")).toBe(false);
+    expect(hasBitmap("/a.jpg", "preview")).toBe(true);
+    expect(getBitmap("/a.jpg")).toBe(preview);
+  });
+
+  it("deleteBitmap without a tier closes both tiers and removes the entry", () => {
+    const preview = fakeBitmap(1620, 1080);
+    const full = fakeBitmap(5472, 3648);
+    setBitmap("/a.jpg", preview, "preview");
+    setBitmap("/a.jpg", full, "full");
+    deleteBitmap("/a.jpg");
+    expect(preview.close).toHaveBeenCalledOnce();
+    expect(full.close).toHaveBeenCalledOnce();
+    expect(hasBitmap("/a.jpg")).toBe(false);
+    expect(bitmapPaths()).not.toContain("/a.jpg");
+  });
+
+  it("bitmapBytes sums both tiers across all paths", () => {
+    setBitmap("/a.jpg", fakeBitmap(1620, 1080), "preview"); // 6_998_400
+    setBitmap("/a.jpg", fakeBitmap(5472, 3648), "full"); // 79_866_624
+    setBitmap("/b.jpg", fakeBitmap(10, 10), "full"); // 400
+    expect(bitmapBytes()).toBe(1620 * 1080 * 4 + 5472 * 3648 * 4 + 10 * 10 * 4);
+  });
+
+  it("bitmapPaths lists paths with either tier", () => {
+    setBitmap("/a.jpg", fakeBitmap(1, 1), "preview");
+    setBitmap("/b.jpg", fakeBitmap(1, 1), "full");
+    expect(bitmapPaths().sort()).toEqual(["/a.jpg", "/b.jpg"]);
+  });
+
+  it("fullBitmapPaths lists only paths that hold a full bitmap", () => {
+    setBitmap("/a.jpg", fakeBitmap(1, 1), "preview");
+    setBitmap("/b.jpg", fakeBitmap(1, 1), "full");
+    setBitmap("/c.jpg", fakeBitmap(1, 1), "preview");
+    setBitmap("/c.jpg", fakeBitmap(1, 1), "full");
+    expect(fullBitmapPaths().sort()).toEqual(["/b.jpg", "/c.jpg"]);
+  });
+
+  it("hasBitmap without a tier is true when either tier is present", () => {
+    setBitmap("/a.jpg", fakeBitmap(1, 1), "preview");
+    expect(hasBitmap("/a.jpg")).toBe(true);
+    expect(hasBitmap("/a.jpg", "preview")).toBe(true);
+    expect(hasBitmap("/a.jpg", "full")).toBe(false);
   });
 });
