@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   extractTimings,
+  extractZoomTiming,
   type PerfEntry,
   placeholderDuration,
+  visibleThumbnailCapacity,
 } from "./bench-helpers";
 
 describe("extractTimings", () => {
@@ -99,5 +101,129 @@ describe("placeholderDuration", () => {
       },
     ];
     expect(placeholderDuration(extractTimings(entries, path))).toBe(0);
+  });
+});
+
+describe("extractTimings.fullTier", () => {
+  const path = "/corpus/large/img-02.jpg";
+
+  it("exposes the tier of the first non-placeholder paint", () => {
+    const entries: PerfEntry[] = [
+      { type: "mark", name: "open:request", ts: 0, detail: { path } },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 20,
+        detail: { path, thumbnail: true, tier: "thumbnail" },
+      },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 60,
+        detail: { path, thumbnail: false, tier: "preview" },
+      },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 500,
+        detail: { path, thumbnail: false, tier: "full" },
+      },
+    ];
+    const timings = extractTimings(entries, path);
+    expect(timings.fullPaint).toBe(60); // first thumbnail:false paint wins
+    expect(timings.fullTier).toBe("preview");
+  });
+
+  it("is null on marks without a tier (older builds)", () => {
+    const entries: PerfEntry[] = [
+      { type: "mark", name: "open:request", ts: 0, detail: { path } },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 25,
+        detail: { path, thumbnail: false },
+      },
+    ];
+    expect(extractTimings(entries, path).fullTier).toBeNull();
+  });
+});
+
+describe("extractZoomTiming", () => {
+  const path = "/corpus/large/img-03.jpg";
+
+  it("is 0 when the displayed tier at request time is already full", () => {
+    const entries: PerfEntry[] = [
+      {
+        type: "mark",
+        name: "zoom:request",
+        ts: 1000,
+        detail: { path, zoom: 120, displayedTier: "full" },
+      },
+    ];
+    expect(extractZoomTiming(entries, path)).toBe(0);
+  });
+
+  it("measures request -> first full paint at or after the request", () => {
+    const entries: PerfEntry[] = [
+      // A full paint BEFORE the request must not be picked up.
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 900,
+        detail: { path, thumbnail: false, tier: "full" },
+      },
+      {
+        type: "mark",
+        name: "zoom:request",
+        ts: 1000,
+        detail: { path, zoom: 120, displayedTier: "preview" },
+      },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 1010,
+        detail: { path, thumbnail: false, tier: "preview" },
+      },
+      {
+        type: "mark",
+        name: "paint:done",
+        ts: 1400,
+        detail: { path, thumbnail: false, tier: "full" },
+      },
+    ];
+    expect(extractZoomTiming(entries, path)).toBe(400);
+  });
+
+  it("is null without a zoom:request or without a following full paint", () => {
+    expect(extractZoomTiming([], path)).toBeNull();
+    const pending: PerfEntry[] = [
+      {
+        type: "mark",
+        name: "zoom:request",
+        ts: 1000,
+        detail: { path, zoom: 120, displayedTier: "preview" },
+      },
+    ];
+    expect(extractZoomTiming(pending, path)).toBeNull();
+  });
+
+  it("ignores marks for other paths", () => {
+    const entries: PerfEntry[] = [
+      {
+        type: "mark",
+        name: "zoom:request",
+        ts: 1000,
+        detail: { path: "/other.jpg", zoom: 120, displayedTier: "full" },
+      },
+    ];
+    expect(extractZoomTiming(entries, path)).toBeNull();
+  });
+});
+
+describe("visibleThumbnailCapacity", () => {
+  it("mirrors the 40px thumbnail pitch", () => {
+    expect(visibleThumbnailCapacity(1920)).toBe(48);
+    expect(visibleThumbnailCapacity(2560)).toBe(64);
+    expect(visibleThumbnailCapacity(639)).toBe(15);
   });
 });
