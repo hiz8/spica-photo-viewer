@@ -61,6 +61,7 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 > **実装注記**: `measure: ttfi` 等の区間はアプリ内では計算しない。アプリは `detail.path` 付きの mark を `window.__PERF__` に積むだけで、対応付け（同一 path の `open:request` → `paint:done` など）はベンチハーネスがオフラインで行う。ナビゲーション中断や abort が起きても計測が壊れないため。
 > また `paint:done` は `detail.thumbnail` フラグを持つ。サムネイル先行表示→フル解像度差し替えの 2 段階描画では、**最初の paint:done（thumbnail 含む）までを TTFI**、`thumbnail: false` の paint までを `TTFI_full` として両方集計する。
 > `paint:done` は `detail.tier`（`"thumbnail" | "preview" | "full"`）も持つ（2026-08-21、プレビュー層の設計 D1）。`thumbnail === false` ⇔ `tier !== "thumbnail"`。bench の「フル品質 paint」判定は従来通り `thumbnail === false` で行い、`tier` は「最初の非プレースホルダー paint が preview か full か」の診断と ZOOM_full の対応付けに使う。`zoom:request`（detail: `path`, `zoom`, `displayedTier`）はズーム操作の要求時刻。
+> **Rust 側 op（`SPICA_PERF=1`、2026-08-22 追加）**: `thumb_preview`（`generate_thumbnail_with_dimensions` 全体 = 1 回のデコードからサムネイル + プレビューを生成しディスクへ書くまで。内訳 `preview_decode` / `preview_resize` / `preview_encode`）、`serve_preview`（`/preview/<box>/` 配信。キャッシュ命中時は読み出しのみ）。生成コストの回帰判定は `npm run profile:rust`（キャッシュ削除後、large 16 枚）の `thumb_preview` 中央値で行い、Phase 2 着手前の `thumbnail` 中央値 T0 の 1.3 倍以内を要求する。
 > 2026-08 のプロトコル化以降、IPC 区間はホットパスに存在しない。旧 baseline の `ipc_cold`/`decode_cold` と新 `fetch_decode_cold` は比較不能（パイプライン相違）。
 
 集計する指標:
