@@ -31,20 +31,43 @@ pub fn run() {
             let uri_path = request.uri().path().to_string();
             // File reads are blocking; keep them off the async runtime's core threads.
             tauri::async_runtime::spawn_blocking(move || {
-                let _t = crate::utils::perf::PerfTimer::start("serve", &uri_path);
-                let response = match crate::protocol::resolve_image_path(&uri_path) {
-                    Ok(path) => match std::fs::read(&path) {
-                        Ok(bytes) => tauri::http::Response::builder()
-                            .status(200)
-                            .header("Content-Type", crate::protocol::mime_for(&path))
-                            .header("Access-Control-Allow-Origin", crate::protocol::ALLOW_ORIGIN)
-                            .body(bytes)
-                            .unwrap_or_else(|_| {
-                                crate::protocol::error_response(500, "response build failed")
-                            }),
-                        Err(e) => crate::protocol::error_response(500, &e.to_string()),
-                    },
-                    Err(msg) => crate::protocol::error_response(404, &msg),
+                let response = if let Some(rest) = uri_path.strip_prefix("/preview/") {
+                    let _t = crate::utils::perf::PerfTimer::start("serve_preview", &uri_path);
+                    match crate::protocol::resolve_preview_request(rest) {
+                        Ok((bbox, path)) => {
+                            match crate::commands::cache::get_cache_dir().and_then(|dir| {
+                                crate::protocol::ensure_preview(
+                                    &dir,
+                                    &path,
+                                    bbox,
+                                    crate::utils::preview::DEFAULT_THUMB_SIZE,
+                                )
+                            }) {
+                                Ok(served) => crate::protocol::preview_response(&served),
+                                Err(e) => crate::protocol::error_response(500, &e),
+                            }
+                        }
+                        Err(msg) => crate::protocol::error_response(404, &msg),
+                    }
+                } else {
+                    let _t = crate::utils::perf::PerfTimer::start("serve", &uri_path);
+                    match crate::protocol::resolve_image_path(&uri_path) {
+                        Ok(path) => match std::fs::read(&path) {
+                            Ok(bytes) => tauri::http::Response::builder()
+                                .status(200)
+                                .header("Content-Type", crate::protocol::mime_for(&path))
+                                .header(
+                                    "Access-Control-Allow-Origin",
+                                    crate::protocol::ALLOW_ORIGIN,
+                                )
+                                .body(bytes)
+                                .unwrap_or_else(|_| {
+                                    crate::protocol::error_response(500, "response build failed")
+                                }),
+                            Err(e) => crate::protocol::error_response(500, &e.to_string()),
+                        },
+                        Err(msg) => crate::protocol::error_response(404, &msg),
+                    }
                 };
                 responder.respond(response);
             });

@@ -11,6 +11,10 @@ pub fn is_supported_image(path: &Path) -> bool {
     }
 }
 
+// Not called from production code (kept for its test coverage and as the
+// canonical extension→ImageFormat mapping other modules can reach for);
+// pre-existing dead_code warning, unrelated to the preview-tier work.
+#[allow(dead_code)]
 pub fn get_image_format(path: &Path) -> Option<ImageFormat> {
     match path.extension().and_then(|s| s.to_str()) {
         Some(ext) => match ext.to_lowercase().as_str() {

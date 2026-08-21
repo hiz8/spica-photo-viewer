@@ -17,6 +17,10 @@ use std::path::Path;
 
 pub const PREVIEW_JPEG_QUALITY: u8 = 85;
 
+/// Mirror of `THUMBNAIL_SIZE` in `src/constants/timing.ts` — the bar thumbnail size
+/// used when serving a `/preview/` request generates one as a side effect.
+pub const DEFAULT_THUMB_SIZE: u32 = 20;
+
 /// Screen-box buckets (D2). Either orientation of a bucket is accepted so a
 /// portrait monitor gets a portrait box.
 pub const ALLOWED_PREVIEW_BOXES: &[(u32, u32)] = &[(1920, 1080), (2560, 1440), (3840, 2160)];
@@ -49,12 +53,19 @@ impl PreviewBox {
 
 pub struct Generated {
     pub preview_jpeg: Vec<u8>,
+    // preview_width/preview_height/resized are part of the documented Generated
+    // contract (asserted on directly by preview.rs's own tests) but no current
+    // caller reads them off the struct — decode the JPEG's dimensions or check
+    // `natural_*` vs the requested box instead when that's needed in production.
+    #[allow(dead_code)]
     pub preview_width: u32,
+    #[allow(dead_code)]
     pub preview_height: u32,
     /// Orientation-applied size of the original.
     pub natural_width: u32,
     pub natural_height: u32,
     /// false when the original already fit inside the box (preview == original size).
+    #[allow(dead_code)]
     pub resized: bool,
     pub thumbnail_base64: String,
 }
