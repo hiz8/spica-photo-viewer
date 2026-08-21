@@ -161,6 +161,7 @@ fn is_gif(path: &str) -> bool {
 }
 
 fn stamp_matches(path: &str, mtime: Option<u64>, size: Option<u64>) -> bool {
+    // mtime is compared at whole-second granularity (FAT32: 2 s); a same-second, same-size in-place edit is invisible — acceptable for photo files.
     match (source_stamp(Path::new(path)), mtime, size) {
         (Some((m, s)), Some(em), Some(es)) => m == em && s == es,
         _ => false,

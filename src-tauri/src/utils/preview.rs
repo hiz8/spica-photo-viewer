@@ -8,7 +8,7 @@ use base64::{engine::general_purpose, Engine as _};
 use fast_image_resize::{
     images::Image as FirImage, FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer,
 };
-use image::{ColorType, DynamicImage, ImageDecoder, ImageFormat, ImageReader, RgbImage};
+use image::{DynamicImage, ExtendedColorType, ImageDecoder, ImageFormat, ImageReader, RgbImage};
 use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoderFast, SamplingFactor};
 use std::io::Cursor;
 use std::path::Path;
@@ -86,6 +86,10 @@ pub fn fit_within(w: u32, h: u32, bbox: PreviewBox) -> Option<(u32, u32)> {
 struct Decoded {
     image: DynamicImage,
     icc: Option<Vec<u8>>,
+    /// The source file's color type *before* decoding converted it (X1) — a
+    /// CMYK/YCCK JPEG is already RGB pixels in `image` by the time it's a
+    /// `DynamicImage`, but `original_color` still says `Cmyk8`.
+    original_color: ExtendedColorType,
 }
 
 /// Decodes with the Exif orientation applied (what browsers display) and
@@ -100,9 +104,15 @@ fn decode_oriented(path: &Path) -> Result<Decoded, String> {
         .orientation()
         .map_err(|e| format!("orientation: {e}"))?;
     let icc = decoder.icc_profile().map_err(|e| format!("icc: {e}"))?;
+    // X1: must be read before `from_decoder` consumes the decoder.
+    let original_color = decoder.original_color_type();
     let mut image = DynamicImage::from_decoder(decoder).map_err(|e| format!("decode: {e}"))?;
     image.apply_orientation(orientation);
-    Ok(Decoded { image, icc })
+    Ok(Decoded {
+        image,
+        icc,
+        original_color,
+    })
 }
 
 /// RGB8 with any alpha composited onto black (the viewer background), so the
@@ -129,20 +139,22 @@ fn flatten_to_rgb8(image: DynamicImage) -> RgbImage {
     out
 }
 
-/// M2: an ICC profile describes a specific colorspace's channel mapping. Once
-/// a non-RGB source (Luma/LumaA, or anything CMYK-ish the decoder already
-/// converted) is flattened to RGB8, a profile captured for the original
-/// colorspace no longer describes the output — drop it rather than mislabel
-/// the preview. RGB/RGBA at any bit depth still applies.
-fn icc_applies(color: ColorType) -> bool {
+/// X1: ICC is carried only when the SOURCE was encoded as RGB/RGBA; for
+/// CMYK/YCCK sources the decoder already converted to RGB and the embedded
+/// profile would describe the wrong color space, so it is dropped. Must be
+/// checked against the *original* (pre-decode) color type, not the decoded
+/// `DynamicImage`'s — `image`'s JPEG decoder always hands back RGB8 pixels
+/// for a CMYK/YCCK source, so gating on the decoded type would let a CMYK
+/// profile through and stamp it onto already-converted RGB pixels.
+fn icc_applies(original: ExtendedColorType) -> bool {
     matches!(
-        color,
-        ColorType::Rgb8
-            | ColorType::Rgba8
-            | ColorType::Rgb16
-            | ColorType::Rgba16
-            | ColorType::Rgb32F
-            | ColorType::Rgba32F
+        original,
+        ExtendedColorType::Rgb8
+            | ExtendedColorType::Rgba8
+            | ExtendedColorType::Rgb16
+            | ExtendedColorType::Rgba16
+            | ExtendedColorType::Rgb32F
+            | ExtendedColorType::Rgba32F
     )
 }
 
@@ -175,9 +187,12 @@ fn encode_jpeg(rgb: &RgbImage, quality: u8, icc: Option<&[u8]>) -> Result<Vec<u8
     let mut encoder = JpegEncoderFast::new(&mut out, quality);
     encoder.set_sampling_factor(SamplingFactor::F_2_2); // 4:2:0
     if let Some(icc) = icc {
-        encoder
-            .add_icc_profile(icc)
-            .map_err(|e| format!("encode icc: {e}"))?;
+        // X2: a profile the encoder refuses (e.g. > 254 APP2 chunks, so over
+        // ~15.9 MB) must not fail the whole preview — degrade to no ICC
+        // rather than lose the bar thumbnail generated alongside it.
+        if let Err(e) = encoder.add_icc_profile(icc) {
+            eprintln!("preview: dropping ICC profile ({e})");
+        }
     }
     encoder
         .encode(rgb.as_raw(), width, height, JpegColorType::Rgb)
@@ -197,12 +212,16 @@ fn thumbnail_base64(image: &DynamicImage, thumb_size: u32) -> Result<String, Str
 /// Preview + thumbnail from ONE decode. `path` must already be validated.
 pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Generated, String> {
     let path_str = path.to_string_lossy();
-    let Decoded { image, icc } = {
+    let Decoded {
+        image,
+        icc,
+        original_color,
+    } = {
         let _t = PerfTimer::start("preview_decode", &path_str);
         decode_oriented(path)?
     };
     let (natural_width, natural_height) = (image.width(), image.height());
-    let icc = if icc_applies(image.color()) {
+    let icc = if icc_applies(original_color) {
         icc
     } else {
         None
@@ -286,16 +305,20 @@ mod tests {
 
     #[test]
     fn icc_applies_only_to_rgb_like_color_types() {
-        assert!(icc_applies(ColorType::Rgb8));
-        assert!(icc_applies(ColorType::Rgba8));
-        assert!(icc_applies(ColorType::Rgb16));
-        assert!(icc_applies(ColorType::Rgba16));
-        assert!(icc_applies(ColorType::Rgb32F));
-        assert!(icc_applies(ColorType::Rgba32F));
-        assert!(!icc_applies(ColorType::L8));
-        assert!(!icc_applies(ColorType::La8));
-        assert!(!icc_applies(ColorType::L16));
-        assert!(!icc_applies(ColorType::La16));
+        assert!(icc_applies(ExtendedColorType::Rgb8));
+        assert!(icc_applies(ExtendedColorType::Rgba8));
+        assert!(icc_applies(ExtendedColorType::Rgb16));
+        assert!(icc_applies(ExtendedColorType::Rgba16));
+        assert!(icc_applies(ExtendedColorType::Rgb32F));
+        assert!(icc_applies(ExtendedColorType::Rgba32F));
+        assert!(!icc_applies(ExtendedColorType::L8));
+        assert!(!icc_applies(ExtendedColorType::La8));
+        assert!(!icc_applies(ExtendedColorType::L16));
+        assert!(!icc_applies(ExtendedColorType::La16));
+        // X1: this is the case that motivated switching from the decoded
+        // `DynamicImage`'s color (always RGB8 post-decode) to the source's
+        // original color type — a CMYK/YCCK JPEG must not carry its profile.
+        assert!(!icc_applies(ExtendedColorType::Cmyk8));
     }
 
     #[test]
@@ -360,6 +383,29 @@ mod tests {
             .into_decoder()
             .unwrap();
         assert_eq!(dec.icc_profile().unwrap(), Some(icc));
+    }
+
+    #[test]
+    fn generate_degrades_gracefully_when_the_icc_profile_is_too_large_to_attach() {
+        let dir = create_temp_dir();
+        // X2: the smallest profile length `jpeg_encoder::Encoder::add_icc_profile`
+        // rejects — it splits into 65519-byte APP2 chunks and errors once the
+        // count reaches 255 (254 * 65519 + 1 = 16,641,827 bytes). Deliberately
+        // NOT the coordinator's suggested 17 MiB: that also exceeds `image`'s
+        // own JpegEncoder ICC cap (~16.7 MB), so `create_jpeg_with_metadata`
+        // itself would panic writing the *source* fixture before this test
+        // ever reaches the code under test.
+        let icc: Vec<u8> = vec![7u8; 254 * 65519 + 1];
+        let src = create_jpeg_with_metadata(dir.path(), "huge_icc.jpg", 200, 100, None, Some(&icc));
+        let g = generate(&src, box_1080p(), 20).unwrap();
+        let decoded = image::load_from_memory(&g.preview_jpeg).unwrap();
+        assert_eq!(decoded.dimensions(), (200, 100));
+        let mut dec = ImageReader::new(std::io::Cursor::new(&g.preview_jpeg))
+            .with_guessed_format()
+            .unwrap()
+            .into_decoder()
+            .unwrap();
+        assert_eq!(dec.icc_profile().unwrap(), None);
     }
 
     #[test]
