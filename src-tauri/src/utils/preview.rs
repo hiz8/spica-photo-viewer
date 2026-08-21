@@ -8,11 +8,8 @@ use base64::{engine::general_purpose, Engine as _};
 use fast_image_resize::{
     images::Image as FirImage, FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer,
 };
-use image::codecs::jpeg::JpegEncoder;
-use image::{
-    ColorType, DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageFormat,
-    ImageReader, RgbImage,
-};
+use image::{ColorType, DynamicImage, ImageDecoder, ImageFormat, ImageReader, RgbImage};
+use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoderFast, SamplingFactor};
 use std::io::Cursor;
 use std::path::Path;
 
@@ -164,20 +161,26 @@ fn resize_rgb8(src: RgbImage, tw: u32, th: u32) -> Result<RgbImage, String> {
         .ok_or_else(|| "resize: buffer size mismatch".to_string())
 }
 
+/// Preview JPEG via the `jpeg-encoder` crate: 4:2:0 chroma subsampling and
+/// SIMD make it several times faster than the `image` crate's encoder, which
+/// dominated thumb_preview (see the Phase 2 gate numbers in the plan ledger).
+/// Thumbnails (20 px) keep using `image`'s encoder through `write_to`.
 fn encode_jpeg(rgb: &RgbImage, quality: u8, icc: Option<&[u8]>) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
+    let (w, h) = (rgb.width(), rgb.height());
+    let width =
+        u16::try_from(w).map_err(|_| format!("encode: width {w} exceeds the JPEG limit"))?;
+    let height =
+        u16::try_from(h).map_err(|_| format!("encode: height {h} exceeds the JPEG limit"))?;
+    let mut out: Vec<u8> = Vec::with_capacity((w as usize * h as usize) / 4);
+    let mut encoder = JpegEncoderFast::new(&mut out, quality);
+    encoder.set_sampling_factor(SamplingFactor::F_2_2); // 4:2:0
     if let Some(icc) = icc {
-        // UnsupportedError cannot happen for JPEG; ignoring keeps the signature simple.
-        let _ = encoder.set_icc_profile(icc.to_vec());
+        encoder
+            .add_icc_profile(icc)
+            .map_err(|e| format!("encode icc: {e}"))?;
     }
     encoder
-        .write_image(
-            rgb.as_raw(),
-            rgb.width(),
-            rgb.height(),
-            ExtendedColorType::Rgb8,
-        )
+        .encode(rgb.as_raw(), width, height, JpegColorType::Rgb)
         .map_err(|e| format!("encode: {e}"))?;
     Ok(out)
 }
