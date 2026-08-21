@@ -110,6 +110,7 @@ pub async fn generate_thumbnail_with_dimensions(
     path: String,
     size: u32,
 ) -> Result<ThumbnailWithDimensions, String> {
+    let _t = crate::utils::perf::PerfTimer::start("thumbnail", &path);
     let image_path = Path::new(&path);
     validate_image_path(image_path)?;
 
