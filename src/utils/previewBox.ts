@@ -11,8 +11,12 @@ export const previewBoxForScreen = (
   dpr: number,
 ): string => {
   const scale = dpr > 0 ? dpr : 1;
-  const w = Math.ceil(Math.max(0, width) * scale);
-  const h = Math.ceil(Math.max(0, height) * scale);
+  const w = Math.ceil(
+    (Number.isFinite(width) ? Math.max(0, width) : 0) * scale,
+  );
+  const h = Math.ceil(
+    (Number.isFinite(height) ? Math.max(0, height) : 0) * scale,
+  );
   const long = Math.max(w, h);
   const short = Math.min(w, h);
   const [bl, bs] =
@@ -21,9 +25,21 @@ export const previewBoxForScreen = (
   return h > w ? `${bs}x${bl}` : `${bl}x${bs}`;
 };
 
-export const currentPreviewBox = (): string =>
-  previewBoxForScreen(
-    window.screen?.width ?? 0,
-    window.screen?.height ?? 0,
-    window.devicePixelRatio || 1,
-  );
+let sessionPreviewBox: string | null = null;
+
+/** Box chosen once per session (first call), so one folder never straddles two boxes. */
+export const currentPreviewBox = (): string => {
+  if (sessionPreviewBox === null) {
+    sessionPreviewBox = previewBoxForScreen(
+      window.screen?.width ?? 0,
+      window.screen?.height ?? 0,
+      window.devicePixelRatio || 1,
+    );
+  }
+  return sessionPreviewBox;
+};
+
+/** Test-only: forget the memoized box. */
+export const _resetPreviewBoxForTests = (): void => {
+  sessionPreviewBox = null;
+};

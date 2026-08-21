@@ -100,8 +100,8 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
 
 - `ImageReader::open` → `into_decoder()` → `orientation()` / `icc_profile()` を取得 → `DynamicImage::from_decoder` → `apply_orientation`
 - 原本が画面ボックス以下なら**リサイズしない**（preview = 原寸、tier は実質 full。フロントは `preview_w == natural_w` で判定）
-- リサイズは `fast_image_resize`（純 Rust・SIMD、Lanczos3/Bilinear、20MP→2MP で ~20–40ms）を追加依存として採用。`image::thumbnail()` の整数サンプラは表示品質に不足、`resize(Lanczos3)` は遅すぎる（~300ms+）
-- エンコードは `image` の `JpegEncoder`（q85、`set_icc_profile`）。PNG/WebP の透過は**黒で合成**（ビューア背景と同色、見た目同一）
+- リサイズは `fast_image_resize`（純 Rust・SIMD、Lanczos3/Bilinear、20MP→2MP で ~20–40ms）を追加依存として採用。`image::thumbnail()` の整数サンプラは表示品質に不足、`resize(Lanczos3)` は遅すぎる（~300ms+）。`rayon` feature でマルチスレッド化（2026-08-22: resize 57→30ms）
+- エンコードは `jpeg-encoder` クレート（q85、**4:2:0 クロマサブサンプリング**、SIMD。`image` の純 Rust エンコーダは 96–120ms/枚で生成コストゲートを超えたため 2026-08-22 に差し替え、37–45ms）。ICC は原本が RGB/RGBA の場合のみ引き継ぐ（CMYK/YCCK はデコーダが RGB 化済みのため破棄）。PNG/WebP の透過は**黒で合成**（ビューア背景と同色、見た目同一）。Phase 3 の視覚 E2E で色にじみが見えたら `SamplingFactor::F_1_1`（4:4:4）へ戻す（コストは既知）
 - GIF は対象外（コマンドはサムネのみ返す。`preview_available: false`）
 - `SPICA_PERF=1` で op `thumb_preview`（decode / resize / encode の内訳）を出す — Phase 2 の回帰判定に使う
 
