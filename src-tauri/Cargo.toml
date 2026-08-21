@@ -44,4 +44,5 @@ windows = { version = "0.62", features = ["Win32_Storage_FileSystem", "Win32_Fou
 tempfile = "3.27"
 tokio-test = "0.4"
 tokio = { version = "1", features = ["macros", "rt"] }
+filetime = "0.2.29"
 
