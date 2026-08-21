@@ -9,7 +9,7 @@
  */
 import type { ImageData } from "../types";
 import { setBitmap } from "./bitmapCache";
-import { imageFormat, imageSrc } from "./imageSrc";
+import { imageFormat, imageSrc, previewSrc } from "./imageSrc";
 
 export const loadBitmapViaProtocol = async (
   path: string,
@@ -29,6 +29,56 @@ export const loadBitmapViaProtocol = async (
       width: bitmap.width,
       height: bitmap.height,
       format: imageFormat(path),
+      tier: "full",
+    },
+    bitmap,
+  };
+};
+
+/**
+ * Loads a display-resolution preview from the Phase 2 `/preview/<box>/`
+ * route and decodes it off the main thread (same non-`src:set` contract as
+ * loadBitmapViaProtocol). The natural (orientation-applied, full-resolution)
+ * size comes back in the X-Spica-Natural-Width/Height response headers; a
+ * missing or non-positive header falls back to the decoded bitmap's own
+ * dimensions. When the decoded bitmap already equals the natural size (the
+ * source didn't need downscaling to fit the box, so the server served it
+ * unscaled) the result is tagged "full" rather than "preview" so callers
+ * don't schedule a redundant full-resolution upgrade.
+ */
+export const loadPreviewBitmap = async (
+  path: string,
+  box: string,
+  signal?: AbortSignal,
+): Promise<{ data: ImageData; bitmap: ImageBitmap }> => {
+  const src = previewSrc(path, box);
+  const response = await fetch(src, { signal });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch preview: ${path} (${response.status})`);
+  }
+  const blob = await response.blob();
+  const bitmap = await createImageBitmap(blob);
+
+  const headerWidth = Number(response.headers.get("X-Spica-Natural-Width"));
+  const headerHeight = Number(response.headers.get("X-Spica-Natural-Height"));
+  const width =
+    Number.isFinite(headerWidth) && headerWidth > 0
+      ? headerWidth
+      : bitmap.width;
+  const height =
+    Number.isFinite(headerHeight) && headerHeight > 0
+      ? headerHeight
+      : bitmap.height;
+
+  return {
+    data: {
+      path,
+      src,
+      width,
+      height,
+      format: imageFormat(path),
+      tier:
+        bitmap.width === width && bitmap.height === height ? "full" : "preview",
     },
     bitmap,
   };
@@ -46,7 +96,7 @@ export const retainElementAsBitmap = (
 ): void => {
   if (typeof createImageBitmap !== "function") return;
   void createImageBitmap(element)
-    .then((bitmap) => setBitmap(path, bitmap))
+    .then((bitmap) => setBitmap(path, bitmap, "full"))
     .catch(() => {
       /* retention is opportunistic; the scheduler can redo it */
     });
