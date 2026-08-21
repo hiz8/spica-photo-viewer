@@ -266,19 +266,30 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 ---
 
-## 8. 現状 baseline（Phase 6 採否ゲート通過・2026-08-16 更新, ビットマップ窓（仮説 C）採用）
+## 8. 現状 baseline（2026-08-21 更新, プレビュー層 Phase 1 = 計測系拡張。最適化コード無変更）
 
-計測元: `bench-results/baseline.json`（`gitSha: c4dc4d8`, `timestamp: 2026-08-16T17:29:10.809Z`, `runs: 7`, release ビルド、spica-img プロトコル + デコード済みビットマップ窓採用後）。全指標が想定 n を満たす（TTFI_cold/NAV_warm/NAV_cold は n=7、NAV_rapid/PLACEHOLDER_dur は n=84、欠落サンプルなし。fetch_decode_rapid_miss は n=0 — hit_rate 1.0 で miss ステップが存在しないため母集団が空。全 7 run のログが hits 12/12 でこれを裏付ける）。
+計測元: `bench-results/baseline.json`（`gitSha: 52650ab`, `timestamp: 2026-08-21T15:41:03.155Z`, `runs: 7`, release ビルド）。全指標が想定 n を満たす（TTFI_cold/NAV_warm/NAV_cold/ZOOM_full は n=7、NAV_rapid/PLACEHOLDER_dur/NAV_visible/PLACEHOLDER_dur_visible は n=84、欠落サンプルなし。fetch_decode_rapid_miss は n=0 — NAV_rapid の hit_rate 1.0 で miss ステップが存在しないため母集団が空）。
 
 | 指標 | corpus | median (ms) | p95 (ms) | n | 目標 |
 |------|--------|-------------|----------|---|------|
-| TTFI_cold（first paint = full） | large | 454.6 | 471.9 | 7 | < 500 |
-| NAV_warm | medium | 25.8 | 36.6 | 7 | < 100 |
-| NAV_cold | medium | 180.6 | 518.4 | 7 | — |
-| NAV_rapid（steps=12, hit_rate=1.0） | large | **33.7** | 260.4 | 84 | < 100 **達成** |
+| TTFI_cold（first paint = full） | large | 614.8 | 982.2 | 7 | < 500（環境ドリフト、下記注記） |
+| NAV_warm | medium | 26.6 | 35.5 | 7 | < 100 |
+| NAV_cold（**2026-08-21 再定義**: evictDecoded 後のメモリ冷・ディスク温 miss） | medium | 267.1 | 465.5 | 7 | — |
+| NAV_rapid（steps=12, hit_rate=1.0） | large | 40.0 | 287.7 | 84 | < 100 **達成** |
 | PLACEHOLDER_dur | large | **0** | **0** | 84 | < 80 または 0 **達成** |
-| fetch_decode_cold（内訳） | large | 361.5 | 376.0 | 7 | — |
+| **NAV_visible**（steps=12, 非単調列, **hit_rate=0.0**, tiers {full: 84}） | large | **531.4** | 870.8 | 84 | < 100 かつ hit_rate 1.0（**未達 — Phase 2/3 の対象**） |
+| **PLACEHOLDER_dur_visible** | large | **479.2** | 828.8 | 84 | p95 < 80 または 0（**未達**） |
+| ZOOM_full | large | 0 | 0 | 7 | 悪化監視のみ（目安 ≤ 500） |
+| fetch_decode_cold（内訳） | large | 530.7 | 882.8 | 7 | — |
 | fetch_decode_rapid_miss（内訳） | large | — | — | 0 | — |
+| fetch_decode_visible_miss（内訳） | large | 472.2 | 559.2 | 84 | — |
+
+> **Phase 1 baseline の読み方（2026-08-21）**: 本 baseline はプレビュー層ワークストリーム（設計: `docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md`）の **計測系のみ**を追加した状態で記録した。アプリ側の差分は `paint:done` の `tier` detail、`zoom:request` マーク、E2E テストフックだけで、表示・ロード・スケジューラの挙動は c4dc4d8 と同一。
+> **NAV_visible hit_rate 0/84 の機序**: 非単調列 `[5,2,9,1,12,7,3,14,6,11,0,8]` の各ステップは、現行の保持窓 `computeWindow` = {i+1, i+2, i+3, i−1} の**外に構造的に落ちる**（最小ジャンプ距離 3・方向反転を含む）ため、全ステップが miss になる。プリローダーが「間に合わなかった」のではなく、窓の形状による決定論的な結果であり、run 間で振動しない。miss の実体は 20MP のブラウザデコード（fetch_decode_visible_miss median 472ms）で、これがユーザー苦情「サムネイルが見えているのにプレースホルダーが ~0.5s 見える」の数値再現（PLACEHOLDER_dur_visible median 479ms）。Phase 3 の採否判定はこの NAV_visible 中央値に対する ≥10% 改善（最終目標 < 100ms かつ hit_rate 1.0）で行う。
+> **NAV_cold 再定義**: 旧 baseline（c4dc4d8）の NAV_cold 180.6ms は「±5 の外への遠方ジャンプ」、本 baseline の 267.1ms は「プリローダー静穏 → `evictDecoded()` → ジャンプ」（ディスク上のサムネイルは保持）。定義が異なるため**比較不能**。同日の対照実行（下記）では旧定義でも 249.7ms を示しており、差の大半は環境ドリフト。
+> **ZOOM_full = 0**: 現行はナビゲーション時点で常にフル解像度が表示済みのため、`zoom:request` 時の表示 tier が full → 定義上 0。プレビュー層導入後（Phase 3）に ~400ms 帯（20MP フルデコード）へ移るのは D1 で承認済みのトレードオフであり、回帰ゲートではなく悪化監視（目安: 中央値 ≤ 500ms）。
+> **TTFI_cold / fetch_decode_cold の再アンカー注記（2026-08-21）**: 本 baseline の TTFI_cold 614.8 / fetch_decode_cold 530.7 は旧 baseline（454.6 / 361.5）を大きく上回るが、**同日に基点コミット 2c9be70（本ブランチの変更前コード）を `git archive` からビルドして同一マシン・同一ハーネスで対照実行**した結果も TTFI_cold median 605.8（サンプル 516/610/606/818/832/587/556）/ fetch_decode_cold median 517.5 / NAV_cold（旧定義）249.7 / NAV_warm 28.9 であり、ブランチの 3 回の run（608.8 / 552.8 / 614.8）と同帯だった。したがって上昇はコード起因ではなく、マシン条件のドリフト（デコード支配経路が全体に +35〜40%）である。前回の再アンカー（下記 adfe42b の経緯）と同じ方針で全指標を現条件で再アンカーした。**コード無変更で TTFI_cold / fetch_decode_cold が旧帯（~450 / ~360）へ戻った場合は再 baseline を検討すること。**
+> **旧 baseline（c4dc4d8, 2026-08-16T17:29:10.809Z, ビットマップ窓採用時）**: TTFI_cold 454.6 / 471.9、NAV_warm 25.8 / 36.6、NAV_cold（旧定義）180.6 / 518.4、NAV_rapid 33.7 / 260.4（hit_rate 1.0）、PLACEHOLDER_dur 0 / 0、fetch_decode_cold 361.5 / 376.0。
 
 > **ビットマップ窓採用の経緯（2026-08-16, 仮説 C）**: profiling（`docs/PERFORMANCE_NAV_RAPID_PHASE2_PROFILING.md`）で「遅い hit の実体はブラウザ側再デコード（再フェッチではない）」を確定し、(1) `ImageBitmap` の明示保持（current+4 近傍、500MB 予算、自前 `close()`）、(2) hit 時の canvas paint（デコード不要）、(3) 即時方向性スケジューラ（500ms タイマー廃止、現在画像フル解像度表示後にのみ充填開始）を実装した（設計: `docs/superpowers/specs/2026-08-16-nav-rapid-bitmap-window-design.md`）。NAV_rapid 中央値 377.25→33.7ms（−91.1%）、p95 973.6→260.4ms、hit_rate 0.714→1.0、PLACEHOLDER_dur p95 352.9→0ms（プレースホルダー知覚ゼロ）。NAV_rapid の p95 260ms は各 run 端で窓充填が追いつかない 1〜2 ステップ（~250-300ms、旧 miss 相当）で、中央値は fast クラスタに完全移行した。
 > **TTFI_cold / fetch_decode_cold の上方ドリフト注記**: 本計測で TTFI_cold median は 334.9→454.6ms（+36%）、fetch_decode_cold は 243.0→361.5ms（+49%）となったが、**fetch_decode_cold の計測経路（`src:set`→`decode:done`、protocolLoader / spica-img serve / ImageViewer direct load）は本変更で 1 行も変わっていない**。無変更経路が +49% 同方向に動いたことは、採用判定 2 回の独立 run（337.6/349.1 → 361.5/376.0）でも再現し、長時間のビルド・E2E 連続実行後のマシン条件（ページキャッシュ/熱/電源状態）ドリフトと判断した（上の「再アンカーの経緯」と同種）。ゲート上は TTFI_cold median 454.6 < 旧 baseline p95 499.1 で「p95 の揺れを超える悪化なし」を満たす。コード無変更で TTFI_cold/fetch_decode_cold が同方向に戻ったら再 baseline を検討すること。
