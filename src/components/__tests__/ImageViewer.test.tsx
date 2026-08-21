@@ -1034,7 +1034,41 @@ describe("ImageViewer", () => {
       const paint = (window.__PERF__ ?? []).find(
         (e) => e.name === "paint:done",
       );
-      expect(paint?.detail).toEqual({ path, thumbnail: false });
+      expect(paint?.detail).toEqual({ path, thumbnail: false, tier: "full" });
+      vi.unstubAllGlobals();
+      _setPerfEnabledForTests(null);
+      window.__PERF__ = [];
+    });
+
+    it("tags a thumbnail placeholder paint with tier 'thumbnail'", async () => {
+      _setPerfEnabledForTests(true);
+      window.__PERF__ = [];
+      vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+      // No retained bitmap and thumbnailDisplayed=true: the <img> placeholder
+      // path. jsdom's <img> has no decode(), so the paint mark fires through
+      // the synchronous fallback.
+      mockStore.ui.thumbnailDisplayed = true;
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = { ...data, src: "data:jpeg;base64,AAAA" };
+
+      const { container } = render(<ImageViewer />);
+      expect(container.querySelector("img")).toBeInTheDocument();
+
+      await vi.waitFor(() => {
+        const paint = (window.__PERF__ ?? []).find(
+          (e) => e.name === "paint:done",
+        );
+        expect(paint?.detail).toEqual({
+          path,
+          thumbnail: true,
+          tier: "thumbnail",
+        });
+      });
+
+      mockStore.ui.thumbnailDisplayed = false;
       vi.unstubAllGlobals();
       _setPerfEnabledForTests(null);
       window.__PERF__ = [];

@@ -14,6 +14,7 @@ import { thumbnailToImageData, useAppStore } from "../store";
 import { getBitmap } from "../utils/bitmapCache";
 import { retainElementAsBitmap } from "../utils/bitmapLoader";
 import { drawBitmapToCanvas } from "../utils/canvasDraw";
+import { displayTierOf } from "../utils/displayTier";
 import { getFilename } from "../utils/path";
 import { isPerfEnabled, perfMark } from "../utils/perf";
 import { loadImageViaProtocol } from "../utils/protocolLoader";
@@ -346,13 +347,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     const data = currentImage.data;
     if (!data || !isPerfEnabled()) return;
     const thumbnail = !!useAppStore.getState().ui.thumbnailDisplayed;
+    // Display tier of this paint (design spec 2026-08-21 §7.1). The bench
+    // keeps judging "full paint" by thumbnail === false; tier is the
+    // explicit label that will distinguish preview from full later.
+    const tier = displayTierOf(data, thumbnail);
     let cancelled = false;
 
     const markPaint = () => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!cancelled) {
-            perfMark("paint:done", { path: data.path, thumbnail });
+            perfMark("paint:done", { path: data.path, thumbnail, tier });
           }
         });
       });
