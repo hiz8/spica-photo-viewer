@@ -184,6 +184,9 @@ pub async fn generate_thumbnail_with_dimensions(
 ) -> Result<ThumbnailWithDimensions, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let _t = crate::utils::perf::PerfTimer::start("thumb_preview", &path);
+        // M5: validate before touching the cache dir, so a bad path fails
+        // without creating the real cache directory as a side effect.
+        validate_image_path(Path::new(&path))?;
         let cache_dir = cache::get_cache_dir()?;
         generate_and_cache(Path::new(&path), size, preview_box.as_deref(), &cache_dir)
     })

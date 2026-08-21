@@ -10,7 +10,8 @@ use fast_image_resize::{
 };
 use image::codecs::jpeg::JpegEncoder;
 use image::{
-    DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageFormat, ImageReader, RgbImage,
+    ColorType, DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageFormat,
+    ImageReader, RgbImage,
 };
 use std::io::Cursor;
 use std::path::Path;
@@ -109,11 +110,16 @@ fn decode_oriented(path: &Path) -> Result<Decoded, String> {
 
 /// RGB8 with any alpha composited onto black (the viewer background), so the
 /// JPEG preview looks identical to the original over the black canvas.
-fn flatten_to_rgb8(image: &DynamicImage) -> RgbImage {
+///
+/// M1: takes `image` by value and uses `into_*` instead of `to_*` — for the
+/// common no-alpha case `into_rgb8()` returns the decoder's own buffer with
+/// no copy at all (vs. `to_rgb8()`'s always-copy), which matters at ~72 MB
+/// for a 24 MP photo.
+fn flatten_to_rgb8(image: DynamicImage) -> RgbImage {
     if !image.color().has_alpha() {
-        return image.to_rgb8();
+        return image.into_rgb8();
     }
-    let rgba = image.to_rgba8();
+    let rgba = image.into_rgba8();
     let mut out = RgbImage::new(rgba.width(), rgba.height());
     for (dst, src) in out.pixels_mut().zip(rgba.pixels()) {
         let a = u32::from(src[3]);
@@ -124,6 +130,23 @@ fn flatten_to_rgb8(image: &DynamicImage) -> RgbImage {
         ];
     }
     out
+}
+
+/// M2: an ICC profile describes a specific colorspace's channel mapping. Once
+/// a non-RGB source (Luma/LumaA, or anything CMYK-ish the decoder already
+/// converted) is flattened to RGB8, a profile captured for the original
+/// colorspace no longer describes the output — drop it rather than mislabel
+/// the preview. RGB/RGBA at any bit depth still applies.
+fn icc_applies(color: ColorType) -> bool {
+    matches!(
+        color,
+        ColorType::Rgb8
+            | ColorType::Rgba8
+            | ColorType::Rgb16
+            | ColorType::Rgba16
+            | ColorType::Rgb32F
+            | ColorType::Rgba32F
+    )
 }
 
 fn resize_rgb8(src: RgbImage, tw: u32, th: u32) -> Result<RgbImage, String> {
@@ -176,8 +199,12 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
         decode_oriented(path)?
     };
     let (natural_width, natural_height) = (image.width(), image.height());
-    let rgb = flatten_to_rgb8(&image);
-    drop(image);
+    let icc = if icc_applies(image.color()) {
+        icc
+    } else {
+        None
+    };
+    let rgb = flatten_to_rgb8(image);
     let (preview, resized) = match fit_within(natural_width, natural_height, bbox) {
         Some((tw, th)) => {
             let _t = PerfTimer::start("preview_resize", &path_str);
@@ -252,6 +279,20 @@ mod tests {
         assert_eq!(fit_within(1024, 768, box_1080p()), None);
         assert_eq!(fit_within(1920, 1080, box_1080p()), None);
         assert_eq!(fit_within(4000, 1000, box_1080p()), Some((1920, 480)));
+    }
+
+    #[test]
+    fn icc_applies_only_to_rgb_like_color_types() {
+        assert!(icc_applies(ColorType::Rgb8));
+        assert!(icc_applies(ColorType::Rgba8));
+        assert!(icc_applies(ColorType::Rgb16));
+        assert!(icc_applies(ColorType::Rgba16));
+        assert!(icc_applies(ColorType::Rgb32F));
+        assert!(icc_applies(ColorType::Rgba32F));
+        assert!(!icc_applies(ColorType::L8));
+        assert!(!icc_applies(ColorType::La8));
+        assert!(!icc_applies(ColorType::L16));
+        assert!(!icc_applies(ColorType::La16));
     }
 
     #[test]

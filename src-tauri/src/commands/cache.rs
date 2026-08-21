@@ -34,6 +34,10 @@ pub const CACHE_DURATION: u64 = 24 * 60 * 60;
 /// D3: previews are ~0.3-1.5 MB each; cap the total so a 900-image folder on a
 /// 4K box cannot grow unbounded.
 pub const PREVIEW_CACHE_CAP_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// `write_atomic`'s temp files only ever live for milliseconds; anything
+/// still around this long is orphaned (crash mid-write) and invisible to
+/// `stats`, so `sweep` reclaims it.
+const STALE_TMP_AGE_SECS: u64 = 60 * 60;
 
 pub(crate) fn get_cache_dir() -> Result<PathBuf, String> {
     let cache_dir = if cfg!(target_os = "windows") {
@@ -125,12 +129,18 @@ pub fn source_stamp(path: &Path) -> Option<(u64, u64)> {
 /// Write to a sibling temp file, then rename over the target (atomic on NTFS;
 /// `std::fs::rename` replaces an existing destination on Windows).
 pub fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    // M3: pid+nanos alone can collide when the command path and the protocol
+    // path race to write the same preview within one tick; a process-wide
+    // counter makes every temp name unique regardless of timer resolution.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut tmp = target.as_os_str().to_owned();
-    tmp.push(format!(".tmp-{}-{}", std::process::id(), nanos));
+    tmp.push(format!(".tmp-{}-{}-{}", std::process::id(), nanos, seq));
     let tmp = PathBuf::from(tmp);
     fs::write(&tmp, bytes)?;
     match fs::rename(&tmp, target) {
@@ -187,8 +197,13 @@ pub fn store_thumbnail_entry(
 }
 
 /// Thumbnail lookup honoring I1: with a box requested, the matching preview
-/// (jpg + sidecar, fresh stamp) must be on disk — GIF excepted. Entries
-/// without a source stamp (pre-2026-08 format) count as stale.
+/// (jpg + sidecar, fresh stamp) must be on disk — GIF excepted. Non-error
+/// entries without a source stamp (pre-2026-08 format) count as stale. An
+/// "error" entry is exempt from the stamp check only when it carries no
+/// stamp at all (couldn't stat the source when the error was recorded);
+/// once a stamp is on record it is honored like any other entry, so
+/// replacing a corrupt file with a valid one clears "error" immediately
+/// instead of waiting out the 24h TTL (F3).
 pub fn lookup_thumbnail(
     cache_dir: &Path,
     path: &str,
@@ -196,7 +211,8 @@ pub fn lookup_thumbnail(
     preview_box: Option<&str>,
 ) -> Option<(String, Option<u32>, Option<u32>)> {
     let entry = read_entry(cache_dir, path, size)?;
-    if entry.thumbnail != "error" && !stamp_matches(path, entry.source_mtime, entry.source_size) {
+    let needs_stamp_check = entry.thumbnail != "error" || entry.source_mtime.is_some();
+    if needs_stamp_check && !stamp_matches(path, entry.source_mtime, entry.source_size) {
         return None;
     }
     if let Some(bk) = preview_box {
@@ -204,7 +220,9 @@ pub fn lookup_thumbnail(
             if entry.preview_box.as_deref() != Some(bk) {
                 return None;
             }
-            load_preview(cache_dir, path, bk)?;
+            // F1: metadata-only — do not read the (0.3-1.5 MB) preview jpg just
+            // to confirm it exists on this hot thumbnail-bar path.
+            preview_is_fresh(cache_dir, path, bk)?;
         }
     }
     Some((entry.thumbnail, entry.width, entry.height))
@@ -228,11 +246,12 @@ pub fn store_preview(
     .map_err(|e| format!("Failed to write sidecar: {e}"))
 }
 
-pub fn load_preview(
-    cache_dir: &Path,
-    path: &str,
-    box_key: &str,
-) -> Option<(Vec<u8>, PreviewSidecar)> {
+/// Metadata-only freshness check for the preview named `box_key`: parses the
+/// sidecar, confirms its stamp still matches the source file, and confirms
+/// the jpg is on disk — without reading the jpg's bytes (F1). Use this on
+/// hot paths that only need a yes/no answer; use `load_preview` when the
+/// bytes are actually needed.
+pub fn preview_is_fresh(cache_dir: &Path, path: &str, box_key: &str) -> Option<PreviewSidecar> {
     let side: PreviewSidecar = serde_json::from_str(
         &fs::read_to_string(preview_sidecar_file(cache_dir, path, box_key)).ok()?,
     )
@@ -240,6 +259,18 @@ pub fn load_preview(
     if !stamp_matches(path, Some(side.source_mtime), Some(side.source_size)) {
         return None;
     }
+    if !preview_file(cache_dir, path, box_key).is_file() {
+        return None;
+    }
+    Some(side)
+}
+
+pub fn load_preview(
+    cache_dir: &Path,
+    path: &str,
+    box_key: &str,
+) -> Option<(Vec<u8>, PreviewSidecar)> {
+    let side = preview_is_fresh(cache_dir, path, box_key)?;
     let bytes = fs::read(preview_file(cache_dir, path, box_key)).ok()?;
     Some((bytes, side))
 }
@@ -260,7 +291,20 @@ pub fn sweep(cache_dir: &Path, now_secs: u64, max_age_secs: u64, cap_bytes: u64)
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
-        if name.ends_with("_p.jpg") {
+        if name.contains(".tmp-") {
+            // M4: orphaned `write_atomic` temp file from a crash mid-write —
+            // normally live for milliseconds, so anything this old is dead
+            // and otherwise invisible to `stats`.
+            let mtime = fs::metadata(&p)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if now_secs.saturating_sub(mtime) > STALE_TMP_AGE_SECS && fs::remove_file(&p).is_ok() {
+                removed += 1;
+            }
+        } else if name.ends_with("_p.jpg") {
             let meta = match fs::metadata(&p) {
                 Ok(m) => m,
                 Err(_) => continue,
@@ -415,7 +459,13 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u64>, String> {
     let Ok(cache_dir) = get_cache_dir() else {
         return Ok(HashMap::new());
     };
-    Ok(stats(&cache_dir, current_unix_time(), CACHE_DURATION))
+    // M6: reads and parses every JSON file in the cache directory — off the
+    // async runtime's core threads, like `clear_old_cache`.
+    tauri::async_runtime::spawn_blocking(move || {
+        stats(&cache_dir, current_unix_time(), CACHE_DURATION)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -517,6 +567,50 @@ mod tests {
         assert!(lookup_thumbnail(dir.path(), &p, 20, Some("2560x1440")).is_none());
         // Without a box request the thumbnail alone is enough.
         assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_some());
+        // F1: the metadata-only check must catch a deleted jpg (sidecar still
+        // present) without ever reading the jpg's bytes.
+        fs::remove_file(preview_file(dir.path(), &p, "1920x1080")).unwrap();
+        assert!(lookup_thumbnail(dir.path(), &p, 20, Some("1920x1080")).is_none());
+    }
+
+    #[test]
+    fn lookup_treats_error_entry_stamp_like_any_other_once_recorded() {
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        let p = img.to_string_lossy().to_string();
+        let stamp = source_stamp(&img).unwrap();
+        let err_entry = CacheEntry {
+            thumbnail: "error".to_string(),
+            ..entry(Some(stamp), None)
+        };
+        store_thumbnail_entry(dir.path(), &p, 20, &err_entry).unwrap();
+        assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_some());
+        // Corrupt source replaced with a fixed one → stamp no longer matches →
+        // "error" clears immediately instead of sticking around for 24h (F3).
+        fs::write(&img, b"replaced with a different, valid-looking payload").unwrap();
+        assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_none());
+    }
+
+    #[test]
+    fn lookup_error_entry_without_a_stamp_is_still_fresh() {
+        let dir = create_temp_dir();
+        // No real file behind this path: mirrors an "error" entry written
+        // when the source couldn't even be stat'd.
+        let p = "/no/such/source.jpg".to_string();
+        let err_entry = CacheEntry {
+            thumbnail: "error".to_string(),
+            created: current_unix_time(),
+            width: None,
+            height: None,
+            preview_box: None,
+            source_mtime: None,
+            source_size: None,
+        };
+        store_thumbnail_entry(dir.path(), &p, 20, &err_entry).unwrap();
+        assert_eq!(
+            lookup_thumbnail(dir.path(), &p, 20, None),
+            Some(("error".to_string(), None, None))
+        );
     }
 
     #[test]
@@ -599,6 +693,24 @@ mod tests {
         assert!(load_preview(dir.path(), &preview_paths[0], "1920x1080").is_none());
         assert!(load_preview(dir.path(), &preview_paths[2], "1920x1080").is_some());
         assert!(!json_file(dir.path(), &old_path, 20).exists());
+    }
+
+    #[test]
+    fn sweep_removes_stale_tmp_files_but_leaves_in_flight_ones() {
+        let dir = create_temp_dir();
+        let now = 1_000_000u64;
+        // Orphaned from a crash mid-write — over an hour old.
+        let stale = dir.path().join("abc123.json.tmp-1-2-3");
+        fs::write(&stale, b"partial").unwrap();
+        filetime::set_file_mtime(&stale, filetime_for_test(now - 3700)).unwrap();
+        // A write in progress right now must survive the sweep.
+        let fresh = dir.path().join("def456_p.jpg.tmp-1-2-4");
+        fs::write(&fresh, b"partial").unwrap();
+        filetime::set_file_mtime(&fresh, filetime_for_test(now - 5)).unwrap();
+        let removed = sweep(dir.path(), now, 24 * 60 * 60, PREVIEW_CACHE_CAP_BYTES);
+        assert_eq!(removed, 1);
+        assert!(!stale.exists());
+        assert!(fresh.exists());
     }
 
     #[test]

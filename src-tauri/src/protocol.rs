@@ -62,6 +62,13 @@ pub fn error_response(status: u16, msg: &str) -> tauri::http::Response<Vec<u8>> 
 
 pub const EXPOSE_HEADERS: &str = "X-Spica-Natural-Width, X-Spica-Natural-Height";
 
+fn is_gif_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("gif"))
+        .unwrap_or(false)
+}
+
 /// `rest` = everything after "/preview/": "<W>x<H>/<percent-encoded absolute path>".
 pub fn resolve_preview_request(rest: &str) -> Result<(PreviewBox, PathBuf), String> {
     let (box_part, path_part) = rest
@@ -69,6 +76,11 @@ pub fn resolve_preview_request(rest: &str) -> Result<(PreviewBox, PathBuf), Stri
         .ok_or_else(|| "missing path".to_string())?;
     let bbox = PreviewBox::parse(box_part).ok_or_else(|| "unsupported preview box".to_string())?;
     let path = resolve_image_path(path_part)?;
+    // F2: GIF has no preview (design spec) — reject here rather than caching a
+    // static JPEG of frame 1 under a box key.
+    if is_gif_path(&path) {
+        return Err("no preview for gif".to_string());
+    }
     Ok((bbox, path))
 }
 
@@ -175,6 +187,17 @@ mod tests {
             resolve_preview_request("1920x1080/C%3A%5Cnope%5Cmissing.jpg")
                 .unwrap_err()
                 .contains("not found")
+        );
+    }
+
+    #[test]
+    fn test_resolve_preview_request_rejects_gif() {
+        let temp_dir = create_temp_dir();
+        let gif = create_test_gif(temp_dir.path(), "a.gif");
+        let err = resolve_preview_request(&format!("1920x1080{}", encode(&gif))).unwrap_err();
+        assert!(
+            err.contains("gif"),
+            "expected a gif-specific error, got: {err}"
         );
     }
 
