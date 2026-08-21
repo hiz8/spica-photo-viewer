@@ -2,8 +2,9 @@
  * Navigation benchmarks (NAV_warm / NAV_cold) plus final result aggregation.
  *
  * Both navigation metrics share one app process on purpose: warm needs a live
- * preload cache, and cold needs that same cache to have moved on (the app keeps
- * only current +/-5). TTFI_cold cannot share it - it needs a fresh process - so
+ * preload cache, and cold evicts the decoded cache (bitmaps + cache.preloaded)
+ * right before each jump so the target goes through the miss path whatever
+ * the retained window is. TTFI_cold cannot share it - it needs a fresh process - so
  * it is measured by e2e/specs/ttfi-cold.perf.ts in separate wdio launches and
  * read back here from the JSONL scratch file.
  *
@@ -23,6 +24,7 @@ import {
   type Summary,
   clearPerf,
   corpusFiles,
+  evictDecoded,
   extractTimings,
   getPerf,
   getStatus,
@@ -37,7 +39,11 @@ import { median, p95 } from "../lib/stats.ts";
 /** Mirrors PRELOAD_RANGE in src/constants/timing.ts (the app preloads +/-N). */
 const PRELOAD_RANGE = 5;
 
-/** Stride between NAV_cold jumps: > 2 * PRELOAD_RANGE, so never preloaded. */
+/**
+ * Stride between NAV_cold jumps. Kept > 2 * PRELOAD_RANGE from the original
+ * "far jump" protocol so the index sequence is unchanged; since D5 the miss
+ * is guaranteed by evictDecoded() rather than by distance.
+ */
 const COLD_JUMP_STRIDE = 13;
 
 /** NAV_rapid: sequential steps per run over the large corpus. */
@@ -232,7 +238,7 @@ describe("bench", () => {
     console.log(`NAV_warm samples: ${JSON.stringify(results.NAV_warm)}`);
   });
 
-  it("NAV_cold (medium corpus, far jumps outside the preload range)", async function () {
+  it("NAV_cold (medium corpus, memory-cold jumps: decoded cache evicted first)", async function () {
     this.timeout(900_000);
     const files = corpusFiles("medium");
     assertCorpusFits(files);
@@ -242,17 +248,22 @@ describe("bench", () => {
 
     for (let i = 0; i < N; i++) {
       index = (index + COLD_JUMP_STRIDE) % files.length;
-      // Let the preloader finish its pass for the CURRENT index before jumping,
-      // so its cleanup has evicted everything outside +/-5 and no in-flight
-      // load can drop the jump target into the cache behind our back.
+      // Memory-cold, disk-warm (design spec 2026-08-21 D5): once the
+      // preloader is quiet, drop every decoded bitmap and preload entry so
+      // the jump target is served through the miss path regardless of how
+      // wide the retained window is. Thumbnails and the on-disk cache stay,
+      // as they would for any image the user has browsed past before.
+      // Quiet first: evictDecoded() does not abort in-flight loads, and a
+      // load completing after the eviction would re-insert its entry.
       await waitForPreloadQuiet();
+      const evicted = await evictDecoded();
       await clearPerf();
       await navigateToImage(index);
       const entries = await waitForFullPaint(files[index]);
 
       if (preloadHit(entries, files[index]) === true) {
         console.warn(
-          `NAV_cold run ${i} (index ${index}): unexpected preload HIT - sample excluded`,
+          `NAV_cold run ${i} (index ${index}): unexpected preload HIT after evicting ${JSON.stringify(evicted)} - sample excluded`,
         );
         continue;
       }
