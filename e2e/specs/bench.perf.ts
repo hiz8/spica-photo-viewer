@@ -26,12 +26,14 @@ import {
   corpusFiles,
   evictDecoded,
   extractTimings,
+  getInnerWidth,
   getPerf,
   getStatus,
   navigateToImage,
   openImage,
   placeholderDuration,
   preloadHit,
+  visibleThumbnailCapacity,
   waitForFullPaint,
 } from "../lib/bench-helpers.ts";
 import { median, p95 } from "../lib/stats.ts";
@@ -57,6 +59,18 @@ const RAPID_STEPS = 12;
 const RAPID_MIN_INTERVAL_MS = Number(
   process.env.BENCH_RAPID_INTERVAL_MS ?? 250,
 );
+
+/**
+ * NAV_visible: a deterministic NON-monotonic walk over the large corpus —
+ * backward steps, far jumps and short forward runs, every target a thumbnail
+ * that is visible in the bar (asserted against window.innerWidth at run
+ * time). This is the Picasa guarantee under test: a visible thumbnail never
+ * shows a placeholder. Starts from index 0 each run:
+ * 0 -> 5 -> 2 -> 9 -> 1 -> 12 -> 7 -> 3 -> 14 -> 6 -> 11 -> 0 -> 8.
+ */
+const VISIBLE_SEQUENCE: readonly number[] = [
+  5, 2, 9, 1, 12, 7, 3, 14, 6, 11, 0, 8,
+];
 
 /**
  * The bench assumptions only hold for a corpus large enough that N forward
@@ -165,6 +179,15 @@ const results: Record<"NAV_warm" | "NAV_cold", number[]> = {
 
 /** NAV_rapid pools every step of every run - hits AND misses both count. */
 const rapid = {
+  fullPaint: [] as number[],
+  placeholderDur: [] as number[],
+  missFetchDecode: [] as number[],
+  hits: 0,
+  total: 0,
+};
+
+/** NAV_visible pools every step of every run - hits AND misses both count. */
+const visible = {
   fullPaint: [] as number[],
   placeholderDur: [] as number[],
   missFetchDecode: [] as number[],
@@ -349,6 +372,82 @@ describe("bench", () => {
     );
   });
 
+  it("NAV_visible (large corpus, non-monotonic walk over visible thumbnails)", async function () {
+    this.timeout(900_000);
+    const files = corpusFiles("large");
+    if (Math.max(...VISIBLE_SEQUENCE) >= files.length) {
+      throw new Error(
+        `large corpus has ${files.length} images, NAV_visible needs index ${Math.max(...VISIBLE_SEQUENCE)}`,
+      );
+    }
+    // The metric is only meaningful if every target thumbnail is actually
+    // visible in the bar; the bar shows floor(innerWidth / 40px) items.
+    const innerWidth = await getInnerWidth();
+    const capacity = visibleThumbnailCapacity(innerWidth);
+    if (capacity < files.length) {
+      throw new Error(
+        `NAV_visible needs every large-corpus thumbnail visible: a ${innerWidth}px window shows ${capacity}, corpus has ${files.length}`,
+      );
+    }
+
+    // Same deterministic start as NAV_rapid: index 0 displayed, preloader
+    // populated and quiet. (openImage on the already-open folder is a
+    // no-op for the caches; it just re-selects index 0.)
+    await clearPerf();
+    await openImage(files[0]);
+    await waitForFullPaint(files[0]);
+    await waitForPreloadSettled(Math.min(5, files.length - 1));
+    await waitForPreloadQuiet();
+
+    for (let run = 0; run < N; run++) {
+      if (run > 0) {
+        await clearPerf();
+        await navigateToImage(0);
+        await waitForFullPaint(files[0]);
+        await waitForPreloadQuiet();
+      }
+
+      const runFullPaints: number[] = [];
+      let runHits = 0;
+
+      for (const index of VISIBLE_SEQUENCE) {
+        await clearPerf();
+        const navAt = Date.now();
+        await navigateToImage(index);
+        const entries = await waitForFullPaint(files[index]);
+
+        const timings = extractTimings(entries, files[index]);
+        visible.total++;
+        visible.fullPaint.push(timings.fullPaint);
+        visible.placeholderDur.push(placeholderDuration(timings));
+        runFullPaints.push(timings.fullPaint);
+        const hit = preloadHit(entries, files[index]);
+        if (hit === true) {
+          visible.hits++;
+          runHits++;
+        }
+        if (hit === false && timings.fetchDecode !== null) {
+          visible.missFetchDecode.push(timings.fetchDecode);
+        }
+
+        // Same pacing floor as NAV_rapid (full paint awaited, >= 250ms).
+        const elapsed = Date.now() - navAt;
+        if (elapsed < RAPID_MIN_INTERVAL_MS) {
+          await browser.pause(RAPID_MIN_INTERVAL_MS - elapsed);
+        }
+      }
+      console.log(
+        `NAV_visible run ${run}: ${JSON.stringify(runFullPaints)} (hits ${runHits}/${VISIBLE_SEQUENCE.length})`,
+      );
+    }
+    console.log(
+      `NAV_visible samples: ${JSON.stringify(visible.fullPaint)} (hits ${visible.hits}/${visible.total})`,
+    );
+    console.log(
+      `PLACEHOLDER_dur_visible samples: ${JSON.stringify(visible.placeholderDur)}`,
+    );
+  });
+
   after(() => {
     const cold = readColdSamples();
     mkdirSync(RESULTS_DIR, { recursive: true });
@@ -376,9 +475,17 @@ describe("bench", () => {
           hit_rate: rapid.total > 0 ? rapid.hits / rapid.total : null,
         },
         PLACEHOLDER_dur: summarize(rapid.placeholderDur),
+        NAV_visible: {
+          ...summarize(visible.fullPaint),
+          steps: VISIBLE_SEQUENCE.length,
+          sequence: [...VISIBLE_SEQUENCE],
+          hit_rate: visible.total > 0 ? visible.hits / visible.total : null,
+        },
+        PLACEHOLDER_dur_visible: summarize(visible.placeholderDur),
         breakdown: {
           fetch_decode_cold: summarize(defined(cold.map((s) => s.fetchDecode))),
           fetch_decode_rapid_miss: summarize(rapid.missFetchDecode),
+          fetch_decode_visible_miss: summarize(visible.missFetchDecode),
         },
       },
     };
