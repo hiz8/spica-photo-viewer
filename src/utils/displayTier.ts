@@ -5,8 +5,8 @@ import type { ImageData } from "../types";
  * (`paint:done`.tier, `zoom:request`.displayedTier) and by the E2E status
  * hook so the bench can tell a placeholder paint from a real one without
  * inferring it. "preview" is reserved for the display-resolution tier
- * (design spec 2026-08-21 §6.4) — nothing produces it yet; until then a
- * non-placeholder display is always "full".
+ * (design spec 2026-08-21 §6.4), produced once the loader fetches a
+ * display-resolution preview instead of the full-resolution image.
  */
 export type DisplayTier = "none" | "thumbnail" | "preview" | "full";
 
@@ -16,5 +16,5 @@ export const displayTierOf = (
 ): DisplayTier => {
   if (!data) return "none";
   if (thumbnailDisplayed) return "thumbnail";
-  return "full";
+  return data.tier === "preview" ? "preview" : "full";
 };

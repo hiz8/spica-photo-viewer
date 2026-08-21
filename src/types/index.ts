@@ -13,6 +13,8 @@ export interface ImageData {
   width: number;
   height: number;
   format: string;
+  /** Decoded tier behind this entry: display-resolution preview or full resolution. Undefined = full (legacy). */
+  tier?: "preview" | "full";
 }
 
 export interface ProgressiveImageData {
