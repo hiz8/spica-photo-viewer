@@ -35,7 +35,7 @@ import {
   placeholderDuration,
   preloadHit,
   resetZoom,
-  visibleThumbnailCapacity,
+  visibleThumbnailRadius,
   waitForFullPaint,
   zoomIn,
 } from "../lib/bench-helpers.ts";
@@ -74,6 +74,13 @@ const RAPID_MIN_INTERVAL_MS = Number(
 const VISIBLE_SEQUENCE: readonly number[] = [
   5, 2, 9, 1, 12, 7, 3, 14, 6, 11, 0, 8,
 ];
+
+// The per-run reset navigates to index 0 and waits for its full paint; a
+// sequence ending at 0 would make that reset a same-index no-op with no new
+// paint:done and stall the run on the waitForFullPaint timeout.
+if (VISIBLE_SEQUENCE[VISIBLE_SEQUENCE.length - 1] === 0) {
+  throw new Error("VISIBLE_SEQUENCE must not end at the reset index 0");
+}
 
 /**
  * The bench assumptions only hold for a corpus large enough that N forward
@@ -194,6 +201,8 @@ const visible = {
   fullPaint: [] as number[],
   placeholderDur: [] as number[],
   missFetchDecode: [] as number[],
+  /** tier of the first non-placeholder paint per step (Phase 3 diagnostics). */
+  tiers: {} as Record<string, number>,
   hits: 0,
   total: 0,
 };
@@ -386,13 +395,15 @@ describe("bench", () => {
         `large corpus has ${files.length} images, NAV_visible needs index ${Math.max(...VISIBLE_SEQUENCE)}`,
       );
     }
-    // The metric is only meaningful if every target thumbnail is actually
-    // visible in the bar; the bar shows floor(innerWidth / 40px) items.
+    // Every target must be a thumbnail that is actually on screen. The bar
+    // centers the current item, so what matters is the one-sided radius
+    // from the worst-case position (index 0 / index N-1), not the total
+    // count of items the bar can show.
     const innerWidth = await getInnerWidth();
-    const capacity = visibleThumbnailCapacity(innerWidth);
-    if (capacity < files.length) {
+    const radius = visibleThumbnailRadius(innerWidth);
+    if (radius < files.length - 1) {
       throw new Error(
-        `NAV_visible needs every large-corpus thumbnail visible: a ${innerWidth}px window shows ${capacity}, corpus has ${files.length}`,
+        `NAV_visible needs every large-corpus thumbnail visible from every position: a ${innerWidth}px window shows ${radius} thumbnails per side, corpus needs ${files.length - 1}`,
       );
     }
 
@@ -426,6 +437,8 @@ describe("bench", () => {
         visible.total++;
         visible.fullPaint.push(timings.fullPaint);
         visible.placeholderDur.push(placeholderDuration(timings));
+        const tier = timings.fullTier ?? "unknown";
+        visible.tiers[tier] = (visible.tiers[tier] ?? 0) + 1;
         runFullPaints.push(timings.fullPaint);
         const hit = preloadHit(entries, files[index]);
         if (hit === true) {
@@ -457,6 +470,11 @@ describe("bench", () => {
   it("ZOOM_full (large corpus, zoom-in to full resolution)", async function () {
     this.timeout(600_000);
     const files = corpusFiles("large");
+    if (files.length < 2) {
+      throw new Error(
+        `large corpus has ${files.length} images, ZOOM_full needs at least 2`,
+      );
+    }
 
     for (let i = 0; i < N; i++) {
       const index = 1 + (i % (files.length - 1));
@@ -466,25 +484,27 @@ describe("bench", () => {
 
       await clearPerf();
       await zoomIn();
-      let sample: number | null = null;
+      const got = { sample: null as number | null };
       try {
         // 0 immediately when the display was already full resolution;
         // otherwise the time to the full-resolution paint the zoom triggers.
         await browser.waitUntil(
-          async () => extractZoomTiming(await getPerf(), files[index]) !== null,
+          async () => {
+            got.sample = extractZoomTiming(await getPerf(), files[index]);
+            return got.sample !== null;
+          },
           {
             timeout: 30_000,
             interval: 100,
             timeoutMsg: `no full-resolution paint after zoom:request for ${files[index]}`,
           },
         );
-        sample = extractZoomTiming(await getPerf(), files[index]);
       } catch (error) {
         console.warn(
           `ZOOM_full sample ${i}: ${(error as Error).message} - sample excluded`,
         );
       }
-      if (sample !== null) zoomFull.push(sample);
+      if (got.sample !== null) zoomFull.push(got.sample);
       // Back to fit so the saved view state of this image stays default.
       await resetZoom();
     }
@@ -523,6 +543,7 @@ describe("bench", () => {
           steps: VISIBLE_SEQUENCE.length,
           sequence: [...VISIBLE_SEQUENCE],
           hit_rate: visible.total > 0 ? visible.hits / visible.total : null,
+          tiers: visible.tiers,
         },
         PLACEHOLDER_dur_visible: summarize(visible.placeholderDur),
         ZOOM_full: summarize(zoomFull),

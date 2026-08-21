@@ -228,6 +228,17 @@ export const THUMBNAIL_ITEM_PITCH_PX = 40;
 export const visibleThumbnailCapacity = (innerWidth: number): number =>
   Math.floor(innerWidth / THUMBNAIL_ITEM_PITCH_PX);
 
+/**
+ * Thumbnails visible on ONE side of the centered active item. The bar
+ * scrolls the active item to the viewport center (ThumbnailBar.tsx
+ * scrollToActiveItem + 50vw container padding), so a corpus of N images is
+ * fully visible from every position only when this radius >= N - 1.
+ */
+export const visibleThumbnailRadius = (innerWidth: number): number =>
+  Math.floor(
+    (innerWidth - THUMBNAIL_ITEM_PITCH_PX) / 2 / THUMBNAIL_ITEM_PITCH_PX,
+  );
+
 export const getInnerWidth = (): Promise<number> =>
   browser.execute(() => window.innerWidth);
 

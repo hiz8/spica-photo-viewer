@@ -5,6 +5,7 @@ import {
   type PerfEntry,
   placeholderDuration,
   visibleThumbnailCapacity,
+  visibleThumbnailRadius,
 } from "./bench-helpers";
 
 describe("extractTimings", () => {
@@ -225,5 +226,14 @@ describe("visibleThumbnailCapacity", () => {
     expect(visibleThumbnailCapacity(1920)).toBe(48);
     expect(visibleThumbnailCapacity(2560)).toBe(64);
     expect(visibleThumbnailCapacity(639)).toBe(15);
+  });
+});
+
+describe("visibleThumbnailRadius", () => {
+  it("is the one-sided count from the centered active item", () => {
+    expect(visibleThumbnailRadius(2560)).toBe(31);
+    expect(visibleThumbnailRadius(1920)).toBe(23);
+    expect(visibleThumbnailRadius(1240)).toBe(15);
+    expect(visibleThumbnailRadius(1239)).toBe(14);
   });
 });
