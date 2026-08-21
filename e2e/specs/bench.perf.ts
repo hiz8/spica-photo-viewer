@@ -26,6 +26,7 @@ import {
   corpusFiles,
   evictDecoded,
   extractTimings,
+  extractZoomTiming,
   getInnerWidth,
   getPerf,
   getStatus,
@@ -33,8 +34,10 @@ import {
   openImage,
   placeholderDuration,
   preloadHit,
+  resetZoom,
   visibleThumbnailCapacity,
   waitForFullPaint,
+  zoomIn,
 } from "../lib/bench-helpers.ts";
 import { median, p95 } from "../lib/stats.ts";
 
@@ -194,6 +197,9 @@ const visible = {
   hits: 0,
   total: 0,
 };
+
+/** ZOOM_full: zoom:request -> full-resolution paint, one sample per run. */
+const zoomFull: number[] = [];
 
 const readColdSamples = (): ColdSample[] => {
   if (!existsSync(COLD_SAMPLES_FILE)) {
@@ -448,6 +454,43 @@ describe("bench", () => {
     );
   });
 
+  it("ZOOM_full (large corpus, zoom-in to full resolution)", async function () {
+    this.timeout(600_000);
+    const files = corpusFiles("large");
+
+    for (let i = 0; i < N; i++) {
+      const index = 1 + (i % (files.length - 1));
+      await clearPerf();
+      await navigateToImage(index);
+      await waitForFullPaint(files[index]);
+
+      await clearPerf();
+      await zoomIn();
+      let sample: number | null = null;
+      try {
+        // 0 immediately when the display was already full resolution;
+        // otherwise the time to the full-resolution paint the zoom triggers.
+        await browser.waitUntil(
+          async () => extractZoomTiming(await getPerf(), files[index]) !== null,
+          {
+            timeout: 30_000,
+            interval: 100,
+            timeoutMsg: `no full-resolution paint after zoom:request for ${files[index]}`,
+          },
+        );
+        sample = extractZoomTiming(await getPerf(), files[index]);
+      } catch (error) {
+        console.warn(
+          `ZOOM_full sample ${i}: ${(error as Error).message} - sample excluded`,
+        );
+      }
+      if (sample !== null) zoomFull.push(sample);
+      // Back to fit so the saved view state of this image stays default.
+      await resetZoom();
+    }
+    console.log(`ZOOM_full samples: ${JSON.stringify(zoomFull)}`);
+  });
+
   after(() => {
     const cold = readColdSamples();
     mkdirSync(RESULTS_DIR, { recursive: true });
@@ -482,6 +525,7 @@ describe("bench", () => {
           hit_rate: visible.total > 0 ? visible.hits / visible.total : null,
         },
         PLACEHOLDER_dur_visible: summarize(visible.placeholderDur),
+        ZOOM_full: summarize(zoomFull),
         breakdown: {
           fetch_decode_cold: summarize(defined(cold.map((s) => s.fetchDecode))),
           fetch_decode_rapid_miss: summarize(rapid.missFetchDecode),
