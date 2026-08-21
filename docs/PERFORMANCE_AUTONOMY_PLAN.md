@@ -60,15 +60,19 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 
 > **実装注記**: `measure: ttfi` 等の区間はアプリ内では計算しない。アプリは `detail.path` 付きの mark を `window.__PERF__` に積むだけで、対応付け（同一 path の `open:request` → `paint:done` など）はベンチハーネスがオフラインで行う。ナビゲーション中断や abort が起きても計測が壊れないため。
 > また `paint:done` は `detail.thumbnail` フラグを持つ。サムネイル先行表示→フル解像度差し替えの 2 段階描画では、**最初の paint:done（thumbnail 含む）までを TTFI**、`thumbnail: false` の paint までを `TTFI_full` として両方集計する。
+> `paint:done` は `detail.tier`（`"thumbnail" | "preview" | "full"`）も持つ（2026-08-21、プレビュー層の設計 D1）。`thumbnail === false` ⇔ `tier !== "thumbnail"`。bench の「フル品質 paint」判定は従来通り `thumbnail === false` で行い、`tier` は「最初の非プレースホルダー paint が preview か full か」の診断と ZOOM_full の対応付けに使う。`zoom:request`（detail: `path`, `zoom`, `displayedTier`）はズーム操作の要求時刻。
 > 2026-08 のプロトコル化以降、IPC 区間はホットパスに存在しない。旧 baseline の `ipc_cold`/`decode_cold` と新 `fetch_decode_cold` は比較不能（パイプライン相違）。
 
 集計する指標:
 
 - **TTFI_cold**: キャッシュ・preload 無しでの `ttfi`（= P1）
 - **NAV_warm**: preload ヒット時の `ttfi`（= P2 の理想ケース）
-- **NAV_cold**: preload ミス（遠方ジャンプ）時の `ttfi`（preload の効き検証用）
+- **NAV_cold**: **メモリ冷・ディスク温**の miss 経路。プリローダー静穏後にテストフック `evictDecoded()`（デコード済みビットマップ + `cache.preloaded` を全消去。サムネイルとディスクキャッシュは保持）を呼んでから stride ジャンプしたときの `ttfi`。2026-08-21 に再定義（旧定義「±5 の外への遠方ジャンプ」は保持窓が可視範囲に広がると成立しないため）。旧 baseline とは比較不能
 - **NAV_rapid**: preload の定常化を待たない連続ナビゲーション（large コーパス、12 ステップ × N run、ステップ間隔はフル品質 paint 待ち + 下限 250ms）での各ステップの `open:request` → `paint:done`(thumbnail: false)。**ヒット/ミスを除外せず全ステップを pool する**（n = runs × steps）。固定間隔の fire-and-forget を使わない理由: ImageViewer は後続ナビで進行中ロードを abort するため、固定間隔では MISS ステップのフル品質 paint が発生せず、生存サンプルが preload ヒットに偏って中央値が壊れる。`hit_rate` を診断用に併記。
 - **PLACEHOLDER_dur**: NAV_rapid の同一サンプルにおける「最初の `paint:done`（サムネイル fallback）→ フル品質 `paint:done`」の間隔。プレースホルダー非表示（最初の paint が既にフル品質）のときは **0 が正しい値**。注意: 0 は「ぼやけが見えない」ことしか意味せず「即時」を意味しない（preload Map ヒットでもブラウザ側のデコード済みリソースが失われていると paint まで数百 ms〜1.5s かかる「遅い hit」が存在する）。体感即時の判定は必ず NAV_rapid とペアで行う。
+- **NAV_visible**（2026-08-21 追加、プレビュー層ワークストリームの主指標）: large コーパス（16 枚、全てサムネイルバー可視範囲内であることを `window.innerWidth / 40px` で実行時に検証）を index 0 から決定的な**非単調** 12 ステップ列 `[5,2,9,1,12,7,3,14,6,11,0,8]`（後退・ジャンプ・前進を含む）でナビゲーションしたときの各ステップの `open:request` → `paint:done`(thumbnail: false)。ペーシングは NAV_rapid と同じ（フル品質 paint 待ち + 下限 250ms）。hit/miss を除外せず pool（n = runs × 12 = 84 固定）、`hit_rate` を併記。「サムネイルが見えている画像はプレースホルダー無しで即時表示」（Picasa 同等）の数値定義
+- **PLACEHOLDER_dur_visible**: NAV_visible の同一サンプルにおける「最初の paint → フル品質 paint」の間隔。0 が正しい値（PLACEHOLDER_dur と同じ読み方）
+- **ZOOM_full**（2026-08-21 追加）: large コーパスで画像を表示後に `zoomIn()` したときの `zoom:request` → 最初の `paint:done`(tier: "full")。要求時の表示が既に full なら **0**（アップグレード不要）。現行は常に 0。表示解像度プレビュー層の導入後は 20MP フルデコード相当（~400ms 帯）に移る見込みで、これは D1 で承認されたトレードオフ — 回帰ゲートではなく悪化監視（目安: 中央値 ≤ 500ms）。n = runs
 - 内訳（`fetch_decode`）: ボトルネック切り分け用
 
 > NAV_rapid / PLACEHOLDER_dur の n は runs × steps（既定 7 × 12 = 84）で固定。除外ルールがないため n < runs × steps は計測失敗を意味する（save-baseline がガードする）。n=84 の nearest-rank p95 は n=7 と違い外れ値 1 個では汚染されないため、この 2 指標に限り p95 も参考値以上に使ってよい。
@@ -199,9 +203,20 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
       "hit_rate": 0.71
     },
     "PLACEHOLDER_dur": { "median_ms": 0, "p95_ms": 0, "n": 84 },
+    "NAV_visible": {
+      "median_ms": 0,
+      "p95_ms": 0,
+      "n": 84,
+      "steps": 12,
+      "sequence": [5, 2, 9, 1, 12, 7, 3, 14, 6, 11, 0, 8],
+      "hit_rate": 1.0
+    },
+    "PLACEHOLDER_dur_visible": { "median_ms": 0, "p95_ms": 0, "n": 84 },
+    "ZOOM_full": { "median_ms": 0, "p95_ms": 0, "n": 7 },
     "breakdown": {
       "fetch_decode_cold": { "median_ms": 0, "p95_ms": 0, "n": 7 },
-      "fetch_decode_rapid_miss": { "median_ms": 0, "p95_ms": 0, "n": 0 }
+      "fetch_decode_rapid_miss": { "median_ms": 0, "p95_ms": 0, "n": 0 },
+      "fetch_decode_visible_miss": { "median_ms": 0, "p95_ms": 0, "n": 0 }
     }
   }
 }

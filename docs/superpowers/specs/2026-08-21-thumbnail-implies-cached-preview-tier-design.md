@@ -160,7 +160,7 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
 
 - `paint:done` detail: `{ path, thumbnail: boolean, tier: "thumbnail"|"preview"|"full" }`。`thumbnail === false` ⇔ tier ∈ {preview, full}。**`bench-helpers.ts` の `fullPaint`（最初の thumbnail:false）はコード無変更で「最初の非プレースホルダー paint」になる**（D1）
 - 新指標 **NAV_visible**（本サイクルの主指標）: large コーパス（16 枚、全部が可視範囲）で preview 窓の充填（`waitForPreloadSettled(15)`）後、決定的な非単調 12 ステップ列（例 `[5,2,9,1,12,7,3,14,6,11,0,8]`：後退・ジャンプ・前進を含む）を NAV_rapid と同じ 250ms 下限・full paint 待ちで N=7 run。n = 84 固定、pool 中央値/p95、`hit_rate`、同サンプルの **PLACEHOLDER_dur_visible**
-- 新指標 **ZOOM_full**: large コーパスで preview hit 中に `zoomIn()` → `zoom:request` → `paint:done`(tier full)。N=7。回帰ガード（現行の 20MP デコード相当 ~400ms。目標は設けず、悪化監視のみ）。**Phase 1 時点では値は `null`**（現行はズームで再 paint が起きないため `paint:done` が出ない）— n ガードは Phase 3 から有効化し、Phase 3 の bench で初回記録する
+- 新指標 **ZOOM_full**: large コーパスで preview hit 中に `zoomIn()` → `zoom:request` → `paint:done`(tier full)。N=7。回帰ガード（現行の 20MP デコード相当 ~400ms。目標は設けず、悪化監視のみ）。`zoom:request` 時点の表示 tier が既に full なら **0**（アップグレード不要 = 正しい値）。**Phase 1 では全サンプル 0（n=7）**。Phase 3 で ~400ms 帯（20MP フルデコード）へ移るのは D1 で承認済みのトレードオフであり回帰とは扱わない（目安: 中央値 ≤ 500ms、超えたら調査）
 - **NAV_cold**（D5）: ジャンプ前に `__SPICA_TEST__.evictDecoded()`（bitmapCache + `cache.preloaded` を破棄、thumbnails/ディスクは保持）。意味は「ディスク温・メモリ冷の miss 経路」。旧 baseline とは比較不能（新 baseline を記録）
 - NAV_rapid / NAV_warm / TTFI_cold: プロトコル無変更（回帰ゲート）。NAV_rapid は窓拡大で全 hit になり NAV_visible と収束する見込み
 - `save-baseline.mjs` の n ガードに NAV_visible（84）/ ZOOM_full（7）を追加。スキーマ §4 更新

@@ -43,3 +43,6 @@ For detailed specifications, see [PROJECT_SPEC.md](./PROJECT_SPEC.md).
 - N=7 の nearest-rank p95 は最大値と一致するため外れ値 1 個で汚染される。回帰判定は中央値を主、p95 を参考値とする（特に NAV_warm）。
 - ベンチ実行中は他の重負荷アプリを起動しない（同一マシン・同一条件での比較のみ有効。OS ページキャッシュの影響で再起動直後の初回 run は遅く出る）。
 - 体感ナビゲーション（NAV_rapid ワークストリーム）の目標: NAV_rapid フル品質 paint 中央値 < 100ms かつ PLACEHOLDER_dur 中央値 < 80ms（またはプレースホルダー非表示 = 0）。NAV_rapid / PLACEHOLDER_dur の n は runs × steps（7 × 12 = 84）に満たなければその run は無効。サイクル毎の改善判定は NAV_rapid 中央値で行い、PLACEHOLDER_dur の進捗は p95 で追う（hit 優勢時に中央値は 0 に飽和するため）。
+- プレビュー層ワークストリーム（2026-08-21〜、設計: `docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md`）の主指標は **NAV_visible**（可視サムネイルへの非単調ナビ 12 ステップ × 7 run、n=84 固定）。目標: **NAV_visible 中央値 < 100ms かつ hit_rate = 1.0 かつ PLACEHOLDER_dur_visible p95 < 80ms（目標 0）**。サイクル毎の改善判定は NAV_visible 中央値で行う。
+- `paint:done` の `tier`（thumbnail / preview / full）により「フル品質 paint」= 最初の非プレースホルダー paint（preview または full）と定義する（D1）。フル解像度への到達は **ZOOM_full**（zoom:request → tier full の paint。表示が既に full なら 0）で別途監視し、回帰ゲートには含めない（目安: 中央値 ≤ 500ms）。
+- NAV_cold は「プリローダー静穏 → `evictDecoded()` → ジャンプ」のメモリ冷・ディスク温経路（2026-08-21 再定義）。旧 baseline の NAV_cold とは比較しない。
