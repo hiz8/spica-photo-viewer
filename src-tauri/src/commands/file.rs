@@ -1,4 +1,6 @@
-use crate::utils::image::{generate_thumbnail, get_image_dimensions, is_supported_image};
+use crate::commands::cache::{self, CacheEntry, PreviewSidecar};
+use crate::utils::image::is_supported_image;
+use crate::utils::preview::{self, PreviewBox};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -23,6 +25,8 @@ pub struct ThumbnailWithDimensions {
     pub thumbnail_base64: String,
     pub original_width: u32,
     pub original_height: u32,
+    /// true when a display-resolution preview for the requested box is now on disk (I1).
+    pub preview_available: bool,
 }
 
 #[tauri::command]
@@ -94,37 +98,97 @@ pub fn get_startup_file() -> Result<Option<String>, String> {
     Ok(None)
 }
 
-#[tauri::command]
-pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result<String, String> {
-    let image_path = Path::new(&path);
-    validate_image_path(image_path)?;
+fn is_gif_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("gif"))
+        .unwrap_or(false)
+}
 
-    let thumbnail_size = size.unwrap_or(30);
+/// Thumbnail + (non-GIF, box given) preview from one decode, both written to
+/// `cache_dir` before returning, so "thumbnail exists" implies "preview exists".
+pub fn generate_and_cache(
+    path: &Path,
+    size: u32,
+    preview_box: Option<&str>,
+    cache_dir: &Path,
+) -> Result<ThumbnailWithDimensions, String> {
+    validate_image_path(path)?;
+    let path_str = path.to_string_lossy().to_string();
+    let bbox = match preview_box {
+        Some(s) => {
+            Some(PreviewBox::parse(s).ok_or_else(|| format!("unsupported preview box: {s}"))?)
+        }
+        None => None,
+    };
+    let stamp =
+        cache::source_stamp(path).ok_or_else(|| "Failed to stat source file".to_string())?;
+    let now = cache::current_unix_time();
 
-    generate_thumbnail(image_path, thumbnail_size)
-        .map_err(|e| format!("Failed to generate thumbnail: {}", e))
+    let (thumbnail_base64, natural_width, natural_height, stored_box) =
+        match (bbox, is_gif_path(path)) {
+            (Some(bbox), false) => {
+                let g = preview::generate(path, bbox, size)?;
+                cache::store_preview(
+                    cache_dir,
+                    &path_str,
+                    &bbox.key(),
+                    &g.preview_jpeg,
+                    &PreviewSidecar {
+                        natural_width: g.natural_width,
+                        natural_height: g.natural_height,
+                        source_mtime: stamp.0,
+                        source_size: stamp.1,
+                        created: now,
+                    },
+                )?;
+                (
+                    g.thumbnail_base64,
+                    g.natural_width,
+                    g.natural_height,
+                    Some(bbox.key()),
+                )
+            }
+            _ => {
+                let (b64, w, h) = preview::thumbnail_only(path, size)?;
+                (b64, w, h, None)
+            }
+        };
+    cache::store_thumbnail_entry(
+        cache_dir,
+        &path_str,
+        size,
+        &CacheEntry {
+            thumbnail: thumbnail_base64.clone(),
+            created: now,
+            width: Some(natural_width),
+            height: Some(natural_height),
+            preview_box: stored_box.clone(),
+            source_mtime: Some(stamp.0),
+            source_size: Some(stamp.1),
+        },
+    )?;
+    Ok(ThumbnailWithDimensions {
+        thumbnail_base64,
+        original_width: natural_width,
+        original_height: natural_height,
+        preview_available: stored_box.is_some(),
+    })
 }
 
 #[tauri::command]
 pub async fn generate_thumbnail_with_dimensions(
     path: String,
     size: u32,
+    preview_box: Option<String>,
 ) -> Result<ThumbnailWithDimensions, String> {
-    let _t = crate::utils::perf::PerfTimer::start("thumbnail", &path);
-    let image_path = Path::new(&path);
-    validate_image_path(image_path)?;
-
-    let (original_width, original_height) = get_image_dimensions(image_path)
-        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
-
-    let thumbnail_base64 = generate_thumbnail(image_path, size)
-        .map_err(|e| format!("Failed to generate thumbnail: {}", e))?;
-
-    Ok(ThumbnailWithDimensions {
-        thumbnail_base64,
-        original_width,
-        original_height,
+    tauri::async_runtime::spawn_blocking(move || {
+        let _t = crate::utils::perf::PerfTimer::start("thumb_preview", &path);
+        let cache_dir = cache::get_cache_dir()?;
+        generate_and_cache(Path::new(&path), size, preview_box.as_deref(), &cache_dir)
     })
+    .await
+    .map_err(|e| format!("thumbnail task failed: {e}"))?
 }
 
 /// Validates the file path and converts it to a short path name (8.3 format) for Windows.
@@ -261,6 +325,75 @@ mod tests {
     use super::*;
     use crate::test_utils::*;
     use std::fs;
+
+    #[test]
+    fn generate_and_cache_writes_thumbnail_entry_and_preview() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let img = create_gradient_jpeg(dir.path(), "big.jpg", 2400, 1600);
+        let out = generate_and_cache(&img, 20, Some("1920x1080"), cache.path()).unwrap();
+        assert!(out.preview_available);
+        assert_eq!((out.original_width, out.original_height), (2400, 1600));
+        assert!(!out.thumbnail_base64.is_empty());
+        let p = img.to_string_lossy().to_string();
+        assert!(
+            crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, Some("1920x1080"))
+                .is_some()
+        );
+        let (bytes, side) =
+            crate::commands::cache::load_preview(cache.path(), &p, "1920x1080").unwrap();
+        assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 1620);
+        assert_eq!((side.natural_width, side.natural_height), (2400, 1600));
+    }
+
+    #[test]
+    fn generate_and_cache_gif_has_no_preview() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let gif = create_test_gif(dir.path(), "a.gif");
+        let out = generate_and_cache(&gif, 20, Some("1920x1080"), cache.path()).unwrap();
+        assert!(!out.preview_available);
+        let p = gif.to_string_lossy().to_string();
+        assert!(
+            crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, Some("1920x1080"))
+                .is_some()
+        );
+        assert!(crate::commands::cache::load_preview(cache.path(), &p, "1920x1080").is_none());
+    }
+
+    #[test]
+    fn generate_and_cache_without_box_only_writes_the_thumbnail() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let img = create_gradient_jpeg(dir.path(), "a.jpg", 640, 480);
+        let out = generate_and_cache(&img, 20, None, cache.path()).unwrap();
+        assert!(!out.preview_available);
+        let p = img.to_string_lossy().to_string();
+        assert!(crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, None).is_some());
+        assert!(
+            crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, Some("1920x1080"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn generate_and_cache_rejects_invalid_box() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let img = create_gradient_jpeg(dir.path(), "a.jpg", 640, 480);
+        assert!(generate_and_cache(&img, 20, Some("999x999"), cache.path()).is_err());
+    }
+
+    #[tokio::test]
+    async fn generate_thumbnail_with_dimensions_command_rejects_missing_file() {
+        let r = generate_thumbnail_with_dimensions(
+            "C:\\nope\\missing.jpg".to_string(),
+            20,
+            Some("1920x1080".to_string()),
+        )
+        .await;
+        assert!(r.is_err());
+    }
 
     #[tokio::test]
     async fn test_get_folder_images_with_valid_folder() {
@@ -469,61 +602,6 @@ mod tests {
         // by testing the function doesn't panic and returns Ok
         let result = get_startup_file();
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_valid_image() {
-        let temp_dir = create_temp_dir();
-        let image_path = create_test_jpeg(temp_dir.path(), "thumbnail_test.jpg");
-
-        let result =
-            generate_image_thumbnail(image_path.to_string_lossy().to_string(), Some(30)).await;
-        assert!(result.is_ok());
-
-        let thumbnail_data = result.unwrap();
-        assert!(!thumbnail_data.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_default_size() {
-        let temp_dir = create_temp_dir();
-        let image_path = create_test_jpeg(temp_dir.path(), "thumbnail_test.jpg");
-
-        let result = generate_image_thumbnail(image_path.to_string_lossy().to_string(), None).await;
-        assert!(result.is_ok());
-
-        let thumbnail_data = result.unwrap();
-        assert!(!thumbnail_data.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_nonexistent_file() {
-        let result = generate_image_thumbnail("/nonexistent/file.jpg".to_string(), Some(30)).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("File not found"));
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_unsupported_format() {
-        let temp_dir = create_temp_dir();
-        let text_file = temp_dir.path().join("text.txt");
-        fs::write(&text_file, "not an image").unwrap();
-
-        let result =
-            generate_image_thumbnail(text_file.to_string_lossy().to_string(), Some(30)).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported file format"));
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_corrupted_file() {
-        let temp_dir = create_temp_dir();
-        let corrupted_path = create_fake_image(temp_dir.path(), "corrupted.jpg");
-
-        let result =
-            generate_image_thumbnail(corrupted_path.to_string_lossy().to_string(), Some(30)).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to generate thumbnail"));
     }
 
     #[test]
