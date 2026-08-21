@@ -45,5 +45,34 @@ for (const [key, m] of [
   }
 }
 
+// NAV_visible / PLACEHOLDER_dur_visible: same pooling rule as NAV_rapid
+// (steps x runs, no exclusion), so a short pool means steps failed to paint.
+const visible = data.metrics?.NAV_visible;
+const expectedVisibleN = data.runs * (visible?.steps ?? 0);
+for (const [key, m] of [
+  ["NAV_visible", visible],
+  ["PLACEHOLDER_dur_visible", data.metrics?.PLACEHOLDER_dur_visible],
+]) {
+  if (
+    !m ||
+    m.median_ms === null ||
+    m.n !== expectedVisibleN ||
+    expectedVisibleN === 0
+  ) {
+    throw new Error(
+      `${newest.f}: ${key} is degenerate (median_ms=${m?.median_ms}, n=${m?.n}, expected n=${expectedVisibleN}) - refusing to save as baseline`,
+    );
+  }
+}
+
+// ZOOM_full: one sample per run. median_ms === 0 is legitimate (the display
+// was already full resolution when the zoom was requested).
+const zoom = data.metrics?.ZOOM_full;
+if (!zoom || zoom.median_ms === null || zoom.n < data.runs) {
+  throw new Error(
+    `${newest.f}: ZOOM_full is degenerate (median_ms=${zoom?.median_ms}, n=${zoom?.n}, runs=${data.runs}) - refusing to save as baseline`,
+  );
+}
+
 copyFileSync(join(dir, newest.f), join(dir, "baseline.json"));
 console.log(`baseline.json <- ${newest.f}`);
