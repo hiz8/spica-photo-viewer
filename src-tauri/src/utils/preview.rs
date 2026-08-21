@@ -145,7 +145,12 @@ fn flatten_to_rgb8(image: DynamicImage) -> RgbImage {
 /// checked against the *original* (pre-decode) color type, not the decoded
 /// `DynamicImage`'s — `image`'s JPEG decoder always hands back RGB8 pixels
 /// for a CMYK/YCCK source, so gating on the decoded type would let a CMYK
-/// profile through and stamp it onto already-converted RGB pixels.
+/// profile through and stamp it onto already-converted RGB pixels. This
+/// check alone is not enough for every decoder, though: `image` 0.25's JPEG
+/// decoder reports CMYK/YCCK sources as `original_color_type() == Rgb8` too
+/// (it collapses to RGB at the same point it configures pixel decoding), so
+/// `icc_describes_rgb` below double-checks the profile's own declared data
+/// color space.
 fn icc_applies(original: ExtendedColorType) -> bool {
     matches!(
         original,
@@ -156,6 +161,13 @@ fn icc_applies(original: ExtendedColorType) -> bool {
             | ExtendedColorType::Rgb32F
             | ExtendedColorType::Rgba32F
     )
+}
+
+/// ICC profiles declare their data colour space in header bytes 16..20
+/// ("RGB ", "CMYK", "GRAY", ...). Only an RGB profile can describe the RGB
+/// pixels we emit; a CMYK/Gray profile would mis-colour the preview.
+fn icc_describes_rgb(icc: &[u8]) -> bool {
+    icc.len() >= 20 && &icc[16..20] == b"RGB "
 }
 
 fn resize_rgb8(src: RgbImage, tw: u32, th: u32) -> Result<RgbImage, String> {
@@ -221,11 +233,11 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
         decode_oriented(path)?
     };
     let (natural_width, natural_height) = (image.width(), image.height());
-    let icc = if icc_applies(original_color) {
-        icc
-    } else {
-        None
-    };
+    // X1 + coordinator follow-up: the decoder's original color type is
+    // checked (correct for formats whose decoders do report CMYK, e.g.
+    // TIFF), AND the profile's own header is checked, because `image`
+    // 0.25's JPEG decoder reports CMYK/YCCK sources as RGB regardless.
+    let icc = icc.filter(|p| icc_applies(original_color) && icc_describes_rgb(p));
     let rgb = flatten_to_rgb8(image);
     let (preview, resized) = match fit_within(natural_width, natural_height, bbox) {
         Some((tw, th)) => {
@@ -322,6 +334,23 @@ mod tests {
     }
 
     #[test]
+    fn icc_describes_rgb_reads_the_profile_header() {
+        let mut rgb_icc: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
+        rgb_icc[16..20].copy_from_slice(b"RGB ");
+        assert!(icc_describes_rgb(&rgb_icc));
+
+        let mut cmyk_icc = rgb_icc.clone();
+        cmyk_icc[16..20].copy_from_slice(b"CMYK");
+        assert!(!icc_describes_rgb(&cmyk_icc));
+
+        let mut gray_icc = rgb_icc.clone();
+        gray_icc[16..20].copy_from_slice(b"GRAY");
+        assert!(!icc_describes_rgb(&gray_icc));
+
+        assert!(!icc_describes_rgb(&[0u8; 10]));
+    }
+
+    #[test]
     fn generate_resizes_large_image_into_box_and_reports_natural_size() {
         let dir = create_temp_dir();
         let src = create_gradient_jpeg(dir.path(), "big.jpg", 2400, 1600);
@@ -374,7 +403,8 @@ mod tests {
     #[test]
     fn generate_carries_the_icc_profile_into_the_preview() {
         let dir = create_temp_dir();
-        let icc: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
+        let mut icc: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
+        icc[16..20].copy_from_slice(b"RGB ");
         let src = create_jpeg_with_metadata(dir.path(), "icc.jpg", 2400, 1600, None, Some(&icc));
         let g = generate(&src, box_1080p(), 20).unwrap();
         let mut dec = ImageReader::new(std::io::Cursor::new(&g.preview_jpeg))
@@ -383,6 +413,25 @@ mod tests {
             .into_decoder()
             .unwrap();
         assert_eq!(dec.icc_profile().unwrap(), Some(icc));
+    }
+
+    #[test]
+    fn generate_drops_cmyk_icc_profiles() {
+        let dir = create_temp_dir();
+        // The decoded pixels are RGB either way (X1's caveat: `image` 0.25's
+        // JPEG decoder reports CMYK/YCCK sources as RGB too), so this profile
+        // header is the only signal that stops it being carried through.
+        let mut icc: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
+        icc[16..20].copy_from_slice(b"CMYK");
+        let src =
+            create_jpeg_with_metadata(dir.path(), "cmyk_icc.jpg", 2400, 1600, None, Some(&icc));
+        let g = generate(&src, box_1080p(), 20).unwrap();
+        let mut dec = ImageReader::new(std::io::Cursor::new(&g.preview_jpeg))
+            .with_guessed_format()
+            .unwrap()
+            .into_decoder()
+            .unwrap();
+        assert_eq!(dec.icc_profile().unwrap(), None);
     }
 
     #[test]
@@ -395,7 +444,12 @@ mod tests {
         // own JpegEncoder ICC cap (~16.7 MB), so `create_jpeg_with_metadata`
         // itself would panic writing the *source* fixture before this test
         // ever reaches the code under test.
-        let icc: Vec<u8> = vec![7u8; 254 * 65519 + 1];
+        let mut icc: Vec<u8> = vec![7u8; 254 * 65519 + 1];
+        // Must declare RGB or the coordinator follow-up's `icc_describes_rgb`
+        // gate would drop it before `encode_jpeg` ever sees it, which would
+        // make this test pass for the wrong reason (never exercising the
+        // too-large-to-attach degrade path it's meant to cover).
+        icc[16..20].copy_from_slice(b"RGB ");
         let src = create_jpeg_with_metadata(dir.path(), "huge_icc.jpg", 200, 100, None, Some(&icc));
         let g = generate(&src, box_1080p(), 20).unwrap();
         let decoded = image::load_from_memory(&g.preview_jpeg).unwrap();
