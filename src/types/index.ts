@@ -26,6 +26,7 @@ export interface ThumbnailWithDimensions {
   thumbnail_base64: string;
   original_width: number;
   original_height: number;
+  preview_available: boolean;
 }
 
 export interface UIState {

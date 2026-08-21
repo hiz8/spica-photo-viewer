@@ -121,6 +121,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -143,9 +144,22 @@ describe("useThumbnailGenerator", () => {
       await act(async () => {
         vi.advanceTimersByTime(1);
         await Promise.resolve();
+        await vi.runAllTimersAsync();
       });
 
       expect(mockInvoke).toHaveBeenCalled();
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "generate_thumbnail_with_dimensions",
+        {
+          path: expect.any(String),
+          size: THUMBNAIL_SIZE,
+          previewBox: expect.any(String),
+        },
+      );
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "set_cached_thumbnail",
+        expect.anything(),
+      );
     });
 
     it("should reset debounce on new navigation", async () => {
@@ -161,6 +175,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -213,6 +228,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -248,6 +264,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -310,6 +327,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -351,6 +369,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -395,6 +414,11 @@ describe("useThumbnailGenerator", () => {
         "/test/image0.jpg",
         { base64: "cachedBase64", width: 1920, height: 1080 },
       );
+      expect(mockInvoke).toHaveBeenCalledWith("get_cached_thumbnail", {
+        path: "/test/image0.jpg",
+        size: THUMBNAIL_SIZE,
+        previewBox: expect.stringMatching(/^\d+x\d+$/),
+      });
       // Should not call generate_thumbnail_with_dimensions
       expect(mockInvoke).not.toHaveBeenCalledWith(
         "generate_thumbnail_with_dimensions",
@@ -417,6 +441,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "newBase64",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -436,6 +461,7 @@ describe("useThumbnailGenerator", () => {
         {
           path: "/test/image0.jpg",
           size: THUMBNAIL_SIZE,
+          previewBox: expect.any(String),
         },
       );
     });
@@ -512,6 +538,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -556,6 +583,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -599,6 +627,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -678,6 +707,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -709,6 +739,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -739,6 +770,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;

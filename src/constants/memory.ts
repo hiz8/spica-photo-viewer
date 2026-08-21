@@ -10,3 +10,13 @@ export const BITMAP_CACHE_BUDGET_BYTES = 500 * 1024 * 1024;
  * With the current image this is 5 x ~80MB = ~400MB for the large corpus.
  */
 export const BITMAP_WINDOW_SIZE = 4;
+
+/**
+ * Screen-box buckets for display-resolution previews (design spec D2).
+ * Mirrors ALLOWED_PREVIEW_BOXES in src-tauri/src/utils/preview.rs.
+ */
+export const PREVIEW_BOXES: ReadonlyArray<readonly [number, number]> = [
+  [1920, 1080],
+  [2560, 1440],
+  [3840, 2160],
+];
