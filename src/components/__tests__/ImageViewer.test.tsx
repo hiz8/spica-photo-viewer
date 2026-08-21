@@ -1057,21 +1057,23 @@ describe("ImageViewer", () => {
       const { container } = render(<ImageViewer />);
       expect(container.querySelector("img")).toBeInTheDocument();
 
-      await vi.waitFor(() => {
-        const paint = (window.__PERF__ ?? []).find(
-          (e) => e.name === "paint:done",
-        );
-        expect(paint?.detail).toEqual({
-          path,
-          thumbnail: true,
-          tier: "thumbnail",
+      try {
+        await vi.waitFor(() => {
+          const paint = (window.__PERF__ ?? []).find(
+            (e) => e.name === "paint:done",
+          );
+          expect(paint?.detail).toEqual({
+            path,
+            thumbnail: true,
+            tier: "thumbnail",
+          });
         });
-      });
-
-      mockStore.ui.thumbnailDisplayed = false;
-      vi.unstubAllGlobals();
-      _setPerfEnabledForTests(null);
-      window.__PERF__ = [];
+      } finally {
+        mockStore.ui.thumbnailDisplayed = false;
+        vi.unstubAllGlobals();
+        _setPerfEnabledForTests(null);
+        window.__PERF__ = [];
+      }
     });
   });
 });

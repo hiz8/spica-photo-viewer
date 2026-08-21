@@ -14,6 +14,9 @@ describe("testHooks", () => {
   afterEach(() => {
     _setPerfEnabledForTests(null);
     clearBitmaps();
+    useAppStore.getState().setThumbnailDisplayed(false);
+    useAppStore.getState().setImageData(null);
+    useAppStore.getState().setZoom(100);
   });
 
   it("installs window.__SPICA_TEST__ when perf is enabled", () => {
@@ -66,9 +69,6 @@ describe("testHooks", () => {
 
     useAppStore.getState().setThumbnailDisplayed(true);
     expect(window.__SPICA_TEST__?.getStatus().displayedTier).toBe("thumbnail");
-
-    useAppStore.getState().setThumbnailDisplayed(false);
-    useAppStore.getState().setImageData(null);
   });
 
   it("evictDecoded drops every retained bitmap and preload entry", () => {
