@@ -174,7 +174,7 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
 ### 7.3 採否ゲート（CLAUDE.md 準拠）
 
 - 改善ゲート: **NAV_visible 中央値 ≥10% 改善**（Phase 1 baseline 比。予測: ~400ms → ~30ms）かつ hit_rate = 1.0、PLACEHOLDER_dur_visible p95 < 80ms
-- 回帰ゲート: TTFI_cold / NAV_warm / NAV_rapid が p95 の揺れを超えて悪化しない。ZOOM_full が ~400ms 帯を大きく超えない。サムネイル生成（`thumb_preview` op、large 1 枚あたり）が **+30% 以内**（超えたら Phase 4-b を先に実施）
+- 回帰ゲート: TTFI_cold / NAV_warm / NAV_rapid が p95 の揺れを超えて悪化しない。ZOOM_full は回帰ゲートに含めず悪化監視のみ（目安: 中央値 ≤ 500ms、超えたら調査。§7.1）。サムネイル生成（`thumb_preview` op、large 1 枚あたり）が **+30% 以内**（超えたら Phase 4-b を先に実施）
 - n 完全性: NAV_visible / NAV_rapid / PLACEHOLDER 系 = 84、それ以外 = 7
 - 正しさ: `npm test` / `cargo test --lib` / `npm run test:e2e`（新規 4 ケース含む）green
 - 採用時 `npm run bench:baseline` を同一コミット（メインセッション）。不成立なら revert
@@ -218,7 +218,7 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
 
 ## 付録: 数値の根拠
 
-- 可視枚数: `App.css` `.thumbnail-item { width: 30px; margin: 0 5px }` → ピッチ 40px。コンテナ padding `50vw` で current が中央 → 可視 = `innerWidth / 40`
+- 可視枚数: `App.css` `.thumbnail-item { width: 30px; margin: 0 5px }` → ピッチ 40px。コンテナ padding `50vw` で current が中央 → 可視 = `innerWidth / 40`。現在画像が中央に来るため片側は `floor((innerWidth − 40) / 80)`（1920px で ±23、2560px で ±31）
 - fit 表示の最大寸法: `calculateFitToWindowZoom` の有効領域 = `(innerWidth − 40) × (innerHeight − 80 − 40)` ≤ 画面ボックス。よって「画面ボックスに収めたプレビュー」は fit 表示で拡大されない
 - メモリ: RGBA 4B/px。20MP = 80MB、1920×1080 ボックス 3:2 = 1620×1080 = 1.75MP = 7.0MB
 - miss コスト・serve コスト: `docs/PERFORMANCE_NAV_RAPID_PHASE2_PROFILING.md` §B/§C（serve ~9ms、20MP ブラウザデコード ~390ms）
