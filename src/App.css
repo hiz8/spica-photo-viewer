@@ -329,7 +329,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #333;
+  /* No background: a thumbnail that is not generated yet is blank space
+     (Picasa-style). Loaded items are fully covered by .thumbnail-image. */
 }
 
 .thumbnail-item:hover {
@@ -340,6 +341,10 @@ body {
 .thumbnail-item.active {
   border-color: #2563eb;
   transform: scale(1.2);
+}
+
+.thumbnail-item.error {
+  background: #333;
 }
 
 .thumbnail-image {

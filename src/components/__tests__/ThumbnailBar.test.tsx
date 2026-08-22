@@ -100,7 +100,7 @@ describe("ThumbnailBar", () => {
       expect(image).toHaveAttribute("alt", "image0.jpg");
     });
 
-    it("should render loading placeholder when no thumbnail data", () => {
+    it("should render an empty item (no icon, no image) when no thumbnail data", () => {
       const images = [createMockImageInfo(0)];
       mockStoreState.folder.images = images;
       mockStoreState.currentImage.index = 0;
@@ -108,7 +108,13 @@ describe("ThumbnailBar", () => {
 
       render(<ThumbnailBar />);
 
-      expect(screen.getByText("⏳")).toBeInTheDocument();
+      // Picasa-style: a not-yet-generated thumbnail is blank space that still
+      // occupies its slot (the <button> keeps layout and click target).
+      const item = screen.getByRole("button");
+      expect(item).toBeEmptyDOMElement();
+      expect(item).not.toHaveClass("error");
+      expect(screen.queryByRole("img")).not.toBeInTheDocument();
+      expect(screen.queryByText("⏳")).not.toBeInTheDocument();
     });
 
     it("should render error placeholder when thumbnail has error", () => {
@@ -120,6 +126,7 @@ describe("ThumbnailBar", () => {
       render(<ThumbnailBar />);
 
       expect(screen.getByText("❌")).toBeInTheDocument();
+      expect(screen.getByRole("button")).toHaveClass("error");
     });
 
     it("should apply active class to current image thumbnail", () => {
@@ -366,9 +373,12 @@ describe("ThumbnailBar", () => {
       render(<ThumbnailBar />);
 
       // Check different states are rendered
+      const items = screen.getAllByRole("button");
       expect(screen.getByAltText("image0.jpg")).toBeInTheDocument(); // Image rendered
-      expect(screen.getByText("⏳")).toBeInTheDocument(); // Loading placeholder
+      expect(items[1]).toBeEmptyDOMElement(); // Loading: blank slot, no icon
+      expect(screen.queryByText("⏳")).not.toBeInTheDocument();
       expect(screen.getByText("❌")).toBeInTheDocument(); // Error placeholder
+      expect(items[2]).toHaveClass("error");
     });
   });
 });

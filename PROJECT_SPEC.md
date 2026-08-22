@@ -112,6 +112,7 @@ spica-photo-viewer/
   - 100% opacity on hover
   - Current image always centered
   - Empty space for first/last images to maintain center position
+  - Thumbnails not generated yet are blank (no icon, no background) like Picasa Photo Viewer; the slot keeps its size so layout, centering and the click target are unchanged. Only failed thumbnails show an error placeholder
 
 - **Image Info Overlay** (top of thumbnail bar):
 
