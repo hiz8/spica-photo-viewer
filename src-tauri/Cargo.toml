@@ -35,6 +35,8 @@ walkdir = "2"
 rayon = "1.12"
 percent-encoding = "2"
 tauri-plugin-wdio-webdriver = { version = "1.3", optional = true }
+fast_image_resize = { version = "6.1", features = ["image", "rayon"] }
+jpeg-encoder = { version = "0.7", features = ["simd"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
@@ -43,4 +45,5 @@ windows = { version = "0.62", features = ["Win32_Storage_FileSystem", "Win32_Fou
 tempfile = "3.27"
 tokio-test = "0.4"
 tokio = { version = "1", features = ["macros", "rt"] }
+filetime = "0.2.29"
 

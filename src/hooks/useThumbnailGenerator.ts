@@ -9,6 +9,8 @@ import {
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
 import { getFilename } from "../utils/path";
+import { currentPreviewBox } from "../utils/previewBox";
+import type { ThumbnailWithDimensions } from "../types";
 
 /**
  * Hook for centralized thumbnail generation with priority queue
@@ -44,12 +46,15 @@ export const useThumbnailGenerator = () => {
       try {
         setThumbnailGeneration({ currentGeneratingPath: imagePath });
 
-        // First, try to get from backend cache
+        const previewBox = currentPreviewBox();
+
+        // First, try to get from backend cache (thumbnail + matching preview)
         const cachedThumbnail = await invoke<
           [string, number | null, number | null] | null
         >("get_cached_thumbnail", {
           path: imagePath,
           size: THUMBNAIL_SIZE,
+          previewBox,
         });
 
         if (signal.aborted) return false;
@@ -64,30 +69,15 @@ export const useThumbnailGenerator = () => {
           // If cached entry lacks dimensions, regenerate
         }
 
-        // Generate new thumbnail with dimensions
-        const result = await invoke<{
-          thumbnail_base64: string;
-          original_width: number;
-          original_height: number;
-        }>("generate_thumbnail_with_dimensions", {
-          path: imagePath,
-          size: THUMBNAIL_SIZE,
-        });
+        // Generate thumbnail + preview from one decode; the command writes
+        // both to the disk cache before returning (I1), so no write-back here.
+        const result = await invoke<ThumbnailWithDimensions>(
+          "generate_thumbnail_with_dimensions",
+          { path: imagePath, size: THUMBNAIL_SIZE, previewBox },
+        );
 
         if (signal.aborted) return false;
 
-        // Cache the generated thumbnail with dimensions in backend
-        await invoke("set_cached_thumbnail", {
-          path: imagePath,
-          thumbnail: result.thumbnail_base64,
-          size: THUMBNAIL_SIZE,
-          width: result.original_width,
-          height: result.original_height,
-        });
-
-        if (signal.aborted) return false;
-
-        // Store in frontend cache
         setCachedThumbnail(imagePath, {
           base64: result.thumbnail_base64,
           width: result.original_width,

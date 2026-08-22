@@ -3,7 +3,9 @@
 //! replacing the decode→re-encode→base64→IPC pipeline. Windows WebView2
 //! exposes the scheme as http://spica-img.localhost/<percent-encoded path>.
 
+use crate::commands::cache::{self, PreviewSidecar};
 use crate::utils::image::is_supported_image;
+use crate::utils::preview::{self, PreviewBox};
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
 
@@ -58,6 +60,95 @@ pub fn error_response(status: u16, msg: &str) -> tauri::http::Response<Vec<u8>> 
         .expect("static error response must build")
 }
 
+pub const EXPOSE_HEADERS: &str = "X-Spica-Natural-Width, X-Spica-Natural-Height";
+
+fn is_gif_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("gif"))
+        .unwrap_or(false)
+}
+
+/// `rest` = everything after "/preview/": "<W>x<H>/<percent-encoded absolute path>".
+pub fn resolve_preview_request(rest: &str) -> Result<(PreviewBox, PathBuf), String> {
+    let (box_part, path_part) = rest
+        .split_once('/')
+        .ok_or_else(|| "missing path".to_string())?;
+    let bbox = PreviewBox::parse(box_part).ok_or_else(|| "unsupported preview box".to_string())?;
+    let path = resolve_image_path(path_part)?;
+    // F2: GIF has no preview (design spec) — reject here rather than caching a
+    // static JPEG of frame 1 under a box key.
+    if is_gif_path(&path) {
+        return Err("no preview for gif".to_string());
+    }
+    Ok((bbox, path))
+}
+
+pub struct ServedPreview {
+    pub bytes: Vec<u8>,
+    pub natural_width: u32,
+    pub natural_height: u32,
+    // Distinguishes a fresh generation from a cache hit; asserted on directly
+    // by this module's own tests. Not read by the lib.rs handler today (the
+    // response is identical either way) — kept for future perf/logging use.
+    #[allow(dead_code)]
+    pub generated: bool,
+}
+
+/// Serve from the cache when the preview exists and its source stamp still
+/// matches; otherwise generate it now (self-healing, e.g. after a cap sweep)
+/// and store it for the next request.
+pub fn ensure_preview(
+    cache_dir: &Path,
+    path: &Path,
+    bbox: PreviewBox,
+    thumb_size: u32,
+) -> Result<ServedPreview, String> {
+    let path_str = path.to_string_lossy().to_string();
+    if let Some((bytes, side)) = cache::load_preview(cache_dir, &path_str, &bbox.key()) {
+        return Ok(ServedPreview {
+            bytes,
+            natural_width: side.natural_width,
+            natural_height: side.natural_height,
+            generated: false,
+        });
+    }
+    let stamp =
+        cache::source_stamp(path).ok_or_else(|| "Failed to stat source file".to_string())?;
+    let g = preview::generate(path, bbox, thumb_size)?;
+    cache::store_preview(
+        cache_dir,
+        &path_str,
+        &bbox.key(),
+        &g.preview_jpeg,
+        &PreviewSidecar {
+            natural_width: g.natural_width,
+            natural_height: g.natural_height,
+            source_mtime: stamp.0,
+            source_size: stamp.1,
+            created: cache::current_unix_time(),
+        },
+    )?;
+    Ok(ServedPreview {
+        bytes: g.preview_jpeg,
+        natural_width: g.natural_width,
+        natural_height: g.natural_height,
+        generated: true,
+    })
+}
+
+pub fn preview_response(served: &ServedPreview) -> tauri::http::Response<Vec<u8>> {
+    tauri::http::Response::builder()
+        .status(200)
+        .header("Content-Type", "image/jpeg")
+        .header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
+        .header("Access-Control-Expose-Headers", EXPOSE_HEADERS)
+        .header("X-Spica-Natural-Width", served.natural_width.to_string())
+        .header("X-Spica-Natural-Height", served.natural_height.to_string())
+        .body(served.bytes.clone())
+        .unwrap_or_else(|_| error_response(500, "response build failed"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +161,59 @@ mod tests {
             "/{}",
             utf8_percent_encode(&path.to_string_lossy(), NON_ALPHANUMERIC)
         )
+    }
+
+    #[test]
+    fn test_resolve_preview_request_parses_box_and_path() {
+        let temp_dir = create_temp_dir();
+        let img = create_test_jpeg(temp_dir.path(), "p.jpg");
+        let rest = format!("1920x1080{}", encode(&img));
+        let (bbox, path) = resolve_preview_request(&rest).unwrap();
+        assert_eq!(bbox.key(), "1920x1080");
+        assert_eq!(path, img);
+    }
+
+    #[test]
+    fn test_resolve_preview_request_rejects_bad_box_and_bad_path() {
+        let temp_dir = create_temp_dir();
+        let img = create_test_jpeg(temp_dir.path(), "p.jpg");
+        assert!(
+            resolve_preview_request(&format!("1234x567{}", encode(&img)))
+                .unwrap_err()
+                .contains("box")
+        );
+        assert!(resolve_preview_request("1920x1080").is_err());
+        assert!(
+            resolve_preview_request("1920x1080/C%3A%5Cnope%5Cmissing.jpg")
+                .unwrap_err()
+                .contains("not found")
+        );
+    }
+
+    #[test]
+    fn test_resolve_preview_request_rejects_gif() {
+        let temp_dir = create_temp_dir();
+        let gif = create_test_gif(temp_dir.path(), "a.gif");
+        let err = resolve_preview_request(&format!("1920x1080{}", encode(&gif))).unwrap_err();
+        assert!(
+            err.contains("gif"),
+            "expected a gif-specific error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_ensure_preview_generates_then_hits_cache() {
+        let temp_dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let img = create_gradient_jpeg(temp_dir.path(), "big.jpg", 2400, 1600);
+        let bbox = PreviewBox::parse("1920x1080").unwrap();
+        let first = ensure_preview(cache.path(), &img, bbox, 20).unwrap();
+        assert!(first.generated);
+        assert_eq!((first.natural_width, first.natural_height), (2400, 1600));
+        assert_eq!(image::load_from_memory(&first.bytes).unwrap().width(), 1620);
+        let second = ensure_preview(cache.path(), &img, bbox, 20).unwrap();
+        assert!(!second.generated);
+        assert_eq!(second.bytes, first.bytes);
     }
 
     #[test]

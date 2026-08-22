@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RAPID_NAVIGATION_THRESHOLD_MS } from "../../constants/timing";
+import { clearBitmaps, setBitmap } from "../../utils/bitmapCache";
 import { _setPerfEnabledForTests } from "../../utils/perf";
 import { createImageInfo } from "../../utils/testFactories";
 import { mockImageData, mockImageList } from "../../utils/testUtils";
+
+// jsdom has no ImageBitmap; the bitmap cache only touches width/height/close.
+const fakeBitmap = (width: number, height: number) =>
+  ({ width, height, close: vi.fn() }) as unknown as ImageBitmap;
 
 // Mock the invoke function before importing the store
 vi.mock("@tauri-apps/api/core", () => ({
@@ -1009,6 +1014,36 @@ describe("AppStore", () => {
       expect(state.ui.error).not.toBeNull();
       expect(state.ui.error?.message).toContain("Failed to open image");
     });
+
+    it("should not blank the viewer when reopening the already-displayed image", async () => {
+      mockInvoke.mockResolvedValue(mockImageList);
+
+      const existingData = mockImageData;
+      useAppStore.setState((state) => ({
+        currentImage: {
+          ...state.currentImage,
+          path: "/test/image2.png",
+          index: 1,
+          data: existingData,
+          error: null,
+        },
+      }));
+
+      const { openImageFromPath } = useAppStore.getState();
+
+      await openImageFromPath("/test/image2.png");
+
+      const state = useAppStore.getState();
+      // Reopening the currently displayed image must not blank the canvas:
+      // data/index stay exactly as they were, and the short-circuit happens
+      // before any folder rescan.
+      expect(state.currentImage.data).toBe(existingData);
+      expect(state.currentImage.index).toBe(1);
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "get_folder_images",
+        expect.anything(),
+      );
+    });
   });
 
   describe("cache management", () => {
@@ -1283,7 +1318,12 @@ describe("AppStore", () => {
       navigateToImage(0); // Navigate to image1.jpg
 
       const state = useAppStore.getState();
-      expect(state.currentImage.data).toEqual(cachedImageData);
+      // No bitmap retained and no tier on the cached entry, so the hit
+      // branch labels the displayed tier "full" (see effectiveTier fallback).
+      expect(state.currentImage.data).toEqual({
+        ...cachedImageData,
+        tier: "full",
+      });
       expect(state.currentImage.path).toBe("/test/image1.jpg");
     });
 
@@ -1839,6 +1879,7 @@ describe("AppStore", () => {
       expect(preload?.detail).toMatchObject({
         path: "C:\\photos\\b.jpg",
         hit: false,
+        tier: null,
       });
     });
 
@@ -1860,6 +1901,103 @@ describe("AppStore", () => {
 
       const preload = (window.__PERF__ ?? []).find((e) => e.name === "preload");
       expect(preload?.detail).toMatchObject({ hit: true });
+    });
+  });
+
+  describe("navigateToImage preload tier labelling", () => {
+    beforeEach(() => {
+      _setPerfEnabledForTests(true);
+      window.__PERF__ = [];
+    });
+
+    afterEach(() => {
+      clearBitmaps();
+      _setPerfEnabledForTests(null);
+      window.__PERF__ = [];
+    });
+
+    const setUpHit = (
+      entry: { tier?: "preview" | "full" },
+      dims: { width: number; height: number },
+    ) => {
+      const initialState = useAppStore.getState();
+      useAppStore.setState({
+        folder: {
+          ...initialState.folder,
+          images: mockImageList,
+          imagesByPath: new Map(mockImageList.map((img) => [img.path, img])),
+        },
+        cache: {
+          ...initialState.cache,
+          preloaded: new Map([
+            [
+              "/test/image1.jpg",
+              {
+                ...mockImageData,
+                path: "/test/image1.jpg",
+                width: dims.width,
+                height: dims.height,
+                ...entry,
+              },
+            ],
+          ]),
+        },
+      });
+    };
+
+    it("labels the displayed tier 'preview' from a retained preview bitmap smaller than natural size", () => {
+      setUpHit({ tier: "preview" }, { width: 5472, height: 3648 });
+      setBitmap("/test/image1.jpg", fakeBitmap(1620, 1080), "preview");
+
+      useAppStore.getState().navigateToImage(0);
+
+      const state = useAppStore.getState();
+      expect(state.currentImage.data?.tier).toBe("preview");
+      const preload = (window.__PERF__ ?? []).find((e) => e.name === "preload");
+      expect(preload?.detail).toMatchObject({ hit: true, tier: "preview" });
+    });
+
+    it("labels the displayed tier 'preview' when the entry says 'full' but only a preview bitmap is retained", () => {
+      setUpHit({ tier: "full" }, { width: 5472, height: 3648 });
+      setBitmap("/test/image1.jpg", fakeBitmap(1620, 1080), "preview");
+
+      useAppStore.getState().navigateToImage(0);
+
+      expect(useAppStore.getState().currentImage.data?.tier).toBe("preview");
+    });
+
+    it("labels the displayed tier 'full' when the retained bitmap equals the natural size (unscaled preview)", () => {
+      setUpHit({ tier: "preview" }, { width: 1024, height: 768 });
+      setBitmap("/test/image1.jpg", fakeBitmap(1024, 768), "preview");
+
+      useAppStore.getState().navigateToImage(0);
+
+      expect(useAppStore.getState().currentImage.data?.tier).toBe("full");
+    });
+
+    it("labels the displayed tier 'full' when a full-tier bitmap is retained", () => {
+      setUpHit({ tier: "preview" }, { width: 5472, height: 3648 });
+      setBitmap("/test/image1.jpg", fakeBitmap(5472, 3648), "full");
+
+      useAppStore.getState().navigateToImage(0);
+
+      expect(useAppStore.getState().currentImage.data?.tier).toBe("full");
+    });
+
+    it("falls back to the preloaded entry's own tier when no bitmap is retained", () => {
+      setUpHit({ tier: "preview" }, { width: 5472, height: 3648 });
+
+      useAppStore.getState().navigateToImage(0);
+
+      expect(useAppStore.getState().currentImage.data?.tier).toBe("preview");
+    });
+
+    it("falls back to 'full' when no bitmap is retained and the entry has no tier", () => {
+      setUpHit({}, { width: 5472, height: 3648 });
+
+      useAppStore.getState().navigateToImage(0);
+
+      expect(useAppStore.getState().currentImage.data?.tier).toBe("full");
     });
   });
 });

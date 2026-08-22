@@ -60,7 +60,8 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 
 > **実装注記**: `measure: ttfi` 等の区間はアプリ内では計算しない。アプリは `detail.path` 付きの mark を `window.__PERF__` に積むだけで、対応付け（同一 path の `open:request` → `paint:done` など）はベンチハーネスがオフラインで行う。ナビゲーション中断や abort が起きても計測が壊れないため。
 > また `paint:done` は `detail.thumbnail` フラグを持つ。サムネイル先行表示→フル解像度差し替えの 2 段階描画では、**最初の paint:done（thumbnail 含む）までを TTFI**、`thumbnail: false` の paint までを `TTFI_full` として両方集計する。
-> `paint:done` は `detail.tier`（`"thumbnail" | "preview" | "full"`）も持つ（2026-08-21、プレビュー層の設計 D1）。`thumbnail === false` ⇔ `tier !== "thumbnail"`。bench の「フル品質 paint」判定は従来通り `thumbnail === false` で行い、`tier` は「最初の非プレースホルダー paint が preview か full か」の診断と ZOOM_full の対応付けに使う。`zoom:request`（detail: `path`, `zoom`, `displayedTier`）はズーム操作の要求時刻。
+> `paint:done` は `detail.tier`（`"thumbnail" | "preview" | "full"`）も持つ（2026-08-21、プレビュー層の設計 D1）。`thumbnail === false` ⇔ `tier !== "thumbnail"`。bench の「フル品質 paint」判定は従来通り `thumbnail === false` で行い、`tier` は「最初の非プレースホルダー paint が preview か full か」の診断と ZOOM_full の対応付けに使う。`zoom:request`（detail: `path`, `zoom`, `displayedTier`）はズーム操作の要求時刻。**Phase 3 実装後（2026-08-22）**: 表示解像度プレビュー層が有効なため、最初の非プレースホルダー paint は通常 **preview tier**（キャッシュ済みプレビュー、またはディスク上のプレビューをデコード）であり、`tier: "full"` はズームアップグレード時か、プレビューが不要なほど小さい画像（ダウンスケール不要）に限られる。`preload` イベント（`src/store/index.ts`）の detail にも `tier`（ヒット時に表示される ImageData の tier、`null` when not hit）が含まれる。
+> **Rust 側 op（`SPICA_PERF=1`、2026-08-22 追加）**: `thumb_preview`（`generate_thumbnail_with_dimensions` 全体 = 1 回のデコードからサムネイル + プレビューを生成しディスクへ書くまで。内訳 `preview_decode` / `preview_resize` / `preview_encode`）、`serve_preview`（`/preview/<box>/` 配信。キャッシュ命中時は読み出しのみ）。生成コストの回帰判定は `npm run profile:rust`（キャッシュ削除後、large 16 枚）の `thumb_preview` 中央値で行い、Phase 2 着手前の `thumbnail` 中央値 T0 の 1.3 倍以内を要求する。 実装: デコード `image`（zune-jpeg）、リサイズ `fast_image_resize` Lanczos3 + rayon、エンコード `jpeg-encoder` q85 4:2:0 SIMD。Phase 2 の実測は §8 注記（T0 231.3 → T1 287.6ms）。
 > 2026-08 のプロトコル化以降、IPC 区間はホットパスに存在しない。旧 baseline の `ipc_cold`/`decode_cold` と新 `fetch_decode_cold` は比較不能（パイプライン相違）。
 
 集計する指標:
@@ -70,7 +71,7 @@ Picasa Photo Viewer と比較して現状 Spica が遅い、以下の 2 点を�
 - **NAV_cold**: **メモリ冷・ディスク温**の miss 経路。プリローダー静穏後にテストフック `evictDecoded()`（デコード済みビットマップ + `cache.preloaded` を全消去。サムネイルとディスクキャッシュは保持）を呼んでから stride ジャンプしたときの `ttfi`。2026-08-21 に再定義（旧定義「±5 の外への遠方ジャンプ」は保持窓が可視範囲に広がると成立しないため）。旧 baseline とは比較不能
 - **NAV_rapid**: preload の定常化を待たない連続ナビゲーション（large コーパス、12 ステップ × N run、ステップ間隔はフル品質 paint 待ち + 下限 250ms）での各ステップの `open:request` → `paint:done`(thumbnail: false)。**ヒット/ミスを除外せず全ステップを pool する**（n = runs × steps）。固定間隔の fire-and-forget を使わない理由: ImageViewer は後続ナビで進行中ロードを abort するため、固定間隔では MISS ステップのフル品質 paint が発生せず、生存サンプルが preload ヒットに偏って中央値が壊れる。`hit_rate` を診断用に併記。
 - **PLACEHOLDER_dur**: NAV_rapid の同一サンプルにおける「最初の `paint:done`（サムネイル fallback）→ フル品質 `paint:done`」の間隔。プレースホルダー非表示（最初の paint が既にフル品質）のときは **0 が正しい値**。注意: 0 は「ぼやけが見えない」ことしか意味せず「即時」を意味しない（preload Map ヒットでもブラウザ側のデコード済みリソースが失われていると paint まで数百 ms〜1.5s かかる「遅い hit」が存在する）。体感即時の判定は必ず NAV_rapid とペアで行う。
-- **NAV_visible**（2026-08-21 追加、プレビュー層ワークストリームの主指標）: large コーパス（16 枚、全てサムネイルバー可視範囲内であることを実行時に検証: バーは現在画像を中央に置くため片側の可視枚数 `floor((innerWidth − 40) / 80)` が `N − 1` 以上であること）を index 0 から決定的な**非単調** 12 ステップ列 `[5,2,9,1,12,7,3,14,6,11,0,8]`（後退・ジャンプ・前進を含む）でナビゲーションしたときの各ステップの `open:request` → `paint:done`(thumbnail: false)。ペーシングは NAV_rapid と同じ（フル品質 paint 待ち + 下限 250ms）。hit/miss を除外せず pool（n = runs × 12 = 84 固定）、`hit_rate` を併記。「サムネイルが見えている画像はプレースホルダー無しで即時表示」（Picasa 同等）の数値定義
+- **NAV_visible**（2026-08-21 追加、プレビュー層ワークストリームの主指標）: large コーパス（16 枚、全てサムネイルバー可視範囲内であることを実行時に検証: バーは現在画像を中央に置くため片側の可視枚数 `floor((innerWidth − 40) / 80)` が `N − 1` 以上であること）を index 0 から決定的な**非単調** 12 ステップ列 `[5,2,9,1,12,7,3,14,6,11,0,8]`（後退・ジャンプ・前進を含む）でナビゲーションしたときの各ステップの `open:request` → `paint:done`(thumbnail: false)。ペーシングは NAV_rapid と同じ（フル品質 paint 待ち + 下限 250ms）。hit/miss を除外せず pool（n = runs × 12 = 84 固定）、`hit_rate` を併記。「サムネイルが見えている画像はプレースホルダー無しで即時表示」（Picasa 同等）の数値定義。**Phase 3 実装後**: 可視範囲窓スケジューラが可視範囲全体に対して preview tier のデコード済みビットマップを保持するため、可視範囲窓のフィルが定常状態に達していれば `hit_rate` は **1.0** が期待値（全ステップで `tier: "preview"` の cache hit）。フィル未完了（フォルダを開いた直後などサムネイル生成中）や大きいコーパスで窓が可視範囲全体をカバーしきれない場合は 1.0 を下回り得る
 - **PLACEHOLDER_dur_visible**: NAV_visible の同一サンプルにおける「最初の paint → フル品質 paint」の間隔。0 が正しい値（PLACEHOLDER_dur と同じ読み方）
 - **ZOOM_full**（2026-08-21 追加）: large コーパスで画像を表示後に `zoomIn()` したときの `zoom:request` → 最初の `paint:done`(tier: "full")。要求時の表示が既に full なら **0**（アップグレード不要）。現行は常に 0。表示解像度プレビュー層の導入後は 20MP フルデコード相当（~400ms 帯）に移る見込みで、これは D1 で承認されたトレードオフ — 回帰ゲートではなく悪化監視（目安: 中央値 ≤ 500ms）。n = runs
 - 内訳（`fetch_decode`）: ボトルネック切り分け用
@@ -266,23 +267,29 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 ---
 
-## 8. 現状 baseline（2026-08-21 更新, プレビュー層 Phase 1 = 計測系拡張。最適化コード無変更）
+## 8. 現状 baseline（2026-08-22 更新, プレビュー層 Phase 3 = フロント表示。ワークストリーム完了）
 
-計測元: `bench-results/baseline.json`（`gitSha: 52650ab`, `timestamp: 2026-08-21T15:41:03.155Z`, `runs: 7`, release ビルド）。全指標が想定 n を満たす（TTFI_cold/NAV_warm/NAV_cold/ZOOM_full は n=7、NAV_rapid/PLACEHOLDER_dur/NAV_visible/PLACEHOLDER_dur_visible は n=84、欠落サンプルなし。fetch_decode_rapid_miss は n=0 — NAV_rapid の hit_rate 1.0 で miss ステップが存在しないため母集団が空）。
+計測元: `bench-results/baseline.json`（`gitSha: 593a9ae`, `timestamp: 2026-08-22T01:59:50.948Z`, `runs: 7`, release ビルド、アイドルマシン）。全指標が想定 n を満たす（TTFI_cold/NAV_warm/NAV_cold/ZOOM_full は n=7、NAV_rapid/PLACEHOLDER_dur/NAV_visible/PLACEHOLDER_dur_visible は n=84、欠落なし。fetch_decode_rapid_miss / fetch_decode_visible_miss は共に n=0 — NAV_rapid / NAV_visible とも hit_rate 1.0 で miss ステップが存在しないため母集団が空。これは Phase 3 の目的そのものであり異常ではない）。
 
 | 指標 | corpus | median (ms) | p95 (ms) | n | 目標 |
 |------|--------|-------------|----------|---|------|
-| TTFI_cold（first paint = full） | large | 614.8 | 982.2 | 7 | < 500（環境ドリフト、下記注記） |
-| NAV_warm | medium | 26.6 | 35.5 | 7 | < 100 |
-| NAV_cold（**2026-08-21 再定義**: evictDecoded 後のメモリ冷・ディスク温 miss） | medium | 267.1 | 465.5 | 7 | — |
-| NAV_rapid（steps=12, hit_rate=1.0） | large | 40.0 | 287.7 | 84 | < 100 **達成** |
+| TTFI_cold（first paint = full） | large | 465.4 | 659.3 | 7 | < 500 **達成** |
+| NAV_warm | medium | 16.3 | 28.2 | 7 | < 100 **達成** |
+| NAV_cold（evictDecoded 後のメモリ冷・ディスク温 miss = preview 配信） | medium | 62.1 | 97.5 | 7 | — |
+| NAV_rapid（steps=12, hit_rate=1.0） | large | 11.4 | 25.2 | 84 | < 100 **達成** |
 | PLACEHOLDER_dur | large | **0** | **0** | 84 | < 80 または 0 **達成** |
-| **NAV_visible**（steps=12, 非単調列, **hit_rate=0.0**, tiers {full: 84}） | large | **531.4** | 870.8 | 84 | < 100 かつ hit_rate 1.0（**未達 — Phase 2/3 の対象**） |
-| **PLACEHOLDER_dur_visible** | large | **479.2** | 828.8 | 84 | p95 < 80 または 0（**未達**） |
-| ZOOM_full | large | 0 | 0 | 7 | 悪化監視のみ（目安 ≤ 500） |
-| fetch_decode_cold（内訳） | large | 530.7 | 882.8 | 7 | — |
+| **NAV_visible**（steps=12, 非単調列, **hit_rate=1.0**, tiers {preview: 84}） | large | **10.0** | 23.3 | 84 | < 100 かつ hit_rate 1.0 **達成** |
+| **PLACEHOLDER_dur_visible** | large | **0** | **0** | 84 | p95 < 80 または 0 **達成** |
+| ZOOM_full（preview → 20MP フルデコード） | large | 422.1 | 520.5 | 7 | 悪化監視のみ（目安 ≤ 500、D1 承認済み） |
+| fetch_decode_cold（内訳） | large | 381.0 | 562.6 | 7 | — |
 | fetch_decode_rapid_miss（内訳） | large | — | — | 0 | — |
-| fetch_decode_visible_miss（内訳） | large | 472.2 | 559.2 | 84 | — |
+| fetch_decode_visible_miss（内訳） | large | — | — | 0 | — |
+
+> **Phase 3 採用の経緯（2026-08-22、プレビュー層ワークストリーム完了）**: フロント（`docs/superpowers/plans/2026-08-22-preview-tier-phase3-frontend.md`）で、Phase 2 がディスクに用意した表示解像度プレビューをデコード済み `ImageBitmap` として可視範囲ぶん保持し、hit 時に canvas 即描画するようにした。**主指標 NAV_visible は 457.5→10.0ms（−97.8%）、hit_rate 0→1.0、tiers {full}→{preview}**、PLACEHOLDER_dur_visible は 405.1→**0**（p95 766.9→0）。ユーザー苦情「サムネイルが見えているのにプレースホルダーが ~0.5s」は数値上完全に解消（可視サムネイルへのナビは中央値 10ms でプレビュー即描画）。回帰ゲート: TTFI_cold 465.4（< 旧 p95 833.8）/ NAV_warm 16.3 / NAV_rapid 11.4 いずれも悪化なし（NAV_rapid・NAV_cold も preview 化で改善）。**ZOOM_full は 0→422.1ms**（ズーム時に 20MP フルデコードへ遅延アップグレード）で、これは D1 で承認済みのトレードオフ（fit 表示はプレビューで画素等価、フル解像度はズーム時のみ必要）であり回帰ゲートには含めない（監視目安 ≤ 500 内）。baseline を本 run で更新。Phase 2 baseline（ab5b223）: TTFI_cold 481.7、NAV_warm 19.1、NAV_cold 178.0、NAV_rapid 28.6、NAV_visible 457.5（hit 0）、PLACEHOLDER_dur_visible 405.1、ZOOM_full 0、fetch_decode_cold 388.5、fetch_decode_visible_miss 426.7。
+
+> **Phase 2 baseline の読み方（2026-08-22、再アンカー）**: Phase 2（`docs/superpowers/plans/2026-08-22-preview-tier-phase2-rust-preview-layer.md`）は Rust 側にプレビュー生成・キャッシュ・配信を追加しただけで、**表示経路（ImageViewer / store / プリローダー）は 1 行も変えていない**。にもかかわらず全指標が Phase 1 baseline（52650ab）より速く、無変更経路の fetch_decode_cold も 530.7→388.5 と同方向に動いた — 2026-08-21 に観測したマシン条件ドリフト（§8 旧注記、同日の対照実行で変更前コードも TTFI_cold 606）が**戻った**もの。CLAUDE.md の規則（コード無変更で指標が旧帯へ戻ったら再 baseline）に従い、本 run を baseline とした。**Phase 3 の採否判定（NAV_visible 中央値 ≥10% 改善、最終目標 < 100ms かつ hit_rate 1.0）はこの 457.5ms を基準にすること** — 52650ab の 531.4 を基準にするとドリフトだけで 14% の見かけ改善になる。Phase 3 の判定 run 前にも同日の数値揺れを確認すること（NAV_visible は全ステップ miss のため 20MP デコード時間 = マシン状態に直結する）。
+> **Phase 2 の生成コストゲート**: `npm run profile:rust`（キャッシュ削除後、large 16 枚、3 回の中央値）で `thumb_preview` 287.6ms（内訳 decode ~170–205 / resize ~30–35 / encode ~37–45）vs 変更前 `thumbnail` 231.3ms = 1.24 倍（ゲート ≤ 1.3 倍）。途中経過: `image` クレートの JPEG エンコーダでは 354.8（1.53 倍、encode 96–120ms）→ `jpeg-encoder`（4:2:0, SIMD）で 309.4（1.34 倍）→ `fast_image_resize` の rayon で 287.6。
+> **Phase 1 baseline（52650ab, 2026-08-21T15:41:03.155Z）**: TTFI_cold 614.8 / 982.2、NAV_warm 26.6 / 35.5、NAV_cold 267.1 / 465.5、NAV_rapid 40.0 / 287.7、NAV_visible 531.4 / 870.8（hit 0）、PLACEHOLDER_dur_visible 479.2 / 828.8、ZOOM_full 0、fetch_decode_cold 530.7 / 882.8、fetch_decode_visible_miss 472.2 / 559.2。
 
 > **Phase 1 baseline の読み方（2026-08-21）**: 本 baseline はプレビュー層ワークストリーム（設計: `docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md`）の **計測系のみ**を追加した状態で記録した。アプリ側の差分は `paint:done` の `tier` detail、`zoom:request` マーク、E2E テストフックだけで、表示・ロード・スケジューラの挙動は c4dc4d8 と同一。
 > **NAV_visible hit_rate 0/84 の機序**: 非単調列 `[5,2,9,1,12,7,3,14,6,11,0,8]` の各ステップは、現行の保持窓 `computeWindow` = {i+1, i+2, i+3, i−1} の**外に構造的に落ちる**（最小ジャンプ距離 3・方向反転を含む）ため、全ステップが miss になる。プリローダーが「間に合わなかった」のではなく、窓の形状による決定論的な結果であり、run 間で振動しない。miss の実体は 20MP のブラウザデコード（fetch_decode_visible_miss median 472ms）で、これがユーザー苦情「サムネイルが見えているのにプレースホルダーが ~0.5s 見える」の数値再現（PLACEHOLDER_dur_visible median 479ms）。Phase 3 の採否判定はこの NAV_visible 中央値に対する ≥10% 改善（最終目標 < 100ms かつ hit_rate 1.0）で行う。

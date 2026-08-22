@@ -16,4 +16,16 @@ describe("displayTierOf", () => {
     expect(displayTierOf(mockImageData, false)).toBe("full");
     expect(displayTierOf(mockImageData, undefined)).toBe("full");
   });
+
+  it("is 'preview' for preview-tier data that is not a placeholder", () => {
+    expect(displayTierOf({ ...mockImageData, tier: "preview" }, false)).toBe(
+      "preview",
+    );
+    expect(displayTierOf({ ...mockImageData, tier: "preview" }, true)).toBe(
+      "thumbnail",
+    );
+    expect(displayTierOf({ ...mockImageData, tier: "full" }, false)).toBe(
+      "full",
+    );
+  });
 });

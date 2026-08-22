@@ -11,6 +11,7 @@ import type {
   ThumbnailGenerationState,
   ViewState,
 } from "../types";
+import { effectiveTier } from "../utils/bitmapCache";
 import { displayTierOf } from "../utils/displayTier";
 import { getFilename, getFolderPath } from "../utils/path";
 import { perfEvent, perfMark } from "../utils/perf";
@@ -318,12 +319,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         // Priority 1: Check if image is already preloaded (full resolution)
         const cachedImage = state.cache.preloaded.get(image.path);
+        const hit = !!(cachedImage && cachedImage.format !== "error");
         let imageData: ImageData | null = null;
         let thumbnailDisplayed = false;
 
         if (cachedImage && cachedImage.format !== "error") {
-          // Full resolution available - use it
-          imageData = cachedImage;
+          // Full resolution available - use it. Label the displayed tier from
+          // the bitmap actually retained for this path (the scheduler may
+          // have filed an unscaled preview under the preview tier), falling
+          // back to the loader's verdict, then "full".
+          imageData = {
+            ...cachedImage,
+            tier:
+              effectiveTier(
+                image.path,
+                cachedImage.width,
+                cachedImage.height,
+              ) ??
+              cachedImage.tier ??
+              "full",
+          };
         } else {
           // Priority 2: Check if thumbnail is available for instant display
           const cachedThumbnail = state.cache.thumbnails.get(image.path);
@@ -339,7 +354,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         perfEvent("preload", {
           path: image.path,
-          hit: !!(cachedImage && cachedImage.format !== "error"),
+          hit,
+          tier: imageData?.tier ?? null,
           thumbnailFallback: thumbnailDisplayed,
         });
 
@@ -572,6 +588,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   openImageFromPath: async (imagePath: string) => {
+    // Reopening the image already displayed (e.g. via the file-open dialog)
+    // must not blank the viewer: the reset below nulls currentImage.data, and
+    // ImageViewer's load effect keys on currentImage.path — unchanged on a
+    // same-path reopen — so data would never reload. Nothing to do — the
+    // folder and image are already loaded.
+    const current = get().currentImage;
+    if (
+      current.path === imagePath &&
+      current.data !== null &&
+      current.index >= 0
+    ) {
+      return;
+    }
     try {
       perfMark("open:request", { path: imagePath, trigger: "open" });
 

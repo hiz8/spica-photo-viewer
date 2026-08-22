@@ -1,5 +1,4 @@
-use base64::{engine::general_purpose, Engine as _};
-use image::{ImageError, ImageFormat};
+use image::ImageFormat;
 use std::path::Path;
 
 pub fn is_supported_image(path: &Path) -> bool {
@@ -12,6 +11,10 @@ pub fn is_supported_image(path: &Path) -> bool {
     }
 }
 
+// Not called from production code (kept for its test coverage and as the
+// canonical extension→ImageFormat mapping other modules can reach for);
+// pre-existing dead_code warning, unrelated to the preview-tier work.
+#[allow(dead_code)]
 pub fn get_image_format(path: &Path) -> Option<ImageFormat> {
     match path.extension().and_then(|s| s.to_str()) {
         Some(ext) => match ext.to_lowercase().as_str() {
@@ -23,23 +26,6 @@ pub fn get_image_format(path: &Path) -> Option<ImageFormat> {
         },
         None => None,
     }
-}
-
-pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
-    let reader = image::ImageReader::open(path)?;
-    let dimensions = reader.into_dimensions()?;
-    Ok(dimensions)
-}
-
-pub fn generate_thumbnail(path: &Path, size: u32) -> Result<String, ImageError> {
-    let img = image::open(path)?;
-
-    let thumbnail = img.thumbnail(size, size);
-
-    let mut buffer = Vec::new();
-    thumbnail.write_to(&mut std::io::Cursor::new(&mut buffer), ImageFormat::Jpeg)?;
-
-    Ok(general_purpose::STANDARD.encode(&buffer))
 }
 
 #[cfg(test)]
@@ -125,91 +111,5 @@ mod tests {
 
         let path2 = Path::new("test");
         assert_eq!(get_image_format(path2), None);
-    }
-
-    #[test]
-    fn test_get_image_dimensions_with_jpeg() {
-        let temp_dir = create_temp_dir();
-        let jpeg_path = create_test_jpeg(temp_dir.path(), "test.jpg");
-
-        let result = get_image_dimensions(&jpeg_path);
-        assert!(result.is_ok());
-        let (width, height) = result.unwrap();
-        assert_eq!(width, 1);
-        assert_eq!(height, 1);
-    }
-
-    #[test]
-    fn test_get_image_dimensions_with_png() {
-        let temp_dir = create_temp_dir();
-        let png_path = create_test_png(temp_dir.path(), "test.png");
-
-        let result = get_image_dimensions(&png_path);
-        assert!(result.is_ok());
-        let (width, height) = result.unwrap();
-        assert_eq!(width, 1);
-        assert_eq!(height, 1);
-    }
-
-    #[test]
-    fn test_get_image_dimensions_with_webp() {
-        // Since WebP support depends on compilation features,
-        // we only test that our function handles the call gracefully
-        let temp_dir = create_temp_dir();
-        let webp_path = create_test_webp(temp_dir.path(), "test.webp");
-
-        let result = get_image_dimensions(&webp_path);
-        // WebP may not be supported in this test environment,
-        // so we just verify the function doesn't panic
-        match result {
-            Ok((width, height)) => {
-                assert!(width > 0);
-                assert!(height > 0);
-            }
-            Err(_) => {
-                // WebP support might not be available, which is acceptable
-            }
-        }
-    }
-
-    #[test]
-    fn test_get_image_dimensions_with_gif() {
-        let temp_dir = create_temp_dir();
-        let gif_path = create_test_gif(temp_dir.path(), "test.gif");
-
-        let result = get_image_dimensions(&gif_path);
-        assert!(result.is_ok());
-        let (width, height) = result.unwrap();
-        assert_eq!(width, 1);
-        assert_eq!(height, 1);
-    }
-
-    #[test]
-    fn test_get_image_dimensions_with_invalid_file() {
-        let temp_dir = create_temp_dir();
-        let invalid_path = create_invalid_image(temp_dir.path(), "invalid.jpg");
-
-        let result = get_image_dimensions(&invalid_path);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_generate_thumbnail_with_valid_image() {
-        let temp_dir = create_temp_dir();
-        let jpeg_path = create_test_jpeg(temp_dir.path(), "test.jpg");
-
-        let result = generate_thumbnail(&jpeg_path, 30);
-        assert!(result.is_ok());
-        let thumbnail_data = result.unwrap();
-        assert!(!thumbnail_data.is_empty());
-    }
-
-    #[test]
-    fn test_generate_thumbnail_with_invalid_file() {
-        let temp_dir = create_temp_dir();
-        let invalid_path = create_invalid_image(temp_dir.path(), "invalid.jpg");
-
-        let result = generate_thumbnail(&invalid_path, 30);
-        assert!(result.is_err());
     }
 }

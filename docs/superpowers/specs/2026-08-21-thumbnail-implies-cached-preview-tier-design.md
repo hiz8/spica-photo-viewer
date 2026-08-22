@@ -100,8 +100,8 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
 
 - `ImageReader::open` → `into_decoder()` → `orientation()` / `icc_profile()` を取得 → `DynamicImage::from_decoder` → `apply_orientation`
 - 原本が画面ボックス以下なら**リサイズしない**（preview = 原寸、tier は実質 full。フロントは `preview_w == natural_w` で判定）
-- リサイズは `fast_image_resize`（純 Rust・SIMD、Lanczos3/Bilinear、20MP→2MP で ~20–40ms）を追加依存として採用。`image::thumbnail()` の整数サンプラは表示品質に不足、`resize(Lanczos3)` は遅すぎる（~300ms+）
-- エンコードは `image` の `JpegEncoder`（q85、`set_icc_profile`）。PNG/WebP の透過は**黒で合成**（ビューア背景と同色、見た目同一）
+- リサイズは `fast_image_resize`（純 Rust・SIMD、Lanczos3/Bilinear、20MP→2MP で ~20–40ms）を追加依存として採用。`image::thumbnail()` の整数サンプラは表示品質に不足、`resize(Lanczos3)` は遅すぎる（~300ms+）。`rayon` feature でマルチスレッド化（2026-08-22: resize 57→30ms）
+- エンコードは `jpeg-encoder` クレート（q85、**4:2:0 クロマサブサンプリング**、SIMD。`image` の純 Rust エンコーダは 96–120ms/枚で生成コストゲートを超えたため 2026-08-22 に差し替え、37–45ms）。ICC は原本が RGB/RGBA の場合のみ引き継ぐ（CMYK/YCCK はデコーダが RGB 化済みのため破棄）。PNG/WebP の透過は**黒で合成**（ビューア背景と同色、見た目同一）。Phase 3 の視覚 E2E で色にじみが見えたら `SamplingFactor::F_1_1`（4:4:4）へ戻す（コストは既知）
 - GIF は対象外（コマンドはサムネのみ返す。`preview_available: false`）
 - `SPICA_PERF=1` で op `thumb_preview`（decode / resize / encode の内訳）を出す — Phase 2 の回帰判定に使う
 
@@ -197,8 +197,8 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
 
 - **Phase 0（前提、別ハンドオフ）**: `docs/HANDOFF_IMAGE_CENTERING_FIX.md` の修正 + 中央配置 E2E をマージ。canvas が主経路になる本件の回帰ゲートになる
 - **Phase 1 — 計測系（最適化コード変更なし）**: `paint:done` に `tier`、`zoom:request`、テストフック `evictDecoded()` / `zoomIn()`、bench に NAV_visible / PLACEHOLDER_dur_visible / ZOOM_full、NAV_cold を D5 方式へ、`save-baseline` ガード、AUTONOMY_PLAN §2/§4 更新 → `bench:build && bench` → **新 baseline を記録**（苦情の数値再現: NAV_visible hit_rate 低・中央値 ~400ms の見込み）
-- **Phase 2 — Rust プレビュー層**: `utils/preview.rs`（orientation/ICC/`fast_image_resize`/JPEG）、コマンド拡張 + `spawn_blocking`、キャッシュ（mtime・原子的書き込み・容量上限・`_p.jpg`）、プロトコル `preview/<box>/` ルート、`SPICA_PERF` op、cargo tests。フロントは `useThumbnailGenerator` を新コマンドに切替（寸法が oriented になる）。**ゲート**: cargo/vitest/e2e green、`thumb_preview` +30% 以内、TTFI_cold 無悪化（プレビューはまだ表示に使わない）
-- **Phase 3 — フロント プレビュー層**: 型/bitmapCache tier、`loadPreviewBitmap`、スケジューラ（可視範囲窓・thumbnails 連動・allGenerated 撤廃・full は current のみ）、store hit、ImageViewer（preview miss 経路・zoom アップグレード・canvas 寸法）、vitest、E2E 視覚 4 ケース → **採否ゲート §7.3** → canonize
+- **Phase 2 — Rust プレビュー層**: `utils/preview.rs`（orientation/ICC/`fast_image_resize`/JPEG）、コマンド拡張 + `spawn_blocking`、キャッシュ（mtime・原子的書き込み・容量上限・`_p.jpg`）、プロトコル `preview/<box>/` ルート、`SPICA_PERF` op、cargo tests。フロントは `useThumbnailGenerator` を新コマンドに切替（寸法が oriented になる）。**ゲート**: cargo/vitest/e2e green、`thumb_preview` +30% 以内、TTFI_cold 無悪化（プレビューはまだ表示に使わない）（**実装済み 2026-08-22**: プラン `docs/superpowers/plans/2026-08-22-preview-tier-phase2-rust-preview-layer.md`。計測結果は PR 本文と AUTONOMY_PLAN §8 注記）
+- **Phase 3 — フロント プレビュー層**: 型/bitmapCache tier、`loadPreviewBitmap`、スケジューラ（可視範囲窓・thumbnails 連動・allGenerated 撤廃・full は current のみ）、store hit、ImageViewer（preview miss 経路・zoom アップグレード・canvas 寸法）、vitest、E2E 視覚 4 ケース → **採否ゲート §7.3** → canonize（**実装済み 2026-08-22**: プラン `docs/superpowers/plans/2026-08-22-preview-tier-phase3-frontend.md`。採否は PR 本文と AUTONOMY_PLAN §8）
 - **Phase 4 — 任意の後続（各 1 サイクル・1 仮説）**: (a) D4(b) 前画像保持によるプレースホルダー完全排除（PLACEHOLDER_dur_visible p95 が 0 でなければ）/ (b) `turbojpeg` IDCT スケールデコードでサムネ+プレビュー生成の高速化（R1 超過時は Phase 2 直後に前倒し）/ (c) プレビューの WebP 化（`image` は lossless のみのため別クレート要）
 
 ## 10. 関連ファイル

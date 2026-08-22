@@ -83,3 +83,88 @@ pub fn create_fake_image(dir: &Path, filename: &str) -> PathBuf {
     fs::write(&file_path, b"This is not an image").expect("Failed to create fake image");
     file_path
 }
+
+/// Gradient RGB JPEG of the given size (pixel values vary so resizing is observable).
+pub fn create_gradient_jpeg(dir: &Path, filename: &str, width: u32, height: u32) -> PathBuf {
+    use image::{ImageBuffer, Rgb};
+    let file_path = dir.join(filename);
+    let img = ImageBuffer::from_fn(width, height, |x, y| {
+        Rgb([
+            (x * 255 / width.max(1)) as u8,
+            (y * 255 / height.max(1)) as u8,
+            128u8,
+        ])
+    });
+    img.save(&file_path)
+        .expect("Failed to create gradient JPEG");
+    file_path
+}
+
+/// RGBA PNG whose left half is opaque white and right half fully transparent white.
+pub fn create_half_transparent_png(dir: &Path, filename: &str, width: u32, height: u32) -> PathBuf {
+    use image::{ImageBuffer, Rgba};
+    let file_path = dir.join(filename);
+    let img = ImageBuffer::from_fn(width, height, |x, _y| {
+        if x < width / 2 {
+            Rgba([255u8, 255u8, 255u8, 255u8])
+        } else {
+            Rgba([255u8, 255u8, 255u8, 0u8])
+        }
+    });
+    img.save(&file_path).expect("Failed to create RGBA PNG");
+    file_path
+}
+
+/// Minimal little-endian TIFF/Exif blob carrying only the Orientation tag.
+/// The JPEG encoder prepends the "Exif\0\0" APP1 header itself.
+pub fn exif_orientation_blob(orientation: u16) -> Vec<u8> {
+    let mut v = Vec::new();
+    v.extend_from_slice(b"II\x2A\x00"); // byte order + magic 42
+    v.extend_from_slice(&8u32.to_le_bytes()); // IFD0 offset
+    v.extend_from_slice(&1u16.to_le_bytes()); // one entry
+    v.extend_from_slice(&0x0112u16.to_le_bytes()); // Orientation
+    v.extend_from_slice(&3u16.to_le_bytes()); // SHORT
+    v.extend_from_slice(&1u32.to_le_bytes()); // count
+    v.extend_from_slice(&orientation.to_le_bytes());
+    v.extend_from_slice(&0u16.to_le_bytes()); // value padding to 4 bytes
+    v.extend_from_slice(&0u32.to_le_bytes()); // next IFD: none
+    v
+}
+
+/// Gradient JPEG with an Exif Orientation tag (e.g. 6 = rotate 90 CW on display)
+/// and, optionally, an ICC profile segment.
+pub fn create_jpeg_with_metadata(
+    dir: &Path,
+    filename: &str,
+    width: u32,
+    height: u32,
+    orientation: Option<u16>,
+    icc: Option<&[u8]>,
+) -> PathBuf {
+    use image::codecs::jpeg::JpegEncoder;
+    use image::{ExtendedColorType, ImageBuffer, ImageEncoder, Rgb};
+    let file_path = dir.join(filename);
+    let img = ImageBuffer::from_fn(width, height, |x, y| {
+        Rgb([
+            (x * 255 / width.max(1)) as u8,
+            (y * 255 / height.max(1)) as u8,
+            64u8,
+        ])
+    });
+    let file = fs::File::create(&file_path).expect("create jpeg");
+    let mut encoder = JpegEncoder::new_with_quality(std::io::BufWriter::new(file), 90);
+    if let Some(o) = orientation {
+        encoder
+            .set_exif_metadata(exif_orientation_blob(o))
+            .expect("jpeg encoder supports exif");
+    }
+    if let Some(icc) = icc {
+        encoder
+            .set_icc_profile(icc.to_vec())
+            .expect("jpeg encoder supports icc");
+    }
+    encoder
+        .write_image(img.as_raw(), width, height, ExtendedColorType::Rgb8)
+        .expect("write jpeg");
+    file_path
+}

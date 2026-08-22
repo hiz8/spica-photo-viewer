@@ -38,8 +38,16 @@ interface Size {
 
 interface Placement {
   tag: DisplayTag;
-  /** Full-resolution size: naturalWidth/Height for <img>, width/height for <canvas>. */
+  /**
+   * Natural (orientation-applied, full-resolution) size, read from
+   * data-natural-width/height. Falls back to naturalWidth/Height (<img>) or
+   * width/height (<canvas> - which is only the true natural size on a MISS
+   * or a full-tier hit; a preview canvas has a smaller backing) for builds
+   * that predate the attributes.
+   */
   natural: Size;
+  /** data-tier ("thumbnail" | "preview" | "full"), "" when absent. */
+  tier: string;
   rect: { left: number; top: number; width: number; height: number };
   /** Viewer area the image must be centered in. */
   container: { width: number; height: number };
@@ -64,12 +72,18 @@ const measurePlacement = (): Promise<Placement | null> =>
     const barHeight = bar
       ? bar.getBoundingClientRect().height
       : fallbackBarHeight;
+    const naturalWidthAttr = el.dataset.naturalWidth;
+    const naturalHeightAttr = el.dataset.naturalHeight;
+    const natural =
+      naturalWidthAttr !== undefined && naturalHeightAttr !== undefined
+        ? { w: Number(naturalWidthAttr), h: Number(naturalHeightAttr) }
+        : el instanceof HTMLCanvasElement
+          ? { w: el.width, h: el.height }
+          : { w: el.naturalWidth, h: el.naturalHeight };
     return {
       tag: el.tagName as "IMG" | "CANVAS",
-      natural:
-        el instanceof HTMLCanvasElement
-          ? { w: el.width, h: el.height }
-          : { w: el.naturalWidth, h: el.naturalHeight },
+      natural,
+      tier: el.dataset.tier ?? "",
       rect: {
         left: rect.left,
         top: rect.top,
@@ -102,10 +116,22 @@ const fitsContainer = (p: Placement): boolean =>
   p.rect.left + p.rect.width <= p.container.width + 1 &&
   p.rect.top + p.rect.height <= p.container.height + 1;
 
-const showsFullRes = (p: Placement, tag: DisplayTag, natural: Size): boolean =>
+/**
+ * True when the expected tag displays the expected NATURAL size with a
+ * non-placeholder tier - i.e. it is not the thumbnail fallback (which has a
+ * smaller natural size in every corpus case here, but Phase 3 previews can
+ * share the full-resolution natural size on the canvas backing, so the tier
+ * check is what actually rules the placeholder out).
+ */
+const showsDisplayedImage = (
+  p: Placement,
+  tag: DisplayTag,
+  natural: Size,
+): boolean =>
   p.tag === tag &&
   p.natural.w === natural.w &&
   p.natural.h === natural.h &&
+  p.tier !== "thumbnail" &&
   p.rect.width > 0;
 
 /**
@@ -139,14 +165,15 @@ const expectCenteredFit = async (
   tag: DisplayTag,
   natural: Size,
 ): Promise<void> => {
-  // Stage 1: the full-resolution pixels are on the expected element (the
-  // thumbnail placeholder <img> has a smaller natural size and is skipped).
-  await observe(what, (p) => showsFullRes(p, tag, natural), 60_000);
+  // Stage 1: the expected NATURAL size is displayed on the expected element
+  // with a non-placeholder tier (the thumbnail fallback is skipped).
+  await observe(what, (p) => showsDisplayedImage(p, tag, natural), 60_000);
   // Stage 2: the transform has a 0.1s transition, so let the placement settle
   // instead of sampling a single frame.
   const p = await observe(
     what,
-    (q) => showsFullRes(q, tag, natural) && isCentered(q) && fitsContainer(q),
+    (q) =>
+      showsDisplayedImage(q, tag, natural) && isCentered(q) && fitsContainer(q),
     3_000,
   );
 
