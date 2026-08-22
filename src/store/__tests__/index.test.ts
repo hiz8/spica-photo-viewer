@@ -1014,6 +1014,36 @@ describe("AppStore", () => {
       expect(state.ui.error).not.toBeNull();
       expect(state.ui.error?.message).toContain("Failed to open image");
     });
+
+    it("should not blank the viewer when reopening the already-displayed image", async () => {
+      mockInvoke.mockResolvedValue(mockImageList);
+
+      const existingData = mockImageData;
+      useAppStore.setState((state) => ({
+        currentImage: {
+          ...state.currentImage,
+          path: "/test/image2.png",
+          index: 1,
+          data: existingData,
+          error: null,
+        },
+      }));
+
+      const { openImageFromPath } = useAppStore.getState();
+
+      await openImageFromPath("/test/image2.png");
+
+      const state = useAppStore.getState();
+      // Reopening the currently displayed image must not blank the canvas:
+      // data/index stay exactly as they were, and the short-circuit happens
+      // before any folder rescan.
+      expect(state.currentImage.data).toBe(existingData);
+      expect(state.currentImage.index).toBe(1);
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "get_folder_images",
+        expect.anything(),
+      );
+    });
   });
 
   describe("cache management", () => {
