@@ -183,11 +183,15 @@ spica-photo-viewer/
 
 To ensure seamless image switching experience comparable to Picasa Photo Viewer:
 
-**Display Priority (3 levels)**
+**Display Priority (3 levels, updated 2026-08-22 for the preview tier — design spec 2026-08-21 §6.4)**
 
-1. **Cached full-resolution image** (0ms) - Display instantly if image is preloaded in cache
-2. **Thumbnail fallback** (0ms) - Display thumbnail immediately if full image not cached but thumbnail exists
-3. **Loading state** - Show loading indicator if neither cached image nor thumbnail is available
+1. **Cached decoded bitmap** (0ms, `<canvas>`) - Display instantly from a retained decoded bitmap: either a display-resolution preview (kept for every image in the visible thumbnail-bar range) or a full-resolution decode (kept for the current image only, from a cold load or a zoom upgrade)
+2. **Thumbnail placeholder, then the display-resolution preview** (~tens of ms) - If nothing is decoded yet but a thumbnail exists, show the thumbnail immediately, then replace it with the display-resolution preview fetched from disk (a `/preview/<box>/` read plus a screen-box decode, not the full-resolution original)
+3. **Loading state, then full-resolution load** - Show a loading indicator when neither a decoded bitmap nor a thumbnail is available yet (no thumbnail cached, or a GIF where the two-phase path is skipped to preserve animation), then load the full-resolution image directly
+
+**Zoom**
+
+- Zooming past the displayed preview's own pixel density (its decoded bitmap width ÷ the natural width) schedules a full-resolution decode in the background; fit-to-window never crosses this threshold, so a preview stays until the user actually zooms in past what it can render sharply
 
 **Cached Image Display (0ms)**
 
