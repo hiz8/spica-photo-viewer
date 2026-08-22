@@ -91,6 +91,13 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       try {
         loaded = await loadPreviewBitmap(path, currentPreviewBox(), signal);
       } catch (error) {
+        // loadPreviewBitmap passes the signal to fetch(), so a navigation
+        // rejects it with an AbortError. That is not a missing preview:
+        // falling back would decode the 20MP original for the image the
+        // user already left (and emit a stray src:set mark for it).
+        if (signal.aborted || activeLoadPathRef.current !== path) {
+          return "stale";
+        }
         console.warn(
           "Failed to load display-resolution preview, falling back to full resolution:",
           error,
@@ -284,6 +291,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               }
 
               setImageData(thumbnailToImageData(path, cachedThumbnail));
+              // This is a placeholder, not the image: without the flag
+              // displayTierOf would label it "full" (data-tier on the
+              // element and the tier of its paint:done mark).
+              setThumbnailDisplayed(true);
 
               // Fit to window or restore saved view state
               if (!hasSavedState) {
@@ -320,6 +331,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
               // Replace with full resolution
               setImageData(fullImageData);
+              // The PHASE 1 placeholder is gone.
+              setThumbnailDisplayed(false);
 
               // Update dimensions if needed
               if (!hasSavedState) {
@@ -356,6 +369,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           const fullImageData: ImageData = { ...loadedData, tier: "full" };
 
           setImageData(fullImageData);
+          // No-op on the cold path; clears the PHASE 1 placeholder when the
+          // two-phase branch fell through to here after an error.
+          setThumbnailDisplayed(false);
 
           // Fit to window or update dimensions based on saved state
           if (!hasSavedState) {

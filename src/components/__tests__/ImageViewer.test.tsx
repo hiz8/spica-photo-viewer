@@ -1273,6 +1273,47 @@ describe("ImageViewer", () => {
       vi.useRealTimers();
     });
 
+    it("treats an aborted preview as stale instead of falling back", async () => {
+      vi.useFakeTimers();
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Hold the preview load open so it can be rejected AFTER the viewer
+      // has navigated away (which aborts the load's signal).
+      let rejectPreview: (reason: unknown) => void = () => {};
+      mockLoadPreviewBitmap.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectPreview = reject;
+          }),
+      );
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = thumbnailData;
+      mockStore.ui.thumbnailDisplayed = true;
+      cacheThumbnail();
+
+      const { unmount } = render(<ImageViewer />);
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      expect(mockLoadPreviewBitmap).toHaveBeenCalledTimes(1);
+
+      // Navigating away aborts the in-flight load; fetch then rejects with
+      // an AbortError.
+      unmount();
+      await act(async () => {
+        rejectPreview(new DOMException("aborted", "AbortError"));
+        await vi.runAllTimersAsync();
+      });
+
+      // No 20MP decode for the image the user already left, and no warning.
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
+      expect(mockStore.setImageData).not.toHaveBeenCalled();
+      expect(mockStore.setPreloadedImage).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
     it("shows the thumbnail first and then the preview in the two-phase path", async () => {
       vi.useFakeTimers();
       mockStore.currentImage.path = path;
@@ -1294,6 +1335,11 @@ describe("ImageViewer", () => {
         expect.objectContaining({ src: PREVIEW_SRC(path), tier: "preview" }),
       );
       expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
+      // The PHASE 1 placeholder must be flagged as a thumbnail (so its
+      // data-tier / paint:done say "thumbnail"), then cleared by PHASE 2.
+      expect(
+        mockStore.setThumbnailDisplayed.mock.calls.map((c) => c[0]),
+      ).toEqual([true, false]);
 
       vi.useRealTimers();
     });
