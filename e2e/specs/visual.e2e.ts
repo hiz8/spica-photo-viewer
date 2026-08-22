@@ -19,26 +19,24 @@ describe("visual gate", () => {
     await browser.execute((p: string) => {
       void window.__SPICA_TEST__?.openImage(p);
     }, target);
-    // The viewer moves through display stages (thumbnail <img> -> full <img>
-    // -> possibly a <canvas> swap once the decoded bitmap is retained), so a
-    // "something visible" predicate can sample a transient stage. Wait for
-    // the FULL-RESOLUTION pixels (5472 wide) on whichever element displays.
+    // The viewer moves through display stages (thumbnail <img> -> preview or
+    // full <img> -> possibly a <canvas> swap once the decoded bitmap is
+    // retained), so a "something visible" predicate can sample a transient
+    // stage. Wait for the NATURAL size (5472 wide, from data-natural-width)
+    // on whichever element displays, with a non-thumbnail tier - the canvas
+    // backing itself may only be a smaller preview.
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
-          const img = document.querySelector(".image-viewer img");
-          if (
-            img instanceof HTMLImageElement &&
-            img.naturalWidth === 5472 &&
-            img.getBoundingClientRect().width > 100
-          ) {
-            return true;
-          }
-          const canvas = document.querySelector(".image-viewer canvas");
+          const el =
+            document.querySelector(".image-viewer img") ??
+            document.querySelector(".image-viewer canvas");
           return (
-            canvas instanceof HTMLCanvasElement &&
-            canvas.width === 5472 &&
-            canvas.getBoundingClientRect().width > 100
+            (el instanceof HTMLImageElement ||
+              el instanceof HTMLCanvasElement) &&
+            el.dataset.naturalWidth === "5472" &&
+            el.dataset.tier !== "thumbnail" &&
+            el.getBoundingClientRect().width > 100
           );
         }),
       { timeout: 60000, timeoutMsg: "full-resolution image never displayed" },
@@ -80,27 +78,24 @@ describe("visual gate", () => {
       exifPath,
     );
     // The viewer moves through display stages (unrotated thumbnail preview
-    // -> full <img> -> possibly a <canvas> swap once the decoded bitmap is
-    // retained). Sampling a transient stage flakes, so wait directly for the
-    // full-resolution ORIENTED dimensions on whichever element displays:
-    // encoded 1200x800 + orientation 6 must show as 800x1200. The wait
-    // succeeding IS the EXIF assertion.
+    // -> display-resolution preview or full <img> -> possibly a <canvas>
+    // swap once the decoded bitmap is retained). Sampling a transient stage
+    // flakes, so wait directly for the ORIENTED natural dimensions (from
+    // data-natural-width/height) on whichever element displays, with a
+    // non-thumbnail tier: encoded 1200x800 + orientation 6 must show as
+    // 800x1200. The wait succeeding IS the EXIF assertion.
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
-          const img = document.querySelector(".image-viewer img");
-          if (
-            img instanceof HTMLImageElement &&
-            img.naturalWidth === 800 &&
-            img.naturalHeight === 1200
-          ) {
-            return true;
-          }
-          const canvas = document.querySelector(".image-viewer canvas");
+          const el =
+            document.querySelector(".image-viewer img") ??
+            document.querySelector(".image-viewer canvas");
           return (
-            canvas instanceof HTMLCanvasElement &&
-            canvas.width === 800 &&
-            canvas.height === 1200
+            (el instanceof HTMLImageElement ||
+              el instanceof HTMLCanvasElement) &&
+            el.dataset.naturalWidth === "800" &&
+            el.dataset.naturalHeight === "1200" &&
+            el.dataset.tier !== "thumbnail"
           );
         }),
       {
@@ -140,11 +135,20 @@ describe("visual gate", () => {
       },
     );
     await browser.execute(() => window.__SPICA_TEST__?.navigateToImage(0));
+    // Wait for the ORIENTED natural size with a non-thumbnail tier - the
+    // canvas backing itself is the preview (or an unscaled preview that
+    // reports as tier "full"; either way it is not the full 800x1200 unless
+    // the session's preview box happens not to downscale it).
     await browser.waitUntil(
       async () =>
         browser.execute(() => {
           const canvas = document.querySelector(".image-viewer canvas");
-          return canvas instanceof HTMLCanvasElement && canvas.width > 0;
+          return (
+            canvas instanceof HTMLCanvasElement &&
+            canvas.dataset.naturalWidth === "800" &&
+            canvas.dataset.naturalHeight === "1200" &&
+            canvas.dataset.tier !== "thumbnail"
+          );
         }),
       { timeout: 60_000, timeoutMsg: "hit navigation never painted a canvas" },
     );
@@ -154,10 +158,12 @@ describe("visual gate", () => {
       ) as HTMLCanvasElement;
       return { w: canvas.width, h: canvas.height };
     });
-    // encoded 1200x800 + orientation 6 -> createImageBitmap applies EXIF and
-    // yields an 800x1200 bitmap, same as what <img> would display.
-    expect(dims.w).toBe(800);
-    expect(dims.h).toBe(1200);
+    // The canvas backing is the preview bitmap: encoded 1200x800 +
+    // orientation 6 -> createImageBitmap applies EXIF, so the backing keeps
+    // the oriented 2:3 aspect ratio (800x1200) even when it is scaled down,
+    // and is never wider than the natural 800px.
+    expect(Math.abs(dims.w / dims.h - 800 / 1200)).toBeLessThan(0.01);
+    expect(dims.w).toBeLessThanOrEqual(800);
 
     mkdirSync(SHOTS, { recursive: true });
     const shot = join(SHOTS, "visual-exif-canvas.png");

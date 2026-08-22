@@ -103,8 +103,10 @@ const assertCorpusFits = (files: string[]): void => {
 
 /**
  * Paths the app has reported as preloaded at any point. `preload:done` fires
- * once per path, and clearPerf() wipes the buffer between steps, so the
- * knowledge has to be accumulated harness-side rather than re-read.
+ * once per path (it can fire again later if the path is evicted and then
+ * refilled, but the Set makes a repeat harmless), and clearPerf() wipes the
+ * buffer between steps, so the knowledge has to be accumulated harness-side
+ * rather than re-read.
  */
 const preloadedSeen = new Set<string>();
 
@@ -126,9 +128,9 @@ const waitForPreloadedPath = async (path: string): Promise<void> => {
       return preloadedSeen.has(path);
     },
     {
-      // Preloading only starts once EVERY thumbnail is generated
-      // (thumbnailGeneration.allGenerated) plus PRELOAD_DELAY_MS, and the
-      // medium corpus is 30 x 8MP - this legitimately takes a while.
+      // Preloads start as soon as each thumbnail exists (Phase 3 visible-range
+      // scheduler, no more allGenerated gate) - but the medium corpus is
+      // 30 x 8MP, so reaching a given path can still legitimately take a while.
       timeout: 120_000,
       interval: 250,
       timeoutMsg: `image was never preloaded: ${path}`,
