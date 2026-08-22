@@ -37,7 +37,9 @@ const RESIZE_DEBOUNCE_MS = 200;
  * Invariants (non-GIF):
  * - I2 (window = visible range): once fill settles, every path in
  *   {current} ∪ window holds a preview-tier bitmap; everything outside is
- *   evicted from both the bitmap cache and cache.preloaded.
+ *   evicted from both the bitmap cache and cache.preloaded. The current
+ *   path is in `keep` (never evicted) but is never filled here — its
+ *   bitmap comes from the viewer, which is already decoding it.
  * - I3 (honest hits): a cache.preloaded entry ⇒ a bitmap for that path
  *   exists — eviction always removes both, so a "preloaded" hit implies
  *   decoded pixels of the tier the store reports.
@@ -66,6 +68,11 @@ export const useImagePreloader = (): void => {
   const directionRef = useRef<1 | -1>(1);
   const prevIndexRef = useRef(-1);
   const pendingRef = useRef(new Map<string, AbortController>());
+  // Latched when the byte budget had to evict: the window is worth more
+  // than the budget, so filling it further only displaces what is already
+  // retained. Cleared whenever the retained set's demand can change — index,
+  // folder, or window width — never by a mere re-render (see pump()).
+  const budgetSaturatedRef = useRef(false);
   // Captured from the first render, so the folder-change effect below can
   // tell a genuine folder switch apart from its own initial-mount firing.
   const prevFolderPathRef = useRef(folder.path);
@@ -136,7 +143,6 @@ export const useImagePreloader = (): void => {
     // Budget guard for oversized images and wide windows: evict
     // farthest-first, never current.
     const ranked = [currentPath, ...windowIndices.map((i) => images[i].path)];
-    let budgetEvicted = false;
     while (bitmapBytes() > BITMAP_CACHE_BUDGET_BYTES) {
       const victim = [...ranked]
         .reverse()
@@ -144,7 +150,7 @@ export const useImagePreloader = (): void => {
       if (!victim) break;
       deleteBitmap(victim);
       state.removePreloadedImage(victim);
-      budgetEvicted = true;
+      budgetSaturatedRef.current = true;
     }
     // Abort loads whose target left the window.
     for (const [path, controller] of pendingRef.current) {
@@ -163,10 +169,15 @@ export const useImagePreloader = (): void => {
     // The window is already worth more than the budget (a wide window on a
     // 4K box asks for ~3GB of previews), so eviction just made room that
     // fill would immediately spend — and every completion pumps again.
-    // Stop here instead: the retained set converges to the nearest paths
-    // that fit, because eviction is farthest-first and fill is
-    // nearest-first.
-    if (budgetEvicted) return;
+    // Stop instead: the retained set converges to the paths nearest the
+    // current image, because eviction is farthest-first and fill is
+    // nearest-first. The flag is a ref rather than a per-pump local
+    // because cache.thumbnails is an effect dependency: a large folder
+    // pumps once per generated thumbnail, and a per-pump stop would let
+    // every one of those hundreds of pumps refetch the tail that the
+    // previous pump evicted (wasted I/O competing with the generator, and
+    // an oscillating preloadedCount).
+    if (budgetSaturatedRef.current) return;
 
     const box = currentPreviewBox();
     // Fill free slots in priority order.
@@ -253,6 +264,7 @@ export const useImagePreloader = (): void => {
     pendingRef.current.clear();
     prevIndexRef.current = -1;
     directionRef.current = 1;
+    budgetSaturatedRef.current = false;
   }, [folder.path]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: folder.images isn't read in the closure (pump() re-reads it fresh via useAppStore.getState()), but it must stay a dependency so this effect re-fires — and pumps — when the image list itself changes (e.g. populates asynchronously) even while currentImage.index stays put. cache.thumbnails and currentReady are also unread here but must stay dependencies so the effect re-fires — and lets the fill phase inside pump() reach newly eligible paths — when a thumbnail lands or the fill gate opens without the index itself changing.
@@ -263,6 +275,9 @@ export const useImagePreloader = (): void => {
         directionRef.current = index > prevIndexRef.current ? 1 : -1;
       }
       prevIndexRef.current = index;
+      // The window moved, so what it asks for changed: re-test the budget
+      // instead of inheriting the previous window's verdict.
+      budgetSaturatedRef.current = false;
     }
     // pump() itself decides which phases run (maintenance always runs for
     // a valid index; fill is gated inside pump on currentReady and, per
@@ -283,6 +298,8 @@ export const useImagePreloader = (): void => {
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
+        // A new width means a new radius, so the budget verdict is stale.
+        budgetSaturatedRef.current = false;
         pump();
       }, RESIZE_DEBOUNCE_MS);
     };

@@ -80,10 +80,10 @@ vi.mock("../../store", () => {
   return { useAppStore: mockUseAppStore };
 });
 
+// loadPreviewBitmap is the only export the scheduler uses (the viewer owns
+// loadBitmapViaProtocol / retainElementAsBitmap).
 vi.mock("../../utils/bitmapLoader", () => ({
   loadPreviewBitmap: vi.fn(),
-  loadBitmapViaProtocol: vi.fn(),
-  retainElementAsBitmap: vi.fn(),
 }));
 
 vi.mock("../../utils/previewBox", () => ({
@@ -126,6 +126,19 @@ const showFullRes = (index: number) => {
   mockStore.currentImage.path = mockStore.folder.images[index]?.path ?? "";
   mockStore.currentImage.data = previewData(mockStore.currentImage.path);
   mockStore.ui.thumbnailDisplayed = false;
+};
+
+/** Mirrors the hook's own resize debounce. */
+const RESIZE_DEBOUNCE_MS = 200;
+
+/**
+ * Retain five ~169MB bitmaps (6500 * 6500 * 4) over {current} ∪ window at
+ * index 0 — ~845MB against the 500MiB budget, so the guard must evict.
+ */
+const saturateBudget = () => {
+  for (let i = 0; i <= 4; i++) {
+    setBitmap(img(i), fakeBitmap(6500, 6500), "preview");
+  }
 };
 
 const flush = async () => {
@@ -175,12 +188,32 @@ describe("useImagePreloader (visible-range preview window)", () => {
     expect(mockLoad.mock.calls[0][1]).toBe("1920x1080");
   });
 
-  it("keeps the whole visible radius, forward-first", () => {
-    setInnerWidth(1920); // radius 23 — the whole 16-image folder is visible
-    showFullRes(8);
+  it("fills interleaved by distance, direction first, capped at 3", () => {
+    showFullRes(5);
     renderHook(() => useImagePreloader());
-    // forward neighbors first, and never more than MAX_CONCURRENT_LOADS
-    expect(loadedPaths()).toEqual([img(9), img(10), img(11)]);
+    // [+1, -1, +2, ...] so the strip stays covered on both sides of the
+    // current image, never more than MAX_CONCURRENT_LOADS at a time
+    expect(loadedPaths()).toEqual([img(6), img(4), img(7)]);
+  });
+
+  it("retains the whole visible radius on both sides at a wide window", () => {
+    setInnerWidth(1920); // radius 23
+    mockStore.folder.images = Array.from({ length: 48 }, (_, i) =>
+      imageInfo(i),
+    );
+    mockStore.cache.thumbnails = allThumbnails();
+    const ahead = fakeBitmap();
+    const behind = fakeBitmap();
+    const beyond = fakeBitmap();
+    setBitmap(img(44), ahead, "preview"); // 20 ahead of index 24
+    setBitmap(img(4), behind, "preview"); // 20 behind index 24
+    setBitmap(img(0), beyond, "preview"); // 24 behind — outside the radius
+    showFullRes(24);
+    renderHook(() => useImagePreloader());
+    expect(hasBitmap(img(44))).toBe(true);
+    expect(hasBitmap(img(4))).toBe(true);
+    expect(hasBitmap(img(0))).toBe(false);
+    expect(beyond.close).toHaveBeenCalledOnce();
   });
 
   it("evicts what falls outside the visible radius, keeps what is inside", () => {
@@ -504,6 +537,54 @@ describe("useImagePreloader (visible-range preview window)", () => {
     expect(mockLoad).not.toHaveBeenCalled();
   });
 
+  it("does not refill on later pumps while the budget stays saturated", () => {
+    // cache.thumbnails is an effect dependency, so a large folder pumps
+    // once per generated thumbnail. Those pumps evict nothing (the budget
+    // guard already brought the retained set under the line) but would
+    // happily refetch the tail it displaced — hundreds of round trips
+    // competing with the generator, and an oscillating preloadedCount.
+    saturateBudget();
+    showFullRes(0);
+    const { rerender } = renderHook(() => useImagePreloader());
+    expect(mockLoad).not.toHaveBeenCalled();
+    expect(hasBitmap(img(3))).toBe(false); // displaced by the budget guard
+
+    setThumbnail(img(5), thumbEntry()); // external pump: a thumbnail landed
+    rerender();
+    expect(mockLoad).not.toHaveBeenCalled();
+  });
+
+  it("refills once an index change re-tests the budget", () => {
+    saturateBudget();
+    showFullRes(0);
+    const { rerender } = renderHook(() => useImagePreloader());
+    expect(mockLoad).not.toHaveBeenCalled();
+
+    showFullRes(1); // the window moved: its demand is a different question
+    rerender();
+    expect(mockLoad).toHaveBeenCalled();
+  });
+
+  it("refills once a resize re-tests the budget", () => {
+    vi.useFakeTimers();
+    try {
+      saturateBudget();
+      showFullRes(0);
+      renderHook(() => useImagePreloader());
+      expect(mockLoad).not.toHaveBeenCalled();
+
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      act(() => {
+        vi.advanceTimersByTime(RESIZE_DEBOUNCE_MS);
+      });
+      expect(mockLoad).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("sweeps bitmap-less preload entries (error and plain) outside the window", () => {
     // Eviction historically only walked bitmapPaths(), so preload entries
     // with no bitmap (permanent error entries, stale entries surviving a
@@ -543,7 +624,7 @@ describe("useImagePreloader (visible-range preview window)", () => {
         window.dispatchEvent(new Event("resize"));
       });
       act(() => {
-        vi.advanceTimersByTime(199);
+        vi.advanceTimersByTime(RESIZE_DEBOUNCE_MS - 1);
       });
       expect(hasBitmap(img(14))).toBe(true); // still debouncing
       act(() => {

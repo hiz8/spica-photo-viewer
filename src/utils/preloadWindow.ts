@@ -23,10 +23,17 @@ export const visibleThumbnailRadius = (innerWidth: number): number => {
 };
 
 /**
- * Indices to keep loaded around `index`, in decode order: the full radius
- * in the navigation direction first (what the user is heading toward),
- * then the full radius behind (in case they reverse). Out-of-range indices
- * are dropped; `index` itself is never included.
+ * Indices to keep loaded around `index`, in decode order: interleaved by
+ * distance, the navigation direction first at each step — [+1, −1, +2, −2,
+ * …] going forward, mirrored going backward. Out-of-range indices are
+ * dropped; `index` itself is never included.
+ *
+ * The order is also the eviction order reversed, so it decides what
+ * survives when the byte budget bites. All-forward-then-all-backward would
+ * fill the whole forward radius before the first neighbor behind and evict
+ * every backward path first, leaving the thumbnails behind the current one
+ * showing placeholders — interleaving keeps the retained set centered on
+ * the current image, which is what the visible strip actually shows.
  */
 export const computeVisibleWindow = (
   index: number,
@@ -36,12 +43,10 @@ export const computeVisibleWindow = (
 ): number[] => {
   const result: number[] = [];
   for (let k = 1; k <= radius; k++) {
-    const i = index + k * direction;
-    if (i >= 0 && i < length) result.push(i);
-  }
-  for (let k = 1; k <= radius; k++) {
-    const i = index - k * direction;
-    if (i >= 0 && i < length) result.push(i);
+    const ahead = index + k * direction;
+    if (ahead >= 0 && ahead < length) result.push(ahead);
+    const behind = index - k * direction;
+    if (behind >= 0 && behind < length) result.push(behind);
   }
   return result;
 };

@@ -22,12 +22,12 @@ describe("computeVisibleWindow", () => {
     expect(computeVisibleWindow(0, 1, 16, 3)).toEqual([1, 2, 3]);
   });
 
-  it("mid-folder forward: ahead first, then behind, in decode order", () => {
-    expect(computeVisibleWindow(5, 1, 16, 2)).toEqual([6, 7, 4, 3]);
+  it("mid-folder forward: interleaved by distance, direction first", () => {
+    expect(computeVisibleWindow(5, 1, 16, 2)).toEqual([6, 4, 7, 3]);
   });
 
   it("mid-folder backward is the mirror", () => {
-    expect(computeVisibleWindow(5, -1, 16, 2)).toEqual([4, 3, 6, 7]);
+    expect(computeVisibleWindow(5, -1, 16, 2)).toEqual([4, 6, 3, 7]);
   });
 
   it("at the last index forward, fills from behind only", () => {
@@ -37,6 +37,10 @@ describe("computeVisibleWindow", () => {
   it("two-image folder yields the single neighbor", () => {
     expect(computeVisibleWindow(1, 1, 2, 4)).toEqual([0]);
     expect(computeVisibleWindow(0, 1, 2, 4)).toEqual([1]);
+  });
+
+  it("a radius wider than the folder stops at the folder's ends", () => {
+    expect(computeVisibleWindow(1, 1, 3, 10)).toEqual([2, 0]);
   });
 
   it("single-image folder yields nothing", () => {
