@@ -17,22 +17,38 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
     const isError = thumbnailData === "error";
     const hasData = thumbnailData && !isError;
 
+    // A thumbnail that has not been generated yet renders as a blank slot
+    // (no icon, no background) like Picasa Photo Viewer; the <button> keeps
+    // its size so layout, centering and the click target are unchanged.
+    let content: React.ReactNode = null;
+    if (hasData) {
+      content = (
+        <img
+          src={`data:image/jpeg;base64,${thumbnailData}`}
+          alt={image.filename}
+          className="thumbnail-image"
+        />
+      );
+    } else if (isError) {
+      content = <div className="thumbnail-placeholder">❌</div>;
+    }
+
+    const className = [
+      "thumbnail-item",
+      isActive && "active",
+      isError && "error",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     return (
       <button
         type="button"
-        className={`thumbnail-item ${isActive ? "active" : ""}`}
+        className={className}
         onClick={() => onClick(index)}
         title={image.filename}
       >
-        {hasData ? (
-          <img
-            src={`data:image/jpeg;base64,${thumbnailData}`}
-            alt={image.filename}
-            className="thumbnail-image"
-          />
-        ) : (
-          <div className="thumbnail-placeholder">{isError ? "❌" : "⏳"}</div>
-        )}
+        {content}
       </button>
     );
   },
