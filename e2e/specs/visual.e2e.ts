@@ -71,6 +71,62 @@ describe("visual gate", () => {
     );
   });
 
+  it("thumbnail slots draw no button chrome (transparent background and border)", async () => {
+    // .thumbnail-item is a <button>. The UA stylesheet paints ButtonFace
+    // behind a button unless the author sets a background, and that colour
+    // also shows through the 2px transparent border (background-clip is
+    // border-box). A thumbnail that is not generated yet must be blank
+    // (Picasa-style) and a loaded one must not get a light rim, so every
+    // non-active, non-error, non-hovered slot has to compute to a fully
+    // transparent background and border - whether or not its <img> has
+    // arrived yet (the rule sits on the button, not on its content).
+    const readSlots = () =>
+      browser.execute(() => {
+        const slots = Array.from(
+          document.querySelectorAll(
+            ".thumbnail-item:not(.active):not(.error):not(:hover)",
+          ),
+        ).map((el) => {
+          const cs = getComputedStyle(el);
+          return {
+            background: cs.backgroundColor,
+            backgroundImage: cs.backgroundImage,
+            border: cs.borderTopColor,
+          };
+        });
+        const chrome = [
+          ...new Set(
+            slots
+              .filter(
+                (s) =>
+                  s.background !== "rgba(0, 0, 0, 0)" ||
+                  s.backgroundImage !== "none" ||
+                  s.border !== "rgba(0, 0, 0, 0)",
+              )
+              .map((s) => JSON.stringify(s)),
+          ),
+        ];
+        return { count: slots.length, chrome };
+      });
+
+    // The previous test just navigated, and .thumbnail-item transitions its
+    // border-color over 0.2s, so the slot that stopped being active is still
+    // fading out if sampled immediately. Poll until everything has settled;
+    // the final expect then reports the offending computed values, if any.
+    let sample = await readSlots();
+    await browser
+      .waitUntil(
+        async () => {
+          sample = await readSlots();
+          return sample.count > 0 && sample.chrome.length === 0;
+        },
+        { timeout: 3000 },
+      )
+      .catch(() => undefined);
+    expect(sample.count).toBeGreaterThan(0);
+    expect(sample.chrome).toEqual([]);
+  });
+
   it("applies EXIF orientation from original bytes", async () => {
     const exifPath = join(CORPUS, "exif", "img-000.jpg");
     await browser.execute(

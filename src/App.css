@@ -329,8 +329,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* No background: a thumbnail that is not generated yet is blank space
-     (Picasa-style). Loaded items are fully covered by .thumbnail-image. */
+  /* Explicitly transparent: this is a <button>, and the UA stylesheet
+     paints ButtonFace (rgb(240,240,240) on Windows) behind it otherwise -
+     which also shows through the transparent border (background-clip is
+     border-box) as a light rim around loaded items. A thumbnail that is
+     not generated yet must be blank space (Picasa-style). */
+  background: transparent;
 }
 
 .thumbnail-item:hover {
