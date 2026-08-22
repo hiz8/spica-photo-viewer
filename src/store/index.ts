@@ -11,6 +11,7 @@ import type {
   ThumbnailGenerationState,
   ViewState,
 } from "../types";
+import { displayTierOf } from "../utils/displayTier";
 import { getFilename, getFolderPath } from "../utils/path";
 import { perfEvent, perfMark } from "../utils/perf";
 
@@ -482,12 +483,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
   zoomIn: () => {
     const state = get();
     const newZoom = Math.min(2000, state.view.zoom * 1.2);
+    perfMark("zoom:request", {
+      path: state.currentImage.path,
+      zoom: newZoom,
+      displayedTier: displayTierOf(
+        state.currentImage.data,
+        state.ui.thumbnailDisplayed,
+      ),
+    });
     state.setZoom(newZoom);
   },
 
   zoomOut: () => {
     const state = get();
     const newZoom = Math.max(10, state.view.zoom / 1.2);
+    perfMark("zoom:request", {
+      path: state.currentImage.path,
+      zoom: newZoom,
+      displayedTier: displayTierOf(
+        state.currentImage.data,
+        state.ui.thumbnailDisplayed,
+      ),
+    });
     state.setZoom(newZoom);
   },
 
@@ -495,6 +512,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const currentZoom = state.view.zoom;
     const newZoom = Math.max(10, Math.min(2000, currentZoom * zoomFactor));
+    perfMark("zoom:request", {
+      path: state.currentImage.path,
+      zoom: newZoom,
+      displayedTier: displayTierOf(
+        state.currentImage.data,
+        state.ui.thumbnailDisplayed,
+      ),
+    });
 
     if (newZoom !== currentZoom) {
       // Convert screen coordinates to image coordinates before zoom

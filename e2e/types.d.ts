@@ -17,8 +17,14 @@ export interface SpicaTestHooks {
     preloadedCount: number;
     /** Paths with a retained decoded bitmap (the <canvas> hit set). */
     bitmapPaths: string[];
+    /** What the viewer currently shows: none | thumbnail | preview | full. */
+    displayedTier: "none" | "thumbnail" | "preview" | "full";
   };
   clearPerf: () => void;
+  /** Drops decoded bitmaps + cache.preloaded (thumbnails/disk cache stay). */
+  evictDecoded: () => { evictedBitmaps: number; evictedPreloaded: number };
+  zoomIn: () => void;
+  resetZoom: () => void;
 }
 
 export interface PerfEntry {

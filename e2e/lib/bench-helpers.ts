@@ -56,6 +56,12 @@ export type Timings = {
   firstPaint: number;
   /** open:request -> first paint:done with thumbnail === false. */
   fullPaint: number;
+  /**
+   * `detail.tier` of that first non-placeholder paint ("full" today,
+   * "preview" once the display-resolution tier exists). null on builds
+   * that predate the tier detail.
+   */
+  fullTier: string | null;
   /** src:set -> full-res decode:done, or null when either mark is missing. */
   fetchDecode: number | null;
 };
@@ -158,6 +164,7 @@ export const extractTimings = (entries: PerfEntry[], path: string): Timings => {
   return {
     firstPaint: paints[0].ts - open.ts,
     fullPaint: full.ts - open.ts,
+    fullTier: typeof full.detail?.tier === "string" ? full.detail.tier : null,
     // decode:done is best-effort: img.decode() rejects on data-URL races.
     fetchDecode: srcSet && fullDecode ? fullDecode.ts - srcSet.ts : null,
   };
@@ -183,3 +190,68 @@ export const preloadHit = (
   if (!event) return null;
   return event.detail?.hit === true;
 };
+
+/**
+ * ZOOM_full interval for `path`: zoom:request -> the first paint:done with
+ * tier "full" at or after the request. 0 when the displayed tier at request
+ * time was already "full" (nothing to upgrade; the correct value for a
+ * full-resolution display, which is every zoom today). null when there is no
+ * zoom:request for `path` or no full paint has followed it yet — the caller
+ * decides whether that is "still loading" or a timeout.
+ */
+export const extractZoomTiming = (
+  entries: PerfEntry[],
+  path: string,
+): number | null => {
+  const request = entries.find(
+    (e) => e.name === "zoom:request" && e.detail?.path === path,
+  );
+  if (!request) return null;
+  if (request.detail?.displayedTier === "full") return 0;
+  const full = entries.find(
+    (e) =>
+      e.name === "paint:done" &&
+      e.detail?.path === path &&
+      e.detail?.tier === "full" &&
+      e.ts >= request.ts,
+  );
+  return full ? full.ts - request.ts : null;
+};
+
+/**
+ * Mirrors `.thumbnail-item` in src/App.css: 30px wide + 5px margin each
+ * side. The bar centers the current item (50vw padding), so this many
+ * thumbnails are visible at once in a window of the given inner width.
+ */
+export const THUMBNAIL_ITEM_PITCH_PX = 40;
+
+export const visibleThumbnailCapacity = (innerWidth: number): number =>
+  Math.floor(innerWidth / THUMBNAIL_ITEM_PITCH_PX);
+
+/**
+ * Thumbnails visible on ONE side of the centered active item. The bar
+ * scrolls the active item to the viewport center (ThumbnailBar.tsx
+ * scrollToActiveItem + 50vw container padding), so a corpus of N images is
+ * fully visible from every position only when this radius >= N - 1.
+ */
+export const visibleThumbnailRadius = (innerWidth: number): number =>
+  Math.floor(
+    (innerWidth - THUMBNAIL_ITEM_PITCH_PX) / 2 / THUMBNAIL_ITEM_PITCH_PX,
+  );
+
+export const getInnerWidth = (): Promise<number> =>
+  browser.execute(() => window.innerWidth);
+
+/** See SpicaTestHooks#evictDecoded: memory-cold, disk-warm. */
+export const evictDecoded = () =>
+  browser.execute(() => window.__SPICA_TEST__?.evictDecoded());
+
+export const zoomIn = (): Promise<void> =>
+  browser.execute(() => {
+    window.__SPICA_TEST__?.zoomIn();
+  });
+
+export const resetZoom = (): Promise<void> =>
+  browser.execute(() => {
+    window.__SPICA_TEST__?.resetZoom();
+  });

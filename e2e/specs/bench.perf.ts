@@ -2,8 +2,9 @@
  * Navigation benchmarks (NAV_warm / NAV_cold) plus final result aggregation.
  *
  * Both navigation metrics share one app process on purpose: warm needs a live
- * preload cache, and cold needs that same cache to have moved on (the app keeps
- * only current +/-5). TTFI_cold cannot share it - it needs a fresh process - so
+ * preload cache, and cold evicts the decoded cache (bitmaps + cache.preloaded)
+ * right before each jump so the target goes through the miss path whatever
+ * the retained window is. TTFI_cold cannot share it - it needs a fresh process - so
  * it is measured by e2e/specs/ttfi-cold.perf.ts in separate wdio launches and
  * read back here from the JSONL scratch file.
  *
@@ -23,21 +24,31 @@ import {
   type Summary,
   clearPerf,
   corpusFiles,
+  evictDecoded,
   extractTimings,
+  extractZoomTiming,
+  getInnerWidth,
   getPerf,
   getStatus,
   navigateToImage,
   openImage,
   placeholderDuration,
   preloadHit,
+  resetZoom,
+  visibleThumbnailRadius,
   waitForFullPaint,
+  zoomIn,
 } from "../lib/bench-helpers.ts";
 import { median, p95 } from "../lib/stats.ts";
 
 /** Mirrors PRELOAD_RANGE in src/constants/timing.ts (the app preloads +/-N). */
 const PRELOAD_RANGE = 5;
 
-/** Stride between NAV_cold jumps: > 2 * PRELOAD_RANGE, so never preloaded. */
+/**
+ * Stride between NAV_cold jumps. Kept > 2 * PRELOAD_RANGE from the original
+ * "far jump" protocol so the index sequence is unchanged; since D5 the miss
+ * is guaranteed by evictDecoded() rather than by distance.
+ */
 const COLD_JUMP_STRIDE = 13;
 
 /** NAV_rapid: sequential steps per run over the large corpus. */
@@ -51,6 +62,25 @@ const RAPID_STEPS = 12;
 const RAPID_MIN_INTERVAL_MS = Number(
   process.env.BENCH_RAPID_INTERVAL_MS ?? 250,
 );
+
+/**
+ * NAV_visible: a deterministic NON-monotonic walk over the large corpus —
+ * backward steps, far jumps and short forward runs, every target a thumbnail
+ * that is visible in the bar (asserted against window.innerWidth at run
+ * time). This is the Picasa guarantee under test: a visible thumbnail never
+ * shows a placeholder. Starts from index 0 each run:
+ * 0 -> 5 -> 2 -> 9 -> 1 -> 12 -> 7 -> 3 -> 14 -> 6 -> 11 -> 0 -> 8.
+ */
+const VISIBLE_SEQUENCE: readonly number[] = [
+  5, 2, 9, 1, 12, 7, 3, 14, 6, 11, 0, 8,
+];
+
+// The per-run reset navigates to index 0 and waits for its full paint; a
+// sequence ending at 0 would make that reset a same-index no-op with no new
+// paint:done and stall the run on the waitForFullPaint timeout.
+if (VISIBLE_SEQUENCE[VISIBLE_SEQUENCE.length - 1] === 0) {
+  throw new Error("VISIBLE_SEQUENCE must not end at the reset index 0");
+}
 
 /**
  * The bench assumptions only hold for a corpus large enough that N forward
@@ -166,6 +196,20 @@ const rapid = {
   total: 0,
 };
 
+/** NAV_visible pools every step of every run - hits AND misses both count. */
+const visible = {
+  fullPaint: [] as number[],
+  placeholderDur: [] as number[],
+  missFetchDecode: [] as number[],
+  /** tier of the first non-placeholder paint per step (Phase 3 diagnostics). */
+  tiers: {} as Record<string, number>,
+  hits: 0,
+  total: 0,
+};
+
+/** ZOOM_full: zoom:request -> full-resolution paint, one sample per run. */
+const zoomFull: number[] = [];
+
 const readColdSamples = (): ColdSample[] => {
   if (!existsSync(COLD_SAMPLES_FILE)) {
     console.warn(
@@ -232,7 +276,7 @@ describe("bench", () => {
     console.log(`NAV_warm samples: ${JSON.stringify(results.NAV_warm)}`);
   });
 
-  it("NAV_cold (medium corpus, far jumps outside the preload range)", async function () {
+  it("NAV_cold (medium corpus, memory-cold jumps: decoded cache evicted first)", async function () {
     this.timeout(900_000);
     const files = corpusFiles("medium");
     assertCorpusFits(files);
@@ -242,17 +286,22 @@ describe("bench", () => {
 
     for (let i = 0; i < N; i++) {
       index = (index + COLD_JUMP_STRIDE) % files.length;
-      // Let the preloader finish its pass for the CURRENT index before jumping,
-      // so its cleanup has evicted everything outside +/-5 and no in-flight
-      // load can drop the jump target into the cache behind our back.
+      // Memory-cold, disk-warm (design spec 2026-08-21 D5): once the
+      // preloader is quiet, drop every decoded bitmap and preload entry so
+      // the jump target is served through the miss path regardless of how
+      // wide the retained window is. Thumbnails and the on-disk cache stay,
+      // as they would for any image the user has browsed past before.
+      // Quiet first: evictDecoded() does not abort in-flight loads, and a
+      // load completing after the eviction would re-insert its entry.
       await waitForPreloadQuiet();
+      const evicted = await evictDecoded();
       await clearPerf();
       await navigateToImage(index);
       const entries = await waitForFullPaint(files[index]);
 
       if (preloadHit(entries, files[index]) === true) {
         console.warn(
-          `NAV_cold run ${i} (index ${index}): unexpected preload HIT - sample excluded`,
+          `NAV_cold run ${i} (index ${index}): unexpected preload HIT after evicting ${JSON.stringify(evicted)} - sample excluded`,
         );
         continue;
       }
@@ -338,6 +387,130 @@ describe("bench", () => {
     );
   });
 
+  it("NAV_visible (large corpus, non-monotonic walk over visible thumbnails)", async function () {
+    this.timeout(900_000);
+    const files = corpusFiles("large");
+    if (Math.max(...VISIBLE_SEQUENCE) >= files.length) {
+      throw new Error(
+        `large corpus has ${files.length} images, NAV_visible needs index ${Math.max(...VISIBLE_SEQUENCE)}`,
+      );
+    }
+    // Every target must be a thumbnail that is actually on screen. The bar
+    // centers the current item, so what matters is the one-sided radius
+    // from the worst-case position (index 0 / index N-1), not the total
+    // count of items the bar can show.
+    const innerWidth = await getInnerWidth();
+    const radius = visibleThumbnailRadius(innerWidth);
+    if (radius < files.length - 1) {
+      throw new Error(
+        `NAV_visible needs every large-corpus thumbnail visible from every position: a ${innerWidth}px window shows ${radius} thumbnails per side, corpus needs ${files.length - 1}`,
+      );
+    }
+
+    // Same deterministic start as NAV_rapid: index 0 displayed, preloader
+    // populated and quiet. (openImage on the already-open folder is a
+    // no-op for the caches; it just re-selects index 0.)
+    await clearPerf();
+    await openImage(files[0]);
+    await waitForFullPaint(files[0]);
+    await waitForPreloadSettled(Math.min(5, files.length - 1));
+    await waitForPreloadQuiet();
+
+    for (let run = 0; run < N; run++) {
+      if (run > 0) {
+        await clearPerf();
+        await navigateToImage(0);
+        await waitForFullPaint(files[0]);
+        await waitForPreloadQuiet();
+      }
+
+      const runFullPaints: number[] = [];
+      let runHits = 0;
+
+      for (const index of VISIBLE_SEQUENCE) {
+        await clearPerf();
+        const navAt = Date.now();
+        await navigateToImage(index);
+        const entries = await waitForFullPaint(files[index]);
+
+        const timings = extractTimings(entries, files[index]);
+        visible.total++;
+        visible.fullPaint.push(timings.fullPaint);
+        visible.placeholderDur.push(placeholderDuration(timings));
+        const tier = timings.fullTier ?? "unknown";
+        visible.tiers[tier] = (visible.tiers[tier] ?? 0) + 1;
+        runFullPaints.push(timings.fullPaint);
+        const hit = preloadHit(entries, files[index]);
+        if (hit === true) {
+          visible.hits++;
+          runHits++;
+        }
+        if (hit === false && timings.fetchDecode !== null) {
+          visible.missFetchDecode.push(timings.fetchDecode);
+        }
+
+        // Same pacing floor as NAV_rapid (full paint awaited, >= 250ms).
+        const elapsed = Date.now() - navAt;
+        if (elapsed < RAPID_MIN_INTERVAL_MS) {
+          await browser.pause(RAPID_MIN_INTERVAL_MS - elapsed);
+        }
+      }
+      console.log(
+        `NAV_visible run ${run}: ${JSON.stringify(runFullPaints)} (hits ${runHits}/${VISIBLE_SEQUENCE.length})`,
+      );
+    }
+    console.log(
+      `NAV_visible samples: ${JSON.stringify(visible.fullPaint)} (hits ${visible.hits}/${visible.total})`,
+    );
+    console.log(
+      `PLACEHOLDER_dur_visible samples: ${JSON.stringify(visible.placeholderDur)}`,
+    );
+  });
+
+  it("ZOOM_full (large corpus, zoom-in to full resolution)", async function () {
+    this.timeout(600_000);
+    const files = corpusFiles("large");
+    if (files.length < 2) {
+      throw new Error(
+        `large corpus has ${files.length} images, ZOOM_full needs at least 2`,
+      );
+    }
+
+    for (let i = 0; i < N; i++) {
+      const index = 1 + (i % (files.length - 1));
+      await clearPerf();
+      await navigateToImage(index);
+      await waitForFullPaint(files[index]);
+
+      await clearPerf();
+      await zoomIn();
+      const got = { sample: null as number | null };
+      try {
+        // 0 immediately when the display was already full resolution;
+        // otherwise the time to the full-resolution paint the zoom triggers.
+        await browser.waitUntil(
+          async () => {
+            got.sample = extractZoomTiming(await getPerf(), files[index]);
+            return got.sample !== null;
+          },
+          {
+            timeout: 30_000,
+            interval: 100,
+            timeoutMsg: `no full-resolution paint after zoom:request for ${files[index]}`,
+          },
+        );
+      } catch (error) {
+        console.warn(
+          `ZOOM_full sample ${i}: ${(error as Error).message} - sample excluded`,
+        );
+      }
+      if (got.sample !== null) zoomFull.push(got.sample);
+      // Back to fit so the saved view state of this image stays default.
+      await resetZoom();
+    }
+    console.log(`ZOOM_full samples: ${JSON.stringify(zoomFull)}`);
+  });
+
   after(() => {
     const cold = readColdSamples();
     mkdirSync(RESULTS_DIR, { recursive: true });
@@ -365,9 +538,19 @@ describe("bench", () => {
           hit_rate: rapid.total > 0 ? rapid.hits / rapid.total : null,
         },
         PLACEHOLDER_dur: summarize(rapid.placeholderDur),
+        NAV_visible: {
+          ...summarize(visible.fullPaint),
+          steps: VISIBLE_SEQUENCE.length,
+          sequence: [...VISIBLE_SEQUENCE],
+          hit_rate: visible.total > 0 ? visible.hits / visible.total : null,
+          tiers: visible.tiers,
+        },
+        PLACEHOLDER_dur_visible: summarize(visible.placeholderDur),
+        ZOOM_full: summarize(zoomFull),
         breakdown: {
           fetch_decode_cold: summarize(defined(cold.map((s) => s.fetchDecode))),
           fetch_decode_rapid_miss: summarize(rapid.missFetchDecode),
+          fetch_decode_visible_miss: summarize(visible.missFetchDecode),
         },
       },
     };

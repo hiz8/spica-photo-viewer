@@ -5,7 +5,8 @@
  * measured interval (open:request -> paint:done) identical to real usage.
  */
 import { useAppStore } from "../store";
-import { bitmapPaths } from "./bitmapCache";
+import { bitmapPaths, clearBitmaps } from "./bitmapCache";
+import { type DisplayTier, displayTierOf } from "./displayTier";
 import { isPerfEnabled } from "./perf";
 
 export interface SpicaTestHooks {
@@ -26,8 +27,19 @@ export interface SpicaTestHooks {
      * here paints via <canvas> on navigation.
      */
     bitmapPaths: string[];
+    /** What the viewer currently shows (see displayTier.ts). */
+    displayedTier: DisplayTier;
   };
   clearPerf: () => void;
+  /**
+   * Drops every decoded bitmap and every cache.preloaded entry, keeping
+   * thumbnails and the on-disk cache: the "memory-cold, disk-warm" state
+   * NAV_cold measures from. Does not abort in-flight preloads — call it
+   * only once the preloader is quiet (the bench waits for that first).
+   */
+  evictDecoded: () => { evictedBitmaps: number; evictedPreloaded: number };
+  zoomIn: () => void;
+  resetZoom: () => void;
 }
 
 declare global {
@@ -54,10 +66,24 @@ export const installTestHooks = (): void => {
         thumbnailDisplayed: !!state.ui.thumbnailDisplayed,
         preloadedCount: state.cache.preloaded.size,
         bitmapPaths: bitmapPaths(),
+        displayedTier: displayTierOf(
+          state.currentImage.data,
+          state.ui.thumbnailDisplayed,
+        ),
       };
     },
     clearPerf: () => {
       window.__PERF__ = [];
     },
+    evictDecoded: () => {
+      const evictedBitmaps = bitmapPaths().length;
+      clearBitmaps();
+      const state = useAppStore.getState();
+      const evictedPreloaded = state.cache.preloaded.size;
+      state.removePreloadedImages([...state.cache.preloaded.keys()]);
+      return { evictedBitmaps, evictedPreloaded };
+    },
+    zoomIn: () => useAppStore.getState().zoomIn(),
+    resetZoom: () => useAppStore.getState().resetZoom(),
   };
 };

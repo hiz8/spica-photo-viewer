@@ -576,6 +576,60 @@ describe("AppStore", () => {
     });
   });
 
+  describe("zoom:request perf mark", () => {
+    const path = "C:\\pics\\a.jpg";
+    const marks = () =>
+      (window.__PERF__ ?? []).filter((e) => e.name === "zoom:request");
+
+    beforeEach(() => {
+      _setPerfEnabledForTests(true);
+      window.__PERF__ = [];
+      useAppStore.setState({
+        currentImage: { path, index: 0, data: mockImageData, error: null },
+      });
+    });
+
+    afterEach(() => {
+      _setPerfEnabledForTests(null);
+      window.__PERF__ = [];
+    });
+
+    it("zoomIn records the requested zoom and the displayed tier", () => {
+      useAppStore.getState().zoomIn();
+      expect(marks()).toHaveLength(1);
+      expect(marks()[0].detail).toEqual({
+        path,
+        zoom: 120,
+        displayedTier: "full",
+      });
+    });
+
+    it("zoomOut and zoomAtPoint also record zoom:request", () => {
+      useAppStore.getState().setZoom(120);
+      useAppStore.getState().zoomOut();
+      useAppStore.getState().zoomAtPoint(1.2, 0, 0);
+      expect(marks().map((m) => m.detail?.zoom)).toEqual([100, 120]);
+    });
+
+    it("reports the thumbnail tier while the placeholder is displayed", () => {
+      useAppStore.getState().setThumbnailDisplayed(true);
+      useAppStore.getState().zoomIn();
+      expect(marks()[0].detail?.displayedTier).toBe("thumbnail");
+    });
+
+    it("reports 'none' when no image data is displayed", () => {
+      useAppStore.getState().setImageData(null);
+      useAppStore.getState().zoomIn();
+      expect(marks()[0].detail?.displayedTier).toBe("none");
+    });
+
+    it("records nothing when perf is disabled", () => {
+      _setPerfEnabledForTests(false);
+      useAppStore.getState().zoomIn();
+      expect(marks()).toHaveLength(0);
+    });
+  });
+
   describe("zoomAtPoint", () => {
     it("should zoom at specific point correctly", () => {
       const { zoomAtPoint } = useAppStore.getState();
