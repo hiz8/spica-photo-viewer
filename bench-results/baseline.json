@@ -1,6 +1,6 @@
 {
-  "gitSha": "ab5b223",
-  "timestamp": "2026-08-21T17:17:15.478Z",
+  "gitSha": "593a9ae",
+  "timestamp": "2026-08-22T01:59:50.948Z",
   "buildProfile": "release",
   "runs": 7,
   "corpus": [
@@ -10,28 +10,28 @@
   ],
   "metrics": {
     "TTFI_cold": {
-      "median_ms": 481.70000000298023,
-      "p95_ms": 833.7999999970198,
+      "median_ms": 465.40000000596046,
+      "p95_ms": 659.2999999970198,
       "n": 7,
       "full": {
-        "median_ms": 481.70000000298023,
-        "p95_ms": 833.7999999970198,
+        "median_ms": 465.40000000596046,
+        "p95_ms": 659.2999999970198,
         "n": 7
       }
     },
     "NAV_warm": {
-      "median_ms": 19.100000008940697,
-      "p95_ms": 32.900000005960464,
+      "median_ms": 16.30000001192093,
+      "p95_ms": 28.200000002980232,
       "n": 7
     },
     "NAV_cold": {
-      "median_ms": 178,
-      "p95_ms": 354.59999999403954,
+      "median_ms": 62.1000000089407,
+      "p95_ms": 97.5,
       "n": 7
     },
     "NAV_rapid": {
-      "median_ms": 28.600000001490116,
-      "p95_ms": 269.1000000089407,
+      "median_ms": 11.399999998509884,
+      "p95_ms": 25.200000002980232,
       "n": 84,
       "steps": 12,
       "hit_rate": 1
@@ -42,8 +42,8 @@
       "n": 84
     },
     "NAV_visible": {
-      "median_ms": 457.5000000074506,
-      "p95_ms": 802.5999999940395,
+      "median_ms": 10,
+      "p95_ms": 23.299999997019768,
       "n": 84,
       "steps": 12,
       "sequence": [
@@ -60,25 +60,25 @@
         0,
         8
       ],
-      "hit_rate": 0,
+      "hit_rate": 1,
       "tiers": {
-        "full": 84
+        "preview": 84
       }
     },
     "PLACEHOLDER_dur_visible": {
-      "median_ms": 405.1000000014901,
-      "p95_ms": 766.9000000059605,
+      "median_ms": 0,
+      "p95_ms": 0,
       "n": 84
     },
     "ZOOM_full": {
-      "median_ms": 0,
-      "p95_ms": 0,
+      "median_ms": 422.09999999403954,
+      "p95_ms": 520.5,
       "n": 7
     },
     "breakdown": {
       "fetch_decode_cold": {
-        "median_ms": 388.5,
-        "p95_ms": 730.5,
+        "median_ms": 381,
+        "p95_ms": 562.5999999940395,
         "n": 7
       },
       "fetch_decode_rapid_miss": {
@@ -87,9 +87,9 @@
         "n": 0
       },
       "fetch_decode_visible_miss": {
-        "median_ms": 426.69999999552965,
-        "p95_ms": 470.69999998807907,
-        "n": 84
+        "median_ms": null,
+        "p95_ms": null,
+        "n": 0
       }
     }
   }

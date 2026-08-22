@@ -267,23 +267,25 @@ E2E ハーネスは存在しないためここで新規構築し、性能計測�
 
 ---
 
-## 8. 現状 baseline（2026-08-22 更新, プレビュー層 Phase 2 = Rust プレビュー層。表示経路は無変更）
+## 8. 現状 baseline（2026-08-22 更新, プレビュー層 Phase 3 = フロント表示。ワークストリーム完了）
 
-計測元: `bench-results/baseline.json`（`gitSha: ab5b223`, `timestamp: 2026-08-21T17:17:15.478Z`, `runs: 7`, release ビルド）。全指標が想定 n を満たす（TTFI_cold/NAV_warm/NAV_cold/ZOOM_full は n=7、NAV_rapid/PLACEHOLDER_dur/NAV_visible/PLACEHOLDER_dur_visible は n=84、欠落サンプルなし。fetch_decode_rapid_miss は n=0 — NAV_rapid の hit_rate 1.0 で miss ステップが存在しないため母集団が空）。
+計測元: `bench-results/baseline.json`（`gitSha: 593a9ae`, `timestamp: 2026-08-22T01:59:50.948Z`, `runs: 7`, release ビルド、アイドルマシン）。全指標が想定 n を満たす（TTFI_cold/NAV_warm/NAV_cold/ZOOM_full は n=7、NAV_rapid/PLACEHOLDER_dur/NAV_visible/PLACEHOLDER_dur_visible は n=84、欠落なし。fetch_decode_rapid_miss / fetch_decode_visible_miss は共に n=0 — NAV_rapid / NAV_visible とも hit_rate 1.0 で miss ステップが存在しないため母集団が空。これは Phase 3 の目的そのものであり異常ではない）。
 
 | 指標 | corpus | median (ms) | p95 (ms) | n | 目標 |
 |------|--------|-------------|----------|---|------|
-| TTFI_cold（first paint = full） | large | 481.7 | 833.8 | 7 | < 500 |
-| NAV_warm | medium | 19.1 | 32.9 | 7 | < 100 |
-| NAV_cold（2026-08-21 再定義: evictDecoded 後のメモリ冷・ディスク温 miss） | medium | 178.0 | 354.6 | 7 | — |
-| NAV_rapid（steps=12, hit_rate=1.0） | large | 28.6 | 269.1 | 84 | < 100 **達成** |
+| TTFI_cold（first paint = full） | large | 465.4 | 659.3 | 7 | < 500 **達成** |
+| NAV_warm | medium | 16.3 | 28.2 | 7 | < 100 **達成** |
+| NAV_cold（evictDecoded 後のメモリ冷・ディスク温 miss = preview 配信） | medium | 62.1 | 97.5 | 7 | — |
+| NAV_rapid（steps=12, hit_rate=1.0） | large | 11.4 | 25.2 | 84 | < 100 **達成** |
 | PLACEHOLDER_dur | large | **0** | **0** | 84 | < 80 または 0 **達成** |
-| **NAV_visible**（steps=12, 非単調列, **hit_rate=0.0**, tiers {full: 84}） | large | **457.5** | 802.6 | 84 | < 100 かつ hit_rate 1.0（**未達 — Phase 3 の対象**） |
-| **PLACEHOLDER_dur_visible** | large | **405.1** | 766.9 | 84 | p95 < 80 または 0（**未達**） |
-| ZOOM_full | large | 0 | 0 | 7 | 悪化監視のみ（目安 ≤ 500） |
-| fetch_decode_cold（内訳） | large | 388.5 | 730.5 | 7 | — |
+| **NAV_visible**（steps=12, 非単調列, **hit_rate=1.0**, tiers {preview: 84}） | large | **10.0** | 23.3 | 84 | < 100 かつ hit_rate 1.0 **達成** |
+| **PLACEHOLDER_dur_visible** | large | **0** | **0** | 84 | p95 < 80 または 0 **達成** |
+| ZOOM_full（preview → 20MP フルデコード） | large | 422.1 | 520.5 | 7 | 悪化監視のみ（目安 ≤ 500、D1 承認済み） |
+| fetch_decode_cold（内訳） | large | 381.0 | 562.6 | 7 | — |
 | fetch_decode_rapid_miss（内訳） | large | — | — | 0 | — |
-| fetch_decode_visible_miss（内訳） | large | 426.7 | 470.7 | 84 | — |
+| fetch_decode_visible_miss（内訳） | large | — | — | 0 | — |
+
+> **Phase 3 採用の経緯（2026-08-22、プレビュー層ワークストリーム完了）**: フロント（`docs/superpowers/plans/2026-08-22-preview-tier-phase3-frontend.md`）で、Phase 2 がディスクに用意した表示解像度プレビューをデコード済み `ImageBitmap` として可視範囲ぶん保持し、hit 時に canvas 即描画するようにした。**主指標 NAV_visible は 457.5→10.0ms（−97.8%）、hit_rate 0→1.0、tiers {full}→{preview}**、PLACEHOLDER_dur_visible は 405.1→**0**（p95 766.9→0）。ユーザー苦情「サムネイルが見えているのにプレースホルダーが ~0.5s」は数値上完全に解消（可視サムネイルへのナビは中央値 10ms でプレビュー即描画）。回帰ゲート: TTFI_cold 465.4（< 旧 p95 833.8）/ NAV_warm 16.3 / NAV_rapid 11.4 いずれも悪化なし（NAV_rapid・NAV_cold も preview 化で改善）。**ZOOM_full は 0→422.1ms**（ズーム時に 20MP フルデコードへ遅延アップグレード）で、これは D1 で承認済みのトレードオフ（fit 表示はプレビューで画素等価、フル解像度はズーム時のみ必要）であり回帰ゲートには含めない（監視目安 ≤ 500 内）。baseline を本 run で更新。Phase 2 baseline（ab5b223）: TTFI_cold 481.7、NAV_warm 19.1、NAV_cold 178.0、NAV_rapid 28.6、NAV_visible 457.5（hit 0）、PLACEHOLDER_dur_visible 405.1、ZOOM_full 0、fetch_decode_cold 388.5、fetch_decode_visible_miss 426.7。
 
 > **Phase 2 baseline の読み方（2026-08-22、再アンカー）**: Phase 2（`docs/superpowers/plans/2026-08-22-preview-tier-phase2-rust-preview-layer.md`）は Rust 側にプレビュー生成・キャッシュ・配信を追加しただけで、**表示経路（ImageViewer / store / プリローダー）は 1 行も変えていない**。にもかかわらず全指標が Phase 1 baseline（52650ab）より速く、無変更経路の fetch_decode_cold も 530.7→388.5 と同方向に動いた — 2026-08-21 に観測したマシン条件ドリフト（§8 旧注記、同日の対照実行で変更前コードも TTFI_cold 606）が**戻った**もの。CLAUDE.md の規則（コード無変更で指標が旧帯へ戻ったら再 baseline）に従い、本 run を baseline とした。**Phase 3 の採否判定（NAV_visible 中央値 ≥10% 改善、最終目標 < 100ms かつ hit_rate 1.0）はこの 457.5ms を基準にすること** — 52650ab の 531.4 を基準にするとドリフトだけで 14% の見かけ改善になる。Phase 3 の判定 run 前にも同日の数値揺れを確認すること（NAV_visible は全ステップ miss のため 20MP デコード時間 = マシン状態に直結する）。
 > **Phase 2 の生成コストゲート**: `npm run profile:rust`（キャッシュ削除後、large 16 枚、3 回の中央値）で `thumb_preview` 287.6ms（内訳 decode ~170–205 / resize ~30–35 / encode ~37–45）vs 変更前 `thumbnail` 231.3ms = 1.24 倍（ゲート ≤ 1.3 倍）。途中経過: `image` クレートの JPEG エンコーダでは 354.8（1.53 倍、encode 96–120ms）→ `jpeg-encoder`（4:2:0, SIMD）で 309.4（1.34 倍）→ `fast_image_resize` の rayon で 287.6。
