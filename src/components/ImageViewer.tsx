@@ -7,17 +7,33 @@ import {
   useRef,
   useState,
 } from "react";
+import { FULL_UPGRADE_DEBOUNCE_MS } from "../constants/memory";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 import { useImagePreloader } from "../hooks/useImagePreloader";
 import { useThumbnailGenerator } from "../hooks/useThumbnailGenerator";
 import { thumbnailToImageData, useAppStore } from "../store";
-import { getBitmap } from "../utils/bitmapCache";
-import { retainElementAsBitmap } from "../utils/bitmapLoader";
+import type { ImageData } from "../types";
+import { effectiveTier, getRetained, setBitmap } from "../utils/bitmapCache";
+import {
+  loadBitmapViaProtocol,
+  loadPreviewBitmap,
+  retainElementAsBitmap,
+} from "../utils/bitmapLoader";
 import { drawBitmapToCanvas } from "../utils/canvasDraw";
 import { displayTierOf } from "../utils/displayTier";
+import { imageFormat, imageSrc } from "../utils/imageSrc";
 import { getFilename } from "../utils/path";
 import { isPerfEnabled, perfMark } from "../utils/perf";
+import { currentPreviewBox } from "../utils/previewBox";
 import { loadImageViaProtocol } from "../utils/protocolLoader";
+
+/**
+ * Headroom before a display-resolution preview counts as too coarse: the
+ * zoom has to exceed the preview's own pixel density by 2% before the
+ * full-resolution upgrade is scheduled, so fit-to-window (which is exactly
+ * the preview's density, modulo rounding) never triggers one.
+ */
+const FULL_UPGRADE_ZOOM_MARGIN = 1.02;
 
 interface ImageViewerProps {
   className?: string;
@@ -51,8 +67,79 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeLoadPathRef = useRef<string | null>(null);
+  const fullUpgradeRef = useRef<{
+    path: string;
+    controller: AbortController;
+  } | null>(null);
 
   const suppressTransition = ui.suppressTransition;
+
+  /**
+   * Display-resolution preview path (design spec 2026-08-21 §6.4): fetches
+   * the preview instead of the 20MP original and paints it from the decoded
+   * bitmap. Returns "failed" when the preview could not be fetched/decoded
+   * (404 for a GIF or a missing preview) so the caller can fall back to the
+   * full-resolution load, and "stale" when the navigation moved on.
+   */
+  const displayPreview = useCallback(
+    async (
+      path: string,
+      signal: AbortSignal,
+      hasSavedState: boolean,
+    ): Promise<"displayed" | "stale" | "failed"> => {
+      let loaded: { data: ImageData; bitmap: ImageBitmap };
+      try {
+        loaded = await loadPreviewBitmap(path, currentPreviewBox(), signal);
+      } catch (error) {
+        console.warn(
+          "Failed to load display-resolution preview, falling back to full resolution:",
+          error,
+        );
+        return "failed";
+      }
+
+      if (signal.aborted || activeLoadPathRef.current !== path) {
+        loaded.bitmap.close();
+        return "stale";
+      }
+
+      const { data: previewData, bitmap } = loaded;
+      // Always the preview TIER, matching the scheduler: loadPreviewBitmap
+      // reports "full" when the box needed no downscaling, but the pixels
+      // still came from the preview route, and filing them under the full
+      // tier would make the scheduler's sweep drop them on the next pump.
+      setBitmap(path, bitmap, "preview");
+
+      // The DISPLAYED tier, on the other hand, is "full" for such an
+      // unscaled preview - there is no upgrade left to schedule.
+      const displayData: ImageData = {
+        ...previewData,
+        tier:
+          effectiveTier(path, previewData.width, previewData.height) ??
+          previewData.tier,
+      };
+      setImageData(displayData);
+
+      // Geometry stays the natural (full-resolution) size; the canvas is
+      // backed by the smaller preview bitmap and scaled up by CSS.
+      if (!hasSavedState) {
+        fitToWindow(previewData.width, previewData.height);
+      } else {
+        updateImageDimensions(previewData.width, previewData.height);
+      }
+
+      setPreloadedImage(path, displayData);
+      setThumbnailDisplayed(false);
+      return "displayed";
+    },
+    [
+      setImageData,
+      fitToWindow,
+      updateImageDimensions,
+      setPreloadedImage,
+      setThumbnailDisplayed,
+    ],
+  );
 
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
@@ -67,6 +154,16 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           currentImage: current,
           ui: currentUi,
         } = useAppStore.getState();
+
+        // A thumbnail cache entry for a non-GIF path proves its
+        // display-resolution preview is on disk (Phase 2 invariant I1), so
+        // the viewer can fetch the preview instead of the full original.
+        const thumbnailEntry = currentCache.thumbnails.get(path);
+        const isGif =
+          (folder.imagesByPath.get(path)?.format ?? imageFormat(path)) ===
+          "gif";
+        const previewEligible =
+          !isGif && !!thumbnailEntry && thumbnailEntry !== "error";
 
         // Check if we already have full resolution data (not just thumbnail)
         const hasFullResolution =
@@ -88,26 +185,36 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
         if (isThumbnailUpgrade) {
           console.log(
-            `Upgrading thumbnail to full resolution: ${getFilename(path)}`,
+            `Upgrading thumbnail to display resolution: ${getFilename(path)}`,
           );
 
           // Set loading state for consistent UX
           setLoading(true);
           setImageError(null);
 
+          // Check if this image has saved view state
+          const hasSavedState = currentCache.imageViewStates.has(path);
+
+          if (previewEligible) {
+            const outcome = await displayPreview(path, signal, hasSavedState);
+            if (outcome !== "failed") {
+              return;
+            }
+            // Preview missing/undecodable: fall through to the full load.
+          }
+
           // Load full resolution directly
-          const { data: fullImageData, element } =
+          const { data: loadedData, element } =
             await loadImageViaProtocol(path);
 
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
           }
 
+          const fullImageData: ImageData = { ...loadedData, tier: "full" };
+
           // Update with full resolution
           setImageData(fullImageData);
-
-          // Check if this image has saved view state
-          const hasSavedState = currentCache.imageViewStates.has(path);
 
           // Update dimensions
           if (!hasSavedState) {
@@ -165,7 +272,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         // Two-phase loading for non-GIF images
         if (!skipProgressive) {
           // Try to use cached thumbnail as preview
-          const cachedThumbnail = currentCache.thumbnails.get(path);
+          const cachedThumbnail = thumbnailEntry;
           if (cachedThumbnail && cachedThumbnail !== "error") {
             try {
               // PHASE 1: Display thumbnail preview immediately with cached dimensions
@@ -188,14 +295,28 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
                 );
               }
 
-              // PHASE 2: Load full resolution image in background
-              const { data: fullImageData, element } =
+              // PHASE 2: Load the display-resolution preview in the
+              // background (full resolution only if the preview is missing).
+              if (previewEligible) {
+                const outcome = await displayPreview(
+                  path,
+                  signal,
+                  hasSavedState,
+                );
+                if (outcome !== "failed") {
+                  return;
+                }
+              }
+
+              const { data: loadedData, element } =
                 await loadImageViaProtocol(path);
 
               // Check if loading was cancelled
               if (signal.aborted || activeLoadPathRef.current !== path) {
                 return;
               }
+
+              const fullImageData: ImageData = { ...loadedData, tier: "full" };
 
               // Replace with full resolution
               setImageData(fullImageData);
@@ -224,13 +345,15 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           }
 
           // Direct load (no cached thumbnail)
-          const { data: fullImageData, element } =
+          const { data: loadedData, element } =
             await loadImageViaProtocol(path);
 
           // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
           }
+
+          const fullImageData: ImageData = { ...loadedData, tier: "full" };
 
           setImageData(fullImageData);
 
@@ -290,6 +413,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       fitToWindow,
       updateImageDimensions,
       setThumbnailDisplayed,
+      displayPreview,
     ],
   );
 
@@ -329,15 +453,92 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     };
   }, [currentImage.path, loadImage]);
 
+  // Zoom past the preview's pixel density -> upgrade to the full-resolution
+  // decode (design spec 2026-08-21 §6.4). Debounced so a wheel gesture
+  // schedules one decode after the zoom settles, not one per notch.
+  useEffect(() => {
+    const data = currentImage.data;
+    if (!data || data.path !== currentImage.path) return;
+    if (data.tier !== "preview" || ui.thumbnailDisplayed) return;
+
+    const retained = getRetained(data.path);
+    if (retained?.tier !== "preview") return;
+    // An unscaled preview (bitmap === natural size) has nothing to upgrade to.
+    if (retained.bitmap.width >= data.width) return;
+
+    const previewDensity = retained.bitmap.width / data.width;
+    if (view.zoom / 100 <= previewDensity * FULL_UPGRADE_ZOOM_MARGIN) return;
+
+    // An upgrade for this path is already decoding.
+    if (fullUpgradeRef.current?.path === data.path) return;
+
+    const path = data.path;
+    const timeoutId = setTimeout(() => {
+      const controller = new AbortController();
+      fullUpgradeRef.current = { path, controller };
+      void loadBitmapViaProtocol(path, controller.signal)
+        .then(({ bitmap }) => {
+          if (
+            controller.signal.aborted ||
+            useAppStore.getState().currentImage.path !== path
+          ) {
+            bitmap.close();
+            return;
+          }
+          setBitmap(path, bitmap, "full");
+          // The data change re-runs the draw effect, so the canvas is
+          // repainted from the full bitmap and paint:done reports "full".
+          const fullData: ImageData = {
+            ...data,
+            tier: "full",
+            src: imageSrc(path),
+          };
+          setImageData(fullData);
+          setPreloadedImage(path, fullData);
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          // Keep showing the preview; the next zoom re-arms the upgrade.
+          console.warn("Failed to upgrade preview to full resolution:", error);
+        })
+        .finally(() => {
+          if (fullUpgradeRef.current?.controller === controller) {
+            fullUpgradeRef.current = null;
+          }
+        });
+    }, FULL_UPGRADE_DEBOUNCE_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    view.zoom,
+    currentImage.data,
+    currentImage.path,
+    ui.thumbnailDisplayed,
+    setImageData,
+    setPreloadedImage,
+  ]);
+
+  // Abort an in-flight full-resolution upgrade when the viewer leaves the
+  // image (or unmounts). Kept apart from the effect above so a zoom change
+  // does not cancel the decode it just scheduled.
+  useEffect(() => {
+    const displayed = currentImage.path;
+    return () => {
+      if (fullUpgradeRef.current?.path !== displayed) return;
+      fullUpgradeRef.current.controller.abort();
+      fullUpgradeRef.current = null;
+    };
+  }, [currentImage.path]);
+
   // Paint the retained bitmap before the frame is presented. The canvas owns
   // its own backing pixels afterwards, so later eviction of the bitmap is safe.
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const data = currentImage.data;
     if (!canvas || !data) return;
-    const bitmap = getBitmap(data.path);
-    if (bitmap) {
-      drawBitmapToCanvas(canvas, bitmap);
+    const retained = getRetained(data.path);
+    if (retained) {
+      drawBitmapToCanvas(canvas, retained.bitmap);
     }
   }, [currentImage.data]);
 
@@ -509,7 +710,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       currentImage.data.width > 0 &&
       !ui.thumbnailDisplayed &&
       currentImage.data.path === currentImage.path
-        ? getBitmap(currentImage.data.path)
+        ? getRetained(currentImage.data.path)
         : undefined,
     // currentImage.path changes together with data on navigation; listing it
     // keeps the memo honest for the data.path === currentImage.path guard.
@@ -528,8 +729,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     (canvas: HTMLCanvasElement | null) => {
       canvasRef.current = canvas;
       if (canvas && currentImage.data) {
-        const bitmap = getBitmap(currentImage.data.path);
-        if (bitmap) drawBitmapToCanvas(canvas, bitmap);
+        const retained = getRetained(currentImage.data.path);
+        if (retained) drawBitmapToCanvas(canvas, retained.bitmap);
       }
     },
     [currentImage.data],
@@ -602,6 +803,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           role="img"
           aria-label={getFilename(currentImage.path) || "Current image"}
           style={imageStyle}
+          data-natural-width={currentImage.data.width}
+          data-natural-height={currentImage.data.height}
+          data-tier={displayTierOf(currentImage.data, ui.thumbnailDisplayed)}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
         />
@@ -612,6 +816,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           src={currentImage.data.src}
           alt={getFilename(currentImage.path) || "Current image"}
           style={imageStyle}
+          data-natural-width={currentImage.data.width}
+          data-natural-height={currentImage.data.height}
+          data-tier={displayTierOf(currentImage.data, ui.thumbnailDisplayed)}
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
           draggable={false}

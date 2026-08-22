@@ -4,6 +4,7 @@ import "@testing-library/jest-dom";
 import { mockImageData } from "../../utils/testUtils";
 import type { ImageData as AppImageData } from "../../types";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
+import { FULL_UPGRADE_DEBOUNCE_MS } from "../../constants/memory";
 
 // Mock the invoke function (ImageViewer no longer calls it directly, but the
 // mock keeps any transitive Tauri IPC out of jsdom).
@@ -16,6 +17,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 // is covered by E2E (e2e/specs/smoke.e2e.ts).
 const PROTOCOL_SRC = (path: string) =>
   `http://spica-img.localhost/${encodeURIComponent(path)}`;
+const PREVIEW_BOX = "1920x1080";
+const PREVIEW_SRC = (path: string) =>
+  `http://spica-img.localhost/preview/${PREVIEW_BOX}/${encodeURIComponent(path)}`;
 
 vi.mock("../../utils/protocolLoader", () => ({
   loadImageViaProtocol: vi.fn(async (path: string) => ({
@@ -32,6 +36,20 @@ vi.mock("../../utils/protocolLoader", () => ({
 
 vi.mock("../../utils/canvasDraw", () => ({
   drawBitmapToCanvas: vi.fn(),
+}));
+
+// The bitmap loader talks to the spica-img protocol (fetch + createImageBitmap),
+// neither of which jsdom provides. The real bitmapCache is kept so the tests
+// exercise the actual retention/tier bookkeeping.
+vi.mock("../../utils/bitmapLoader", () => ({
+  loadPreviewBitmap: vi.fn(),
+  loadBitmapViaProtocol: vi.fn(),
+  retainElementAsBitmap: vi.fn(),
+}));
+
+// One deterministic screen box, so preview URLs/arguments are assertable.
+vi.mock("../../utils/previewBox", () => ({
+  currentPreviewBox: () => "1920x1080",
 }));
 
 // Mock the useThumbnailGenerator hook
@@ -113,13 +131,42 @@ vi.mock("../../store", () => {
 import ImageViewer from "../ImageViewer";
 import { loadImageViaProtocol } from "../../utils/protocolLoader";
 import { drawBitmapToCanvas } from "../../utils/canvasDraw";
-import { clearBitmaps, setBitmap } from "../../utils/bitmapCache";
+import { clearBitmaps, getRetained, setBitmap } from "../../utils/bitmapCache";
+import {
+  loadBitmapViaProtocol,
+  loadPreviewBitmap,
+} from "../../utils/bitmapLoader";
 import { _setPerfEnabledForTests } from "../../utils/perf";
 
 const mockLoadImageViaProtocol = vi.mocked(loadImageViaProtocol);
+const mockLoadPreviewBitmap = vi.mocked(loadPreviewBitmap);
+const mockLoadBitmapViaProtocol = vi.mocked(loadBitmapViaProtocol);
 
 const fakeBitmap = (width: number, height: number) =>
   ({ width, height, close: vi.fn() }) as unknown as ImageBitmap;
+
+/**
+ * Default preview response: a 400x300 decode of an 800x600 original, i.e.
+ * the display-resolution tier the /preview/<box>/ route serves.
+ */
+const previewResult = (
+  path: string,
+  bitmap: ImageBitmap,
+  natural = { width: 800, height: 600 },
+) => ({
+  data: {
+    path,
+    src: PREVIEW_SRC(path),
+    width: natural.width,
+    height: natural.height,
+    format: "jpg",
+    tier:
+      bitmap.width === natural.width && bitmap.height === natural.height
+        ? ("full" as const)
+        : ("preview" as const),
+  },
+  bitmap,
+});
 
 describe("ImageViewer", () => {
   beforeEach(() => {
@@ -136,11 +183,17 @@ describe("ImageViewer", () => {
     mockStore.view.imageWidth = 0;
     mockStore.view.imageHeight = 0;
     mockStore.folder.images = [];
+    mockStore.folder.imagesByPath = new Map();
     mockStore.cache.thumbnails = new Map();
     mockStore.cache.preloaded = new Map();
     mockStore.cache.imageViewStates = new Map();
     mockStore.ui.thumbnailDisplayed = false;
     clearBitmaps();
+    // Default: the preview route serves a downscaled display-resolution
+    // decode. Individual tests override this (unscaled preview, 404, ...).
+    mockLoadPreviewBitmap.mockImplementation(async (path: string) =>
+      previewResult(path, fakeBitmap(400, 300)),
+    );
   });
 
   describe("Empty state", () => {
@@ -768,17 +821,20 @@ describe("ImageViewer", () => {
         }),
       );
 
-      // PHASE 2: the full resolution arrives over the protocol
+      // PHASE 2: the display-resolution preview arrives over the protocol
+      // (the 20MP original is NOT fetched)
       await act(async () => {
         await vi.waitFor(() => {
           expect(mockStore.setImageData).toHaveBeenCalledWith(
             expect.objectContaining({
               path: "/test/image.jpg",
-              src: PROTOCOL_SRC("/test/image.jpg"),
+              src: PREVIEW_SRC("/test/image.jpg"),
+              tier: "preview",
             }),
           );
         });
       });
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
 
       vi.useRealTimers();
     });
@@ -804,20 +860,24 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Should load the full resolution immediately (skipping debounce)
+      // Should load the display-resolution preview immediately (skipping
+      // debounce); the full-resolution original is left alone.
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
+          expect(mockLoadPreviewBitmap).toHaveBeenCalledWith(
             "/test/image.jpg",
+            PREVIEW_BOX,
+            expect.anything(),
           );
         });
       });
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
       expect(mockStore.setThumbnailDisplayed).toHaveBeenCalledWith(false);
 
       vi.useRealTimers();
     });
 
-    it("should upgrade from thumbnail to full resolution", async () => {
+    it("should upgrade from thumbnail to the display-resolution preview", async () => {
       vi.useFakeTimers();
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
@@ -841,15 +901,15 @@ describe("ImageViewer", () => {
       // Wait for async operations
       await act(async () => {
         await vi.waitFor(() => {
-          // Should have called setImageData (preview then full resolution)
+          // Should have called setImageData (thumbnail then preview)
           expect(mockStore.setImageData).toHaveBeenCalledWith(
-            expect.objectContaining({ src: PROTOCOL_SRC("/test/image.jpg") }),
+            expect.objectContaining({ src: PREVIEW_SRC("/test/image.jpg") }),
           );
         });
       });
       expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
         "/test/image.jpg",
-        expect.objectContaining({ src: PROTOCOL_SRC("/test/image.jpg") }),
+        expect.objectContaining({ src: PREVIEW_SRC("/test/image.jpg") }),
       );
 
       vi.useRealTimers();
@@ -1074,6 +1134,379 @@ describe("ImageViewer", () => {
         _setPerfEnabledForTests(null);
         window.__PERF__ = [];
       }
+    });
+  });
+
+  describe("display-resolution preview (bitmap miss path)", () => {
+    const path = "/test/image.jpg";
+    const thumbnailData: AppImageData = {
+      path,
+      src: "data:jpeg;base64,thumbnailBase64",
+      width: 800,
+      height: 600,
+      format: "jpeg",
+    };
+
+    const cacheThumbnail = () =>
+      mockStore.cache.thumbnails.set(path, {
+        base64: "thumbnailBase64",
+        width: 800,
+        height: 600,
+      });
+
+    it("upgrades a displayed thumbnail with the preview, not the original", async () => {
+      vi.useFakeTimers();
+      const previewBitmap = fakeBitmap(400, 300);
+      mockLoadPreviewBitmap.mockImplementation(async (p: string) =>
+        previewResult(p, previewBitmap),
+      );
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = thumbnailData;
+      mockStore.ui.thumbnailDisplayed = true;
+      cacheThumbnail();
+
+      const { container, rerender } = render(<ImageViewer />);
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockLoadPreviewBitmap).toHaveBeenCalledWith(
+        path,
+        PREVIEW_BOX,
+        expect.anything(),
+      );
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
+      // Retained under the preview TIER even though the loader may say
+      // otherwise, matching the preload scheduler.
+      expect(getRetained(path)).toEqual({
+        bitmap: previewBitmap,
+        tier: "preview",
+      });
+      expect(mockStore.setImageData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path,
+          src: PREVIEW_SRC(path),
+          width: 800,
+          height: 600,
+          tier: "preview",
+        }),
+      );
+      // Geometry is the natural size, not the preview bitmap's size.
+      expect(mockStore.fitToWindow).toHaveBeenCalledWith(800, 600);
+      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+        path,
+        expect.objectContaining({ tier: "preview" }),
+      );
+      expect(mockStore.setThumbnailDisplayed).toHaveBeenCalledWith(false);
+
+      // Feed the produced data back into the mocked store: the viewer must
+      // now paint the preview bitmap on a canvas.
+      mockStore.currentImage.data = mockStore.setImageData.mock.calls.at(
+        -1,
+      )?.[0] as AppImageData;
+      mockStore.ui.thumbnailDisplayed = false;
+      rerender(<ImageViewer />);
+
+      expect(container.querySelector("canvas")).toBeInTheDocument();
+      expect(container.querySelector("img")).not.toBeInTheDocument();
+      expect(drawBitmapToCanvas).toHaveBeenCalledWith(
+        expect.anything(),
+        previewBitmap,
+      );
+
+      vi.useRealTimers();
+    });
+
+    it("labels an unscaled preview as full resolution", async () => {
+      vi.useFakeTimers();
+      const unscaled = fakeBitmap(800, 600);
+      mockLoadPreviewBitmap.mockImplementation(async (p: string) =>
+        previewResult(p, unscaled),
+      );
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = thumbnailData;
+      mockStore.ui.thumbnailDisplayed = true;
+      cacheThumbnail();
+
+      render(<ImageViewer />);
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockStore.setImageData).toHaveBeenCalledWith(
+        expect.objectContaining({ tier: "full" }),
+      );
+      // ...but the pixels stay filed under the preview tier.
+      expect(getRetained(path)).toEqual({ bitmap: unscaled, tier: "preview" });
+
+      vi.useRealTimers();
+    });
+
+    it("falls back to the full-resolution original when the preview is missing", async () => {
+      vi.useFakeTimers();
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockLoadPreviewBitmap.mockRejectedValue(new Error("404"));
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = thumbnailData;
+      mockStore.ui.thumbnailDisplayed = true;
+      cacheThumbnail();
+
+      render(<ImageViewer />);
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(warnSpy).toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(path);
+      expect(mockStore.setImageData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          src: PROTOCOL_SRC(path),
+          width: 800,
+          height: 600,
+          tier: "full",
+        }),
+      );
+      expect(mockStore.setThumbnailDisplayed).toHaveBeenCalledWith(false);
+
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it("shows the thumbnail first and then the preview in the two-phase path", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = null;
+      cacheThumbnail();
+
+      render(<ImageViewer />);
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await vi.runAllTimersAsync();
+      });
+
+      // PHASE 1 is the cached thumbnail, PHASE 2 the preview - the
+      // full-resolution original is never fetched.
+      expect(mockStore.setImageData.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ src: "data:jpeg;base64,thumbnailBase64" }),
+      );
+      expect(mockStore.setImageData.mock.calls.at(-1)?.[0]).toEqual(
+        expect.objectContaining({ src: PREVIEW_SRC(path), tier: "preview" }),
+      );
+      expect(mockLoadImageViaProtocol).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it("keeps GIFs on the full-resolution path (no preview request)", async () => {
+      vi.useFakeTimers();
+      const gifPath = "/test/anim.gif";
+      mockStore.currentImage.path = gifPath;
+      mockStore.currentImage.data = null;
+      mockStore.folder.imagesByPath.set(gifPath, {
+        path: gifPath,
+        filename: "anim.gif",
+        format: "gif",
+      });
+      mockStore.cache.thumbnails.set(gifPath, {
+        base64: "gifThumb",
+        width: 320,
+        height: 240,
+      });
+
+      render(<ImageViewer />);
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockLoadPreviewBitmap).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(gifPath);
+
+      vi.useRealTimers();
+    });
+
+    it("loads the original directly when no thumbnail is cached (cold path)", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = null;
+      mockStore.cache.thumbnails = new Map();
+
+      render(<ImageViewer />);
+      await act(async () => {
+        vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockLoadPreviewBitmap).not.toHaveBeenCalled();
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(path);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("zoom-driven full-resolution upgrade", () => {
+    const path = "C:\\photos\\big.jpg";
+    // A 1620x1080 preview of a 5472x3648 original: fit-to-window is ~29.6%.
+    const previewData: AppImageData = {
+      path,
+      src: PREVIEW_SRC(path),
+      width: 5472,
+      height: 3648,
+      format: "jpg",
+      tier: "preview",
+    };
+
+    const showPreview = (bitmapWidth = 1620, bitmapHeight = 1080) => {
+      setBitmap(path, fakeBitmap(bitmapWidth, bitmapHeight), "preview");
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = previewData;
+    };
+
+    it("decodes the full resolution once the zoom passes the preview density", async () => {
+      vi.useFakeTimers();
+      const fullBitmap = fakeBitmap(5472, 3648);
+      mockLoadBitmapViaProtocol.mockResolvedValue({
+        data: { ...previewData, src: PROTOCOL_SRC(path), tier: "full" },
+        bitmap: fullBitmap,
+      });
+      showPreview();
+      mockStore.view.zoom = 35;
+
+      render(<ImageViewer />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FULL_UPGRADE_DEBOUNCE_MS);
+      });
+
+      expect(mockLoadBitmapViaProtocol).toHaveBeenCalledTimes(1);
+      expect(mockLoadBitmapViaProtocol.mock.calls[0][0]).toBe(path);
+      expect(getRetained(path)).toEqual({ bitmap: fullBitmap, tier: "full" });
+      expect(mockStore.setImageData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path,
+          src: PROTOCOL_SRC(path),
+          width: 5472,
+          height: 3648,
+          tier: "full",
+        }),
+      );
+      expect(mockStore.setPreloadedImage).toHaveBeenCalledWith(
+        path,
+        expect.objectContaining({ tier: "full" }),
+      );
+
+      vi.useRealTimers();
+    });
+
+    it("does not upgrade at fit-to-window zoom", async () => {
+      vi.useFakeTimers();
+      showPreview();
+      mockStore.view.zoom = 29;
+
+      render(<ImageViewer />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FULL_UPGRADE_DEBOUNCE_MS * 4);
+      });
+
+      expect(mockLoadBitmapViaProtocol).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it("does not upgrade an unscaled preview", async () => {
+      vi.useFakeTimers();
+      showPreview(5472, 3648);
+      mockStore.view.zoom = 400;
+
+      render(<ImageViewer />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FULL_UPGRADE_DEBOUNCE_MS * 4);
+      });
+
+      expect(mockLoadBitmapViaProtocol).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it("does not upgrade when the path changes during the debounce", async () => {
+      vi.useFakeTimers();
+      showPreview();
+      mockStore.view.zoom = 200;
+
+      const { rerender } = render(<ImageViewer />);
+
+      // Navigate away before the debounce elapses.
+      mockStore.currentImage.path = "/test/other.jpg";
+      mockStore.currentImage.data = null;
+      rerender(<ImageViewer />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FULL_UPGRADE_DEBOUNCE_MS * 4);
+      });
+
+      expect(mockLoadBitmapViaProtocol).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("natural size / tier data attributes", () => {
+    const path = "C:\\photos\\attrs.jpg";
+
+    it("exposes the natural size and tier on the <img>", () => {
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = {
+        path,
+        src: PROTOCOL_SRC(path),
+        width: 5472,
+        height: 3648,
+        format: "jpg",
+      };
+
+      render(<ImageViewer />);
+
+      const img = screen.getByRole("img");
+      expect(img.tagName).toBe("IMG");
+      expect(img).toHaveAttribute("data-natural-width", "5472");
+      expect(img).toHaveAttribute("data-natural-height", "3648");
+      expect(img).toHaveAttribute("data-tier", "full");
+    });
+
+    it("exposes the natural size and preview tier on the <canvas>", () => {
+      setBitmap(path, fakeBitmap(1620, 1080), "preview");
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = {
+        path,
+        src: PREVIEW_SRC(path),
+        width: 5472,
+        height: 3648,
+        format: "jpg",
+        tier: "preview",
+      };
+
+      const { container } = render(<ImageViewer />);
+
+      const canvas = container.querySelector("canvas");
+      expect(canvas).toHaveAttribute("data-natural-width", "5472");
+      expect(canvas).toHaveAttribute("data-natural-height", "3648");
+      expect(canvas).toHaveAttribute("data-tier", "preview");
+    });
+
+    it("reports the thumbnail tier while a placeholder is displayed", () => {
+      mockStore.currentImage.path = path;
+      mockStore.currentImage.data = {
+        path,
+        src: "data:jpeg;base64,AAAA",
+        width: 5472,
+        height: 3648,
+        format: "jpeg",
+      };
+      mockStore.ui.thumbnailDisplayed = true;
+
+      render(<ImageViewer />);
+
+      expect(screen.getByRole("img")).toHaveAttribute("data-tier", "thumbnail");
     });
   });
 });
