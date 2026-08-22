@@ -588,11 +588,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   openImageFromPath: async (imagePath: string) => {
-    // Reopening the image that is already displayed (OS re-launch with the same
-    // file, drag-drop of the current file) must NOT blank the viewer: the reset
-    // below nulls currentImage.data, and ImageViewer's load effect keys on
-    // currentImage.path, which is unchanged on a same-path reopen, so data would
-    // never reload. Nothing to do — the folder and image are already loaded.
+    // Reopening the image already displayed (e.g. via the file-open dialog)
+    // must not blank the viewer: the reset below nulls currentImage.data, and
+    // ImageViewer's load effect keys on currentImage.path — unchanged on a
+    // same-path reopen — so data would never reload. Nothing to do — the
+    // folder and image are already loaded.
     const current = get().currentImage;
     if (
       current.path === imagePath &&

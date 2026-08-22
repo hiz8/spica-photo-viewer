@@ -153,7 +153,9 @@ describe("bitmapLoader", () => {
       });
     });
 
-    it("falls back to the bitmap's own dimensions when the natural headers are missing", async () => {
+    it("falls back to the bitmap's own dimensions but tags 'preview' (upgradeable) when both natural headers are missing", async () => {
+      // Was previously asserted "full" — a missing header must not silently
+      // cap display quality by skipping the zoom upgrade (see F1 review fix).
       stubPreviewFetch({});
       vi.stubGlobal(
         "createImageBitmap",
@@ -161,7 +163,18 @@ describe("bitmapLoader", () => {
       );
 
       const { data } = await loadPreviewBitmap("C:\\pics\\a.jpg", box);
-      expect(data).toMatchObject({ width: 640, height: 480, tier: "full" });
+      expect(data).toMatchObject({ width: 640, height: 480, tier: "preview" });
+    });
+
+    it("falls back to the bitmap's own dimensions but tags 'preview' when only one natural header is present", async () => {
+      stubPreviewFetch({ "X-Spica-Natural-Width": "5472" });
+      vi.stubGlobal(
+        "createImageBitmap",
+        vi.fn(async () => fakeBitmap(640, 480)),
+      );
+
+      const { data } = await loadPreviewBitmap("C:\\pics\\a.jpg", box);
+      expect(data).toMatchObject({ width: 640, height: 480, tier: "preview" });
     });
 
     it("throws on a non-ok response (404 = GIF or missing file)", async () => {

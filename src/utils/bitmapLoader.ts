@@ -41,10 +41,14 @@ export const loadBitmapViaProtocol = async (
  * loadBitmapViaProtocol). The natural (orientation-applied, full-resolution)
  * size comes back in the X-Spica-Natural-Width/Height response headers; a
  * missing or non-positive header falls back to the decoded bitmap's own
- * dimensions. When the decoded bitmap already equals the natural size (the
- * source didn't need downscaling to fit the box, so the server served it
- * unscaled) the result is tagged "full" rather than "preview" so callers
- * don't schedule a redundant full-resolution upgrade.
+ * dimensions for the returned width/height, but the result is only ever
+ * tagged "full" when BOTH headers were present and valid AND the decoded
+ * bitmap equals that natural size (the source didn't need downscaling to
+ * fit the box, so the server served it unscaled) — so callers skip a
+ * redundant full-resolution upgrade only when the server has confirmed the
+ * preview already is full quality. A missing/invalid header always yields
+ * "preview" (upgradeable), never "full", even though bitmap dims trivially
+ * equal the fallback natural dims in that case.
  */
 export const loadPreviewBitmap = async (
   path: string,
@@ -61,14 +65,13 @@ export const loadPreviewBitmap = async (
 
   const headerWidth = Number(response.headers.get("X-Spica-Natural-Width"));
   const headerHeight = Number(response.headers.get("X-Spica-Natural-Height"));
-  const width =
-    Number.isFinite(headerWidth) && headerWidth > 0
-      ? headerWidth
-      : bitmap.width;
-  const height =
-    Number.isFinite(headerHeight) && headerHeight > 0
-      ? headerHeight
-      : bitmap.height;
+  const hasNaturalHeaders =
+    Number.isFinite(headerWidth) &&
+    headerWidth > 0 &&
+    Number.isFinite(headerHeight) &&
+    headerHeight > 0;
+  const width = hasNaturalHeaders ? headerWidth : bitmap.width;
+  const height = hasNaturalHeaders ? headerHeight : bitmap.height;
 
   return {
     data: {
@@ -77,8 +80,14 @@ export const loadPreviewBitmap = async (
       width,
       height,
       format: imageFormat(path),
+      // A missing/invalid natural-size header must err toward "preview"
+      // (upgradeable), not "full": without both headers confirmed present,
+      // bitmap dims trivially equal the fallback natural dims and would
+      // otherwise silently cap display quality by skipping the zoom upgrade.
       tier:
-        bitmap.width === width && bitmap.height === height ? "full" : "preview",
+        hasNaturalHeaders && bitmap.width === width && bitmap.height === height
+          ? "full"
+          : "preview",
     },
     bitmap,
   };
