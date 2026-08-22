@@ -60,6 +60,27 @@ export const getBitmap = (path: string): ImageBitmap | undefined =>
 export const bitmapTier = (path: string): BitmapTier | undefined =>
   getRetained(path)?.tier;
 
+/**
+ * Tier the viewer should report for `path` given its natural size: a retained
+ * bitmap whose size equals the natural size IS full resolution even when the
+ * scheduler filed it under the preview tier (unscaled preview); otherwise the
+ * retained tier. Undefined when nothing is retained.
+ */
+export const effectiveTier = (
+  path: string,
+  naturalWidth: number,
+  naturalHeight: number,
+): BitmapTier | undefined => {
+  const retained = getRetained(path);
+  if (!retained) return undefined;
+  if (
+    retained.bitmap.width === naturalWidth &&
+    retained.bitmap.height === naturalHeight
+  )
+    return "full";
+  return retained.tier;
+};
+
 export const hasBitmap = (path: string, tier?: BitmapTier): boolean => {
   const entry = bitmaps.get(path);
   if (!entry) return false;

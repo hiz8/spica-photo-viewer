@@ -5,6 +5,7 @@ import {
   bitmapTier,
   clearBitmaps,
   deleteBitmap,
+  effectiveTier,
   fullBitmapPaths,
   getBitmap,
   getBitmapOfTier,
@@ -174,5 +175,26 @@ describe("bitmapCache", () => {
     expect(hasBitmap("/a.jpg")).toBe(true);
     expect(hasBitmap("/a.jpg", "preview")).toBe(true);
     expect(hasBitmap("/a.jpg", "full")).toBe(false);
+  });
+
+  describe("effectiveTier", () => {
+    it("returns 'preview' when the retained preview bitmap is smaller than natural size", () => {
+      setBitmap("/a.jpg", fakeBitmap(1620, 1080), "preview");
+      expect(effectiveTier("/a.jpg", 5472, 3648)).toBe("preview");
+    });
+
+    it("returns 'full' when the retained preview bitmap equals natural size (unscaled preview)", () => {
+      setBitmap("/a.jpg", fakeBitmap(1024, 768), "preview");
+      expect(effectiveTier("/a.jpg", 1024, 768)).toBe("full");
+    });
+
+    it("returns 'full' when a full-tier bitmap is retained", () => {
+      setBitmap("/a.jpg", fakeBitmap(5472, 3648), "full");
+      expect(effectiveTier("/a.jpg", 5472, 3648)).toBe("full");
+    });
+
+    it("returns undefined when nothing is retained", () => {
+      expect(effectiveTier("/missing.jpg", 5472, 3648)).toBeUndefined();
+    });
   });
 });
