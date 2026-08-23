@@ -107,9 +107,12 @@ const mockStore = {
 };
 
 vi.mock("../../store", () => {
-  // Create mock function with getState method
-  const mockUseAppStore = vi.fn(() => mockStore);
-  mockUseAppStore.getState = () => mockStore;
+  // Create mock function with getState method (Object.assign keeps the added
+  // property visible to TypeScript, which a plain assignment on Mock does not).
+  const mockUseAppStore = Object.assign(
+    vi.fn(() => mockStore),
+    { getState: () => mockStore },
+  );
 
   return {
     useAppStore: mockUseAppStore,

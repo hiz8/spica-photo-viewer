@@ -11,7 +11,8 @@ class MockResizeObserver {
   disconnect = vi.fn();
 }
 
-global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+globalThis.ResizeObserver =
+  MockResizeObserver as unknown as typeof ResizeObserver;
 
 // Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
@@ -275,7 +276,7 @@ describe("ThumbnailBar", () => {
       mockStoreState.currentImage.path = "/test/image0.jpg";
       mockStoreState.currentImage.data = {
         path: "/test/image0.jpg",
-        base64: "data",
+        src: "data:image/jpeg;base64,data",
         width: 1920,
         height: 1080,
         format: "jpeg",

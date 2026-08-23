@@ -54,8 +54,10 @@ const mockGetState = vi.fn(() => ({
 }));
 
 vi.mock("../../store", () => {
-  const mockUseAppStore = vi.fn(() => mockStore);
-  mockUseAppStore.getState = () => mockGetState();
+  const mockUseAppStore = Object.assign(
+    vi.fn(() => mockStore),
+    { getState: () => mockGetState() },
+  );
   return {
     useAppStore: mockUseAppStore,
   };

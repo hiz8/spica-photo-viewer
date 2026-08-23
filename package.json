@@ -24,7 +24,7 @@
     "bench": "node e2e/scripts/run-bench.mjs",
     "bench:baseline": "node e2e/scripts/save-baseline.mjs",
     "type-check": "tsc --noEmit",
-    "type-check:test": "tsc --project tsconfig.test.json --noEmit",
+    "type-check:test": "tsc --project tsconfig.test.json --noEmit && tsc --project e2e/tsconfig.json --noEmit",
     "lint": "biome lint src/",
     "lint:fix": "biome lint src/ --write",
     "format": "biome format src/",
