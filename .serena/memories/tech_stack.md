@@ -15,7 +15,7 @@
 - **JSON**: serde + serde_json
 
 ## Development Tools
-- **TypeScript**: v5.8.3 with strict mode
+- **TypeScript**: v7.0 with strict mode
 - **Test Environment**: jsdom with vitest
 - **Coverage**: v8 provider
 - **Build**: Node.js scripts + Tauri CLI
