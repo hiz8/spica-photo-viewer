@@ -6,7 +6,9 @@
 use crate::utils::perf::PerfTimer;
 use base64::{engine::general_purpose, Engine as _};
 use fast_image_resize::{
-    images::Image as FirImage, FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer,
+    images::{TypedImage, TypedImageRef},
+    pixels::U8x3,
+    FilterType, ResizeAlg, ResizeOptions, Resizer,
 };
 use image::{DynamicImage, ExtendedColorType, ImageDecoder, ImageFormat, ImageReader, RgbImage};
 use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoderFast, SamplingFactor};
@@ -170,19 +172,33 @@ fn icc_describes_rgb(icc: &[u8]) -> bool {
     icc.len() >= 20 && &icc[16..20] == b"RGB "
 }
 
+/// Lanczos3 downscale through `fast_image_resize`'s *typed* API.
+///
+/// Build-time note: the dynamic `Resizer::resize(&DynamicImage, &mut Image)`
+/// entry point is generic over the image types, and its body matches on the
+/// runtime pixel type — so the caller's crate instantiates the convolution
+/// kernels for all 13 pixel types × every SIMD path. That alone made this
+/// crate's LLVM pass ~80 s longer (2026-08-23 measurement). Going through
+/// `TypedImageRef<U8x3>` / `resize_typed` instantiates only the RGB8 path;
+/// the filter, SIMD dispatch and rayon row splitting are identical.
 fn resize_rgb8(src: RgbImage, tw: u32, th: u32) -> Result<RgbImage, String> {
-    let src = DynamicImage::ImageRgb8(src);
-    let mut dst = FirImage::new(tw, th, PixelType::U8x3);
+    let (sw, sh) = (src.width(), src.height());
+    let src_buf = src.into_raw();
+    let src_view =
+        TypedImageRef::<U8x3>::from_buffer(sw, sh, &src_buf).map_err(|e| format!("resize: {e}"))?;
+    let mut dst_buf = vec![0u8; tw as usize * th as usize * 3];
+    let mut dst = TypedImage::<U8x3>::from_buffer(tw, th, &mut dst_buf)
+        .map_err(|e| format!("resize: {e}"))?;
     let mut resizer = Resizer::new();
     resizer
-        .resize(
-            &src,
+        .resize_typed(
+            &src_view,
             &mut dst,
             &ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)),
         )
         .map_err(|e| format!("resize: {e}"))?;
-    RgbImage::from_raw(tw, th, dst.into_vec())
-        .ok_or_else(|| "resize: buffer size mismatch".to_string())
+    drop(dst);
+    RgbImage::from_raw(tw, th, dst_buf).ok_or_else(|| "resize: buffer size mismatch".to_string())
 }
 
 /// Preview JPEG via the `jpeg-encoder` crate: 4:2:0 chroma subsampling and
@@ -480,6 +496,54 @@ mod tests {
             "transparent becomes black: {:?}",
             right
         );
+    }
+
+    /// Deterministic resize fixture: red left half, blue right half, green
+    /// rising linearly down the rows. Lets the tests tell "untouched source
+    /// color" from "blended at the seam" from "row mapped proportionally".
+    fn two_tone_gradient(w: u32, h: u32) -> RgbImage {
+        RgbImage::from_fn(w, h, |x, y| {
+            let g = (y * 255 / (h - 1)) as u8;
+            if x < w / 2 {
+                image::Rgb([255, g, 0])
+            } else {
+                image::Rgb([0, g, 255])
+            }
+        })
+    }
+
+    #[test]
+    fn resize_rgb8_keeps_uniform_regions_exact_and_blends_only_at_the_seam() {
+        let out = resize_rgb8(two_tone_gradient(96, 64), 48, 32).unwrap();
+        assert_eq!(out.dimensions(), (48, 32));
+        // Lanczos3 at 2x reaches 3 destination pixels either side of the seam
+        // (x = 24); anything farther away must be the source color verbatim.
+        for x in [0, 8, 20] {
+            let p = out.get_pixel(x, 16).0;
+            assert_eq!((p[0], p[2]), (255, 0), "left half at x={x}: {p:?}");
+        }
+        for x in [27, 40, 47] {
+            let p = out.get_pixel(x, 16).0;
+            assert_eq!((p[0], p[2]), (0, 255), "right half at x={x}: {p:?}");
+        }
+        let (l, r) = (out.get_pixel(23, 16).0, out.get_pixel(24, 16).0);
+        assert!(l[0] > r[0] && l[2] < r[2], "seam blend: {l:?} -> {r:?}");
+    }
+
+    #[test]
+    fn resize_rgb8_maps_rows_proportionally() {
+        let out = resize_rgb8(two_tone_gradient(96, 64), 48, 32).unwrap();
+        // Destination row y samples source rows 2y..2y+1 (center 2y + 0.5) of
+        // a 0..255 ramp over 64 rows; a linear ramp survives Lanczos3 within
+        // rounding, away from the top/bottom borders.
+        for y in [4, 8, 16, 24, 27] {
+            let expected = (f64::from(2 * y) + 0.5) * 255.0 / 63.0;
+            let got = f64::from(out.get_pixel(10, y).0[1]);
+            assert!(
+                (got - expected).abs() <= 3.0,
+                "row {y}: {got} vs {expected}"
+            );
+        }
     }
 
     #[test]
