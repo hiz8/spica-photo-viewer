@@ -1,7 +1,7 @@
 # 設計: Explorer のフォルダ表示順に合わせた画像ナビゲーション順
 
 - 日付: 2026-08-28 / 前提: `main` 60b35a7
-- 種別: 実装可否調査 + 設計（brainstorming 成果物）。ユーザー決定事項（§3 D1–D4）は **2026-08-28 に推奨案で承認済み**
+- 種別: 実装可否調査 + 設計（brainstorming 成果物）。ユーザー決定事項（§3 D1–D5）は **2026-08-28 に推奨案で承認済み**（D5 はレビュー指摘を受け同日追加承認）
 - 実装プランは Phase 単位で `docs/superpowers/plans/` に置く（§10）
 - 実機検証の生データは **付録 A**。検証スクリプトは `scripts/explorer-sort-probe/` に整理して置く（Phase 2）
 
@@ -31,7 +31,7 @@
 
 1. **並び順は Rust 側で固定**。`commands/file.rs:59` の `images.sort_by(|a, b| a.filename.cmp(&b.filename))` のみ。フロントは受け取った配列順をそのままナビゲーション順・サムネイルバー順に使う（`store/index.ts:442,464`、`ThumbnailBar.tsx:80`）。**並び替えの責務は Rust に一元化されている**ため、変更点はここ 1 箇所に閉じる。
 2. **`folder.sortOrder` は死にフィールド**。`src/types/index.ts:63,110` に `"name" | "date"` として定義されているが、`store/index.ts:123,190` で常に `"name"` を書き込むだけで読み出し箇所が無い。テスト・ファクトリ 5 箇所（`src/utils/testFactories.ts:75,108`、`src/utils/testUtils.tsx:86`、`src/components/__tests__/ImageViewer.test.tsx:85`、`src/store/__tests__/index.test.ts:41,81`）が参照している。
-3. **`ImageInfo` に作成日時が無い**。`commands/file.rs:14-20` は `path / filename / size / modified / format`。`get_image_info`（`file.rs:290`）は既に `fs::metadata` を読んでいるので、`created` の追加コストは `metadata.created()` 1 回のみ。
+3. **`ImageInfo` に作成日時が無い**。`commands/file.rs:14-20` は `path / filename / size / modified / format`。`get_image_info`（`file.rs:290`）は既に `fs::metadata` を読んでいるので、`created` の追加コストは `metadata.created()` 1 回のみ。なお `modified` は `as_secs()` で**秒精度に切り捨て**られている（`file.rs:306-311`）。Explorer は日時列を FILETIME 精度（100ns）で並べるため、秒精度のままでは日時ソートが一致しない（→ D5）。
 4. **`get_folder_images` は初回描画のクリティカルパス外**。`store/index.ts:631` の呼び出しは、画像パスの `set`（同 610）と `maximize_window`（同 626）の**後**。したがって `open:paint` には影響しないが、**ナビゲーション可能になるまでの時間**とサムネイルバー表示には影響する。
 5. **同じコマンドを D&D 経路も使う**（`src/hooks/useFileDrop.ts:46`）。この経路は Explorer 窓と無関係なことが多く、フォールバックが常用される。
 6. **起動時にソート情報は渡ってこない**。`get_startup_file`（`file.rs:86`）は `std::env::args()` から画像パスを拾うだけ。関連付け起動でも渡るのはパスのみで、順序は自力で再導出するしかない。
@@ -64,6 +64,7 @@
 | **D2** | **取得方式**: `GetSortColumns` で「キー＋昇降」だけを 1 回取得し、並べ替えは Rust 側で行う | **採用**。COM 往復がファイル数に依存せず（warm 12ms）、アプリのファイル列挙（`WalkDir`）と一貫する | `GetItem(i)` で表示順を直読み（§4 案 B） |
 | **D3** | **対応ソートキー**: 名前・サイズ・更新日時・作成日時・種類。`ImageInfo` に `created` を追加。未対応キーは名前昇順にフォールバック | **採用**。`fs::metadata` だけで賄える範囲に留める | 名前・サイズ・更新日時のみ / 撮影日時（EXIF）まで含める |
 | **D4** | **設定 UI**: 追加しない。常に自動追従（取得できれば Explorer 順、できなければ名前昇順） | **採用**。現在のアプリに設定永続化の仕組みが無く、新規サブシステムを作らずに済む | アプリ内ソート切替 UI / 追従 ON/OFF トグル |
+| **D5** | **日時比較の精度**: `Modified` / `Created` の比較は FILETIME 由来の全精度（UNIX ns、`u64`）で行う。比較専用フィールド `modified_ns` / `created_ns` を `#[serde(skip)]` で持ち、フロントには出さない（§6.5） | **採用**（レビュー指摘）。連写・アーカイブ展開・一括コピーでは同一秒のファイルが多発し、秒精度では名前タイブレークに落ちて Explorer の実時刻順とズレる。ns 値は JS の安全整数（2^53）を超えるためフロントには出せない | 秒精度のまま既知の制限として明記する |
 
 ## 4. 検討した方式
 
@@ -79,7 +80,7 @@
 get_folder_images(path)
   ├─ [並行 A] WalkDir でファイル列挙 → rayon で get_image_info（既存）
   └─ [並行 B] 専用スレッド: CoInitializeEx → Explorer 問い合わせ → Option<SortSpec>
-        ↓ join（上限 300ms）
+        ↓ join（スレッド起動から上限 300ms、§6.3）
      sort_images(&mut images, spec.unwrap_or_default())   // 既定 = Name 昇順
         ↓
      Vec<ImageInfo>（並び順そのものが答え）
@@ -135,8 +136,8 @@ pub fn sort_images(images: &mut [ImageInfo], spec: SortSpec);
 |---|---|---|
 | `Name` | `natural_cmp(a.filename, b.filename)` | |
 | `Size` | `a.size.cmp(&b.size)` | |
-| `Modified` | `a.modified.cmp(&b.modified)` | |
-| `Created` | `a.created.cmp(&b.created)` | §6.5 |
+| `Modified` | `a.modified_ns.cmp(&b.modified_ns)` | 全精度（D5、§6.5） |
+| `Created` | `a.created_ns.cmp(&b.created_ns)` | 全精度（D5、§6.5） |
 | `Type` | `natural_cmp(a.format, b.format)` | 拡張子による近似（§9 R4） |
 
 - `descending` が真なら一次キーの結果を反転する
@@ -160,7 +161,7 @@ pub fn detect_sort_spec(folder: &Path, foreground_hwnd: Option<HWND>) -> Option<
 5. `IFolderView2::GetFolder(IID_IPersistFolder2)` → `GetCurFolder()` → `SHGetPathFromIDListW` で**現在のフォルダの実パス**を得る
    - `IWebBrowser2::LocationURL` は `%20` エスケープや UNC（`file://polaris/another`）の形式差があるため使わない。PIDL 経由が正確
 6. 対象フォルダと比較（大小文字無視・末尾セパレータ正規化）して候補を収集
-7. `IFolderView2::GetSortColumnCount()` → `GetSortColumns()` で先頭 1 件の `SORTCOLUMN` を取得し、付録 B の対応表で `SortSpec` に写像
+7. `IFolderView2::GetSortColumnCount()` → `GetSortColumns()` で先頭 1 件の `SORTCOLUMN` を取得し、付録 B の対応表で `SortSpec` に写像（第 2 列以降は使わない。§9 R12）
 
 **複数候補の解決**（実測で `Downloads` が 2 窓あり、順序も異なっていた）
 
@@ -170,9 +171,9 @@ pub fn detect_sort_spec(folder: &Path, foreground_hwnd: Option<HWND>) -> Option<
 
 **実装上の注意**
 
-- **配列パラメータのマーシャリング**: `GetSortColumns` は `SORTCOLUMN*` を受け取る。COM では配列既定が `SAFEARRAY` になる言語バインディングがあり、検証時はこれが原因で `E_INVALIDARG` が返った（付録 A）。Rust では `&mut [SORTCOLUMN]` がポインタとして渡るため問題ないが、**vtable の順序が `GetSortColumnCount` → `SetSortColumns` → `GetSortColumns` である**点に注意（SDK ヘッダ `ShObjIdl_core.h` で確認済み。誤ると `SetSortColumns` を呼んでユーザーの Explorer の並びを書き換えてしまう）
+- **配列パラメータのマーシャリング**: `GetSortColumns` は `SORTCOLUMN*` を受け取る。COM では配列既定が `SAFEARRAY` になる言語バインディングがあり、C# プローブではこれが原因で `E_INVALIDARG` が返った（付録 A）。**windows 0.62.2 の生成済みバインディングは正しいことを確認済み**: 安全ラッパーは `&mut [SORTCOLUMN]` を取り、vtable 順序も `GetSortColumnCount` → `SetSortColumns` → `GetSortColumns`（SDK ヘッダ `ShObjIdl_core.h`）と一致している（crate ソース `Win32/UI/Shell/mod.rs:24770,24779` で確認）。自前で vtable を定義せず crate のバインディングを使う限り、この罠は踏まない（§9 R10）
 - **COM の初期化**: Tauri のスレッドと衝突させないため、専用スレッドで `CoInitializeEx(COINIT_APARTMENTTHREADED)` してから実行し、終了時に `CoUninitialize`
-- **タイムアウト**: `mpsc::recv_timeout(300ms)` で待ち、超過したら `None` にフォールバック。COM 呼び出しはキャンセルできないためスレッドはデタッチしたままにする
+- **タイムアウト**: 上限 300ms は**スレッド起動時刻を起点**とし、join 時は残余（300ms − 経過時間）だけ `mpsc::recv_timeout` で待つ（フォルダ走査に 300ms 以上かかっていれば待ち時間ゼロ）。超過したら `None` にフォールバック。COM 呼び出しはキャンセルできないためスレッドはデタッチしたままにする
 - 非 Windows 向けには `detect_sort_spec` が常に `None` を返すスタブを用意する（I4）
 
 ### 6.4 `src-tauri/Cargo.toml`
@@ -196,8 +197,10 @@ windows = { version = "0.62", features = [
 
 ### 6.5 フロント（型のみ・振る舞いの変更なし）
 
-- `ImageInfo` に `created: u64` を追加（`src-tauri/src/commands/file.rs:14`、`src/types/index.ts:1`）
+- `ImageInfo` に `created: u64` を追加（`src-tauri/src/commands/file.rs:14`、`src/types/index.ts:1`）。単位は既存 `modified` と同じ **UNIX 秒**
   - `get_image_info`（`file.rs:290`）で `metadata.created()` を読む。**取得できない環境では `modified` の値で代替する**（Linux では作成時刻が取れないことがあり、`?` で伝播させると CI が落ちる）
+- **比較専用の全精度フィールド**（D5）: `modified_ns: u64` / `created_ns: u64`（UNIX ns）を `#[serde(skip)]` で追加し、日時ソートはこちらで比較する（§6.2）。ソートは Rust 内で完結する（I3）ためフロントに出す必要が無く、ns 値は JS の安全整数（2^53）を超えるため**出してはならない**。u64 の ns は西暦 2554 年まで表現でき、`created_ns` が取れない環境では `modified_ns` で代替する
+- **テスト fixture の単位ずれを解消**: `modified` に `Date.now()`（ms）を入れている fixture が複数あり（`src/utils/testFactories.ts:22,35`、`src/utils/testUtils.tsx:26,35,42,49`、`src/components/__tests__/ThumbnailBar.test.tsx:25`、`src/hooks/__tests__/useImagePreloader.test.ts:24`、`src/hooks/__tests__/useThumbnailGenerator.test.ts:19`）、Rust の実値（秒）と単位がずれている。読み出しが無いため実害は無かったが、`created` を追加する Phase 1 で**秒に揃える**
 - **`folder.sortOrder` を削除**（`src/types/index.ts:63,110`、`src/store/index.ts:123,190`）。読み出し箇所が無い死にフィールドであり、実際の並びは Rust が決めるため誤解を生む。参照している 5 箇所のテスト・ファクトリも合わせて更新
 - `get_folder_images` の**戻り値は `Vec<ImageInfo>` のまま**。並び順そのものが答えなので、呼び出し側（`src/store/index.ts:631`、`src/hooks/useFileDrop.ts:46`）は無変更
 - 採用したソート由来（`explorer` / `fallback`）とキーは `SPICA_PERF=1` の Rust ログにのみ出す（D4 により UI には出さない）
@@ -222,6 +225,7 @@ windows = { version = "0.62", features = [
 |---|---|
 | 5 キー × 昇順/降順 | 一次キーどおりに並ぶ |
 | サイズ同値・更新日時同値 | **名前昇順**のタイブレーカが効く（降順指定でもタイブレーカは昇順） |
+| 同一秒・ns 違いの `modified_ns` / `created_ns` | ns の差で並ぶ（秒に切り捨てられていない。D5 の回帰テスト） |
 | 空・1 件 | パニックしない |
 | 既存 `test_get_folder_images_with_valid_folder`（`file.rs:402`） | `image1/2/3` は自然順でも同順なので**そのまま green** |
 
@@ -273,8 +277,9 @@ CI は `ubuntu-latest`（`.github/workflows/ci.yml:18,47`）なので、**CI が
 | **R7** | Explorer は隠しファイルを表示設定で隠すが、アプリは `WalkDir` で全件拾うため件数が食い違う | 既知の制限として明記。アプリは常に全画像を対象にする（案 A を選んだ帰結） |
 | **R8** | COM 呼び出しが固まりフォルダ表示が遅延する | 専用スレッド + 300ms タイムアウト（§6.3）。フォルダ走査と並行実行するため通常は完全に隠れる |
 | **R9** | `Win32_UI_Shell` feature 追加でビルド時間が増える | §8 で実測。許容できない増加なら feature の絞り込みを検討する |
-| **R10** | vtable 順序を誤ると `SetSortColumns` を呼び、**ユーザーの Explorer の並びを書き換えてしまう** | SDK ヘッダで確認済みの順序（§6.3）をコードコメントに明記し、`SetSortColumns` は束縛自体を定義しない |
+| **R10** | `SetSortColumns` を誤って呼ぶと**ユーザーの Explorer の並びを書き換えてしまう** | windows crate の生成済みバインディングを使う（vtable 順序は crate ソースで確認済み、§6.3）。自前の vtable 定義はせず、`SetSortColumns` を呼ぶコードが無いことをレビューで確認する |
 | **R11** | Phase 1 で並び順が変わり、既存の E2E / スナップショットが落ちる | §7.4。期待値を更新する |
+| **R12** | Explorer は複数ソート列を持てる（Shift+列ヘッダクリックで第 2 列を追加）が、本設計は `GetSortColumns` の**先頭 1 件のみ**採用するため、第 2 列を設定しているユーザーとはズレる | 既知の制限として明記。タイブレーカは常に名前昇順（I1）。`GetSortColumnCount` が 2 以上の場合は `SPICA_PERF` ログに全列を記録し、後日の判断材料にする |
 
 ## 10. 実装フェーズ
 
@@ -284,7 +289,8 @@ CI は `ubuntu-latest`（`.github/workflows/ci.yml:18,47`）なので、**CI が
 
 - `utils/natural_sort.rs` 新規（Windows: `StrCmpLogicalW` / その他: 純 Rust 代替）
 - `SortKey` / `SortSpec` / `sort_images` を `commands/file.rs` に追加し、`file.rs:59` を置き換える
-- `ImageInfo` に `created` を追加（Rust / TS 両方）
+- `ImageInfo` に `created`（秒）と比較専用の `modified_ns` / `created_ns`（`#[serde(skip)]`、D5）を追加（TS 側は `created` のみ）
+- テスト fixture の `modified` を秒に揃え、`created` を追加（§6.5）
 - `folder.sortOrder` を削除（参照 5 箇所を更新）
 - `Cargo.toml` に `Win32_UI_Shell` を追加
 - **単体で価値がある**: Explorer 窓の有無に関係なく、名前順のズレ（§0）が解消される
@@ -306,7 +312,8 @@ CI は `ubuntu-latest`（`.github/workflows/ci.yml:18,47`）なので、**CI が
 - `src-tauri/Cargo.toml` — `windows` features
 - `src/types/index.ts` — `ImageInfo`（1）、`AppState.folder`（63）、`FolderState`（110）
 - `src/store/index.ts` — `folder` 初期値（123）、`setFolderImages`（190）
-- `src/utils/testFactories.ts`（75, 108）、`src/utils/testUtils.tsx`（86）、`src/components/__tests__/ImageViewer.test.tsx`（85）、`src/store/__tests__/index.test.ts`（41, 81）
+- `src/utils/testFactories.ts`（22, 35, 75, 108）、`src/utils/testUtils.tsx`（26, 35, 42, 49, 86）、`src/components/__tests__/ImageViewer.test.tsx`（85）、`src/store/__tests__/index.test.ts`（41, 81）
+- `src/components/__tests__/ThumbnailBar.test.tsx`（25）、`src/hooks/__tests__/useImagePreloader.test.ts`（24）、`src/hooks/__tests__/useThumbnailGenerator.test.ts`（19）— `modified` の単位を秒に揃える（§6.5）
 
 **新規**
 
