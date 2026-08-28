@@ -30,6 +30,9 @@ pub struct ImageInfo {
     pub created_ns: u64,
 }
 
+// Variants other than Name are constructed by Phase 2's Explorer
+// detection (detect_sort_spec); until then only tests construct them.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortKey {
     Name,
@@ -478,7 +481,7 @@ mod tests {
         let images = result.unwrap();
         assert_eq!(images.len(), 3);
 
-        // Check sorting (should be alphabetical)
+        // Check sorting (natural name order; same as alphabetical for these names)
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
         assert_eq!(images[2].filename, "image3.gif");
@@ -593,6 +596,35 @@ mod tests {
             },
         );
         assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
+
+        // Descending flips the primary (ns) order.
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_modified_tie_breaks_by_name() {
+        // Identical modified_ns: even with descending set, the tiebreak
+        // stays name-ASCENDING (I1) — descending only flips the primary key.
+        let same = 1_700_000_000_000_000_000u64;
+        let mut v = vec![
+            sort_info("b.jpg", 1, same, 1, "jpeg"),
+            sort_info("a.jpg", 1, same, 1, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
     }
 
     #[test]
@@ -610,6 +642,16 @@ mod tests {
             },
         );
         assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
+
+        // Descending flips the primary (ns) order.
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Created,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
     }
 
     #[test]
@@ -627,6 +669,42 @@ mod tests {
             },
         );
         assert_eq!(names(&v), ["c.gif", "a.jpg", "b.png"]);
+
+        // Descending flips the primary (format) order.
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Type,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["b.png", "a.jpg", "c.gif"]);
+    }
+
+    #[test]
+    fn test_image_info_serde_skips_ns_fields() {
+        let info = sort_info(
+            "a.jpg",
+            1,
+            1_700_000_000_500_000_000,
+            1_700_000_000_100_000_000,
+            "jpeg",
+        );
+        let value = serde_json::to_value(&info).unwrap();
+        let obj = value.as_object().unwrap();
+
+        for key in ["path", "filename", "size", "modified", "created", "format"] {
+            assert!(
+                obj.contains_key(key),
+                "expected key `{key}` in serialized ImageInfo"
+            );
+        }
+        for key in ["modified_ns", "created_ns"] {
+            assert!(
+                !obj.contains_key(key),
+                "did not expect key `{key}` in serialized ImageInfo (D5)"
+            );
+        }
     }
 
     #[test]
