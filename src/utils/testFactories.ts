@@ -15,26 +15,32 @@ export const createImageData = (
 
 export const createImageInfo = (
   overrides: Partial<ImageInfo> = {},
-): ImageInfo => ({
-  path: "/test/image.jpg",
-  filename: "image.jpg",
-  size: 1024,
-  modified: Date.now(),
-  format: "jpeg",
-  ...overrides,
-});
+): ImageInfo => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  return {
+    path: "/test/image.jpg",
+    filename: "image.jpg",
+    size: 1024,
+    modified: nowSec,
+    created: nowSec,
+    format: "jpeg",
+    ...overrides,
+  };
+};
 
 export const createImageList = (
   count: number = 3,
   baseName: string = "image",
 ): ImageInfo[] => {
-  return Array.from({ length: count }, (_, index) =>
-    createImageInfo({
+  return Array.from({ length: count }, (_, index) => {
+    const modifiedSec = Math.floor(Date.now() / 1000) - (count - index);
+    return createImageInfo({
       path: `/test/${baseName}${index + 1}.jpg`,
       filename: `${baseName}${index + 1}.jpg`,
-      modified: Date.now() - (count - index) * 1000,
-    }),
-  );
+      modified: modifiedSec,
+      created: modifiedSec,
+    });
+  });
 };
 
 export const createErrorImageData = (
@@ -72,7 +78,6 @@ export const createImageViewerState = (
   folder: {
     path: "/test",
     images: createImageList(),
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
@@ -105,7 +110,6 @@ export const createEmptyViewerState = () => ({
   folder: {
     path: "",
     images: [],
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,

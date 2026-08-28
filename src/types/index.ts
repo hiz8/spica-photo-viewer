@@ -3,6 +3,7 @@ export interface ImageInfo {
   filename: string;
   size: number;
   modified: number;
+  created: number;
   format: "jpeg" | "png" | "webp" | "gif";
 }
 
@@ -60,7 +61,6 @@ export interface AppState {
     path: string;
     images: ImageInfo[];
     imagesByPath: Map<string, ImageInfo>;
-    sortOrder: "name" | "date";
   };
 
   view: {
@@ -107,7 +107,6 @@ export interface ViewState {
 export interface FolderState {
   path: string;
   images: ImageInfo[];
-  sortOrder: "name" | "date";
 }
 
 export interface CurrentImageState {

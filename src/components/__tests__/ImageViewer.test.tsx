@@ -82,7 +82,6 @@ const mockStore = {
     path: "",
     images: [],
     imagesByPath: new Map(),
-    sortOrder: "name" as const,
   },
   cache: {
     thumbnails: new Map(),

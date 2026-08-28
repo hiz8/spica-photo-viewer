@@ -38,7 +38,6 @@ describe("AppStore", () => {
         path: "",
         images: [],
         imagesByPath: new Map(),
-        sortOrder: "name",
       },
       view: {
         zoom: 100,
@@ -78,7 +77,6 @@ describe("AppStore", () => {
 
       expect(state.folder.path).toBe("");
       expect(state.folder.images).toEqual([]);
-      expect(state.folder.sortOrder).toBe("name");
 
       expect(state.view.zoom).toBe(100);
       expect(state.view.panX).toBe(0);

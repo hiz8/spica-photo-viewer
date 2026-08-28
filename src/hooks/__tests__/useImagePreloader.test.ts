@@ -21,7 +21,8 @@ const imageInfo = (
   path: img(i),
   filename: `image${i}.jpg`,
   size: 1024,
-  modified: 1700000000000 - i,
+  modified: 1700000000 - i,
+  created: 1700000000 - i,
   format: "jpeg",
   ...overrides,
 });

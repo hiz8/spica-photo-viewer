@@ -16,7 +16,8 @@ const createMockImageInfo = (
   path: `/test/image${index}.jpg`,
   filename: `image${index}.jpg`,
   size: 1024,
-  modified: Date.now() - index * 1000,
+  modified: Math.floor(Date.now() / 1000) - index,
+  created: Math.floor(Date.now() / 1000) - index,
   format: "jpeg",
   ...overrides,
 });

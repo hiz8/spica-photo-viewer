@@ -1,5 +1,6 @@
 use crate::commands::cache::{self, CacheEntry, PreviewSidecar};
 use crate::utils::image::is_supported_image;
+use crate::utils::natural_sort::natural_cmp;
 use crate::utils::preview::{self, PreviewBox};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -17,7 +18,65 @@ pub struct ImageInfo {
     pub filename: String,
     pub size: u64,
     pub modified: u64,
+    /// UNIX seconds; falls back to `modified` where the platform/filesystem
+    /// has no creation time (e.g. Linux). Spec §6.5.
+    pub created: u64,
     pub format: String,
+    /// Sort-only full-precision timestamps (spec D5). Never serialized:
+    /// ns since epoch exceeds JavaScript's safe-integer range (2^53).
+    #[serde(skip)]
+    pub modified_ns: u64,
+    #[serde(skip)]
+    pub created_ns: u64,
+}
+
+// Variants other than Name are constructed by Phase 2's Explorer
+// detection (detect_sort_spec); until then only tests construct them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    Name,
+    Size,
+    Modified,
+    Created,
+    Type,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SortSpec {
+    pub key: SortKey,
+    pub descending: bool,
+}
+
+impl Default for SortSpec {
+    fn default() -> Self {
+        Self {
+            key: SortKey::Name,
+            descending: false,
+        }
+    }
+}
+
+/// Sorts images the way Explorer displays them for the given sort setting.
+/// Pure function: no COM, unit-testable (spec §5). Ties on the primary key
+/// always break by natural name order ASCENDING regardless of `descending`,
+/// so the order is deterministic (I1).
+pub fn sort_images(images: &mut [ImageInfo], spec: SortSpec) {
+    images.sort_by(|a, b| {
+        let primary = match spec.key {
+            SortKey::Name => natural_cmp(&a.filename, &b.filename),
+            SortKey::Size => a.size.cmp(&b.size),
+            SortKey::Modified => a.modified_ns.cmp(&b.modified_ns),
+            SortKey::Created => a.created_ns.cmp(&b.created_ns),
+            SortKey::Type => natural_cmp(&a.format, &b.format),
+        };
+        let primary = if spec.descending {
+            primary.reverse()
+        } else {
+            primary
+        };
+        primary.then_with(|| natural_cmp(&a.filename, &b.filename))
+    });
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -56,7 +115,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         .filter_map(|path| get_image_info(path).ok())
         .collect();
 
-    images.sort_by(|a, b| a.filename.cmp(&b.filename));
+    sort_images(&mut images, SortSpec::default());
     Ok(images)
 }
 
@@ -303,12 +362,18 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         .unwrap_or("unknown")
         .to_lowercase();
 
-    let modified = metadata
+    let modified_dur = metadata
         .modified()
         .map_err(|e| format!("Failed to get modification time: {}", e))?
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("Failed to convert time: {}", e))?
-        .as_secs();
+        .map_err(|e| format!("Failed to convert time: {}", e))?;
+    let modified = modified_dur.as_secs();
+
+    let created_dur = metadata
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .unwrap_or(modified_dur);
 
     // Note: Image validation is deferred to actual image loading time (spica-img protocol serve,
     // generate_thumbnail) to avoid opening 900+ files during folder scan, which causes significant
@@ -319,7 +384,10 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         filename,
         size: metadata.len(),
         modified,
+        created: created_dur.as_secs(),
         format,
+        modified_ns: modified_dur.as_nanos() as u64,
+        created_ns: created_dur.as_nanos() as u64,
     })
 }
 
@@ -413,10 +481,250 @@ mod tests {
         let images = result.unwrap();
         assert_eq!(images.len(), 3);
 
-        // Check sorting (should be alphabetical)
+        // Check sorting (natural name order; same as alphabetical for these names)
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
         assert_eq!(images[2].filename, "image3.gif");
+    }
+
+    #[tokio::test]
+    async fn test_image_info_timestamps_full_precision() {
+        let temp_dir = create_temp_dir();
+        create_test_jpeg(temp_dir.path(), "ts.jpg");
+
+        let images = get_folder_images(temp_dir.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        let info = &images[0];
+
+        // seconds fields are the ns fields truncated (D5)
+        assert_eq!(info.modified, info.modified_ns / 1_000_000_000);
+        assert_eq!(info.created, info.created_ns / 1_000_000_000);
+        // a freshly created file has non-zero timestamps
+        assert!(info.modified_ns > 0);
+        assert!(info.created_ns > 0);
+    }
+
+    /// Builds an ImageInfo for sort tests. Seconds fields derive from the ns
+    /// fields the same way get_image_info does.
+    fn sort_info(
+        filename: &str,
+        size: u64,
+        modified_ns: u64,
+        created_ns: u64,
+        format: &str,
+    ) -> ImageInfo {
+        ImageInfo {
+            path: format!("/t/{filename}"),
+            filename: filename.to_string(),
+            size,
+            modified: modified_ns / 1_000_000_000,
+            created: created_ns / 1_000_000_000,
+            format: format.to_string(),
+            modified_ns,
+            created_ns,
+        }
+    }
+
+    fn names(images: &[ImageInfo]) -> Vec<&str> {
+        images.iter().map(|i| i.filename.as_str()).collect()
+    }
+
+    #[test]
+    fn test_sort_images_name_natural_order() {
+        // Data must sort identically under StrCmpLogicalW and the non-Windows
+        // fallback (see natural_sort.rs): digits decide, no punctuation-vs-digit
+        // comparisons. "IMG_1.jpg" vs "img2.jpg" would diverge ('_' vs '2').
+        let mut v = vec![
+            sort_info("img10.jpg", 1, 1, 1, "jpeg"),
+            sort_info("img2.jpg", 1, 1, 1, "jpeg"),
+            sort_info("IMG3.jpg", 1, 1, 1, "jpeg"),
+        ];
+        sort_images(&mut v, SortSpec::default());
+        assert_eq!(names(&v), ["img2.jpg", "IMG3.jpg", "img10.jpg"]);
+
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Name,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["img10.jpg", "IMG3.jpg", "img2.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_size_with_name_tiebreak() {
+        let mut v = vec![
+            sort_info("b.jpg", 200, 1, 1, "jpeg"),
+            sort_info("c.jpg", 100, 1, 1, "jpeg"),
+            sort_info("a.jpg", 100, 1, 1, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Size,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "c.jpg", "b.jpg"]);
+
+        // Descending flips the primary key only; the tie between a/c stays
+        // name-ASCENDING (I1).
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Size,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["b.jpg", "a.jpg", "c.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_modified_uses_ns_precision() {
+        // Same second, different ns. Name order is the REVERSE of ns order,
+        // so a seconds-truncated compare would fall to the name tiebreak and
+        // produce the wrong result (D5 regression test).
+        let base = 1_700_000_000_000_000_000u64;
+        let mut v = vec![
+            sort_info("a.jpg", 1, base + 500_000_000, 1, "jpeg"),
+            sort_info("b.jpg", 1, base + 100_000_000, 1, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
+
+        // Descending flips the primary (ns) order.
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_modified_tie_breaks_by_name() {
+        // Identical modified_ns: even with descending set, the tiebreak
+        // stays name-ASCENDING (I1) — descending only flips the primary key.
+        let same = 1_700_000_000_000_000_000u64;
+        let mut v = vec![
+            sort_info("b.jpg", 1, same, 1, "jpeg"),
+            sort_info("a.jpg", 1, same, 1, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_created_uses_ns_precision() {
+        let base = 1_700_000_000_000_000_000u64;
+        let mut v = vec![
+            sort_info("a.jpg", 1, 1, base + 500_000_000, "jpeg"),
+            sort_info("b.jpg", 1, 1, base + 100_000_000, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Created,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
+
+        // Descending flips the primary (ns) order.
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Created,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_type_then_name() {
+        let mut v = vec![
+            sort_info("b.png", 1, 1, 1, "png"),
+            sort_info("a.jpg", 1, 1, 1, "jpeg"),
+            sort_info("c.gif", 1, 1, 1, "gif"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Type,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["c.gif", "a.jpg", "b.png"]);
+
+        // Descending flips the primary (format) order.
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Type,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["b.png", "a.jpg", "c.gif"]);
+    }
+
+    #[test]
+    fn test_image_info_serde_skips_ns_fields() {
+        let info = sort_info(
+            "a.jpg",
+            1,
+            1_700_000_000_500_000_000,
+            1_700_000_000_100_000_000,
+            "jpeg",
+        );
+        let value = serde_json::to_value(&info).unwrap();
+        let obj = value.as_object().unwrap();
+
+        for key in ["path", "filename", "size", "modified", "created", "format"] {
+            assert!(
+                obj.contains_key(key),
+                "expected key `{key}` in serialized ImageInfo"
+            );
+        }
+        for key in ["modified_ns", "created_ns"] {
+            assert!(
+                !obj.contains_key(key),
+                "did not expect key `{key}` in serialized ImageInfo (D5)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sort_images_empty_and_single() {
+        let mut empty: Vec<ImageInfo> = vec![];
+        sort_images(&mut empty, SortSpec::default());
+        assert!(empty.is_empty());
+
+        let mut one = vec![sort_info("a.jpg", 1, 1, 1, "jpeg")];
+        sort_images(
+            &mut one,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&one), ["a.jpg"]);
     }
 
     #[tokio::test]
