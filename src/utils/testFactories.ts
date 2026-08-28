@@ -15,14 +15,18 @@ export const createImageData = (
 
 export const createImageInfo = (
   overrides: Partial<ImageInfo> = {},
-): ImageInfo => ({
-  path: "/test/image.jpg",
-  filename: "image.jpg",
-  size: 1024,
-  modified: Date.now(),
-  format: "jpeg",
-  ...overrides,
-});
+): ImageInfo => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  return {
+    path: "/test/image.jpg",
+    filename: "image.jpg",
+    size: 1024,
+    modified: nowSec,
+    created: nowSec,
+    format: "jpeg",
+    ...overrides,
+  };
+};
 
 export const createImageList = (
   count: number = 3,
@@ -32,7 +36,7 @@ export const createImageList = (
     createImageInfo({
       path: `/test/${baseName}${index + 1}.jpg`,
       filename: `${baseName}${index + 1}.jpg`,
-      modified: Date.now() - (count - index) * 1000,
+      modified: Math.floor(Date.now() / 1000) - (count - index),
     }),
   );
 };
@@ -72,7 +76,6 @@ export const createImageViewerState = (
   folder: {
     path: "/test",
     images: createImageList(),
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
@@ -105,7 +108,6 @@ export const createEmptyViewerState = () => ({
   folder: {
     path: "",
     images: [],
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,

@@ -120,7 +120,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     path: "",
     images: [],
     imagesByPath: new Map(),
-    sortOrder: "name",
   },
   view: {
     zoom: 100,
@@ -187,7 +186,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         images,
         // Build imagesByPath Map for O(1) lookup performance
         imagesByPath: new Map(images.map((img) => [img.path, img])),
-        sortOrder: "name",
       },
       cache: {
         ...state.cache,

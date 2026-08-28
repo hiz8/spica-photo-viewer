@@ -23,7 +23,8 @@ export const mockImageInfo: ImageInfo = {
   path: "/test/image.jpg",
   filename: "image.jpg",
   size: 1024,
-  modified: Date.now(),
+  modified: Math.floor(Date.now() / 1000),
+  created: Math.floor(Date.now() / 1000),
   format: "jpeg",
 };
 
@@ -32,21 +33,24 @@ export const mockImageList: ImageInfo[] = [
     path: "/test/image1.jpg",
     filename: "image1.jpg",
     size: 1024,
-    modified: Date.now() - 3000,
+    modified: Math.floor(Date.now() / 1000) - 3,
+    created: Math.floor(Date.now() / 1000) - 3,
     format: "jpeg",
   },
   {
     path: "/test/image2.png",
     filename: "image2.png",
     size: 2048,
-    modified: Date.now() - 2000,
+    modified: Math.floor(Date.now() / 1000) - 2,
+    created: Math.floor(Date.now() / 1000) - 2,
     format: "png",
   },
   {
     path: "/test/image3.gif",
     filename: "image3.gif",
     size: 512,
-    modified: Date.now() - 1000,
+    modified: Math.floor(Date.now() / 1000) - 1,
+    created: Math.floor(Date.now() / 1000) - 1,
     format: "gif",
   },
 ];
@@ -83,7 +87,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     path: "",
     images: [],
     imagesByPath: new Map(),
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
