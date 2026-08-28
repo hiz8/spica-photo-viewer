@@ -3,13 +3,103 @@
 //! to natural name order (I2). Non-Windows builds are a stub that always
 //! yields `None` (I4).
 
+use crate::commands::file::SortSpec;
+use std::path::PathBuf;
+use std::time::Instant;
+
+/// Whole-detection budget measured from thread spawn (§6.3). The folder scan
+/// runs concurrently, so join() only waits for whatever remains of it.
+#[cfg(windows)]
+const DETECT_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Foreground window at process launch, kept as isize because HWND is not
+/// Send. Used to pick among multiple Explorer windows showing the folder.
+#[cfg(windows)]
+static FOREGROUND_AT_LAUNCH: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+
+/// Call as early as possible in `run()`: the Explorer window the user
+/// launched the app from is still foreground until Tauri creates our window.
+pub fn stash_foreground_window() {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+        let hwnd = unsafe { GetForegroundWindow() };
+        if !hwnd.is_invalid() {
+            let _ = FOREGROUND_AT_LAUNCH.set(hwnd.0 as isize);
+        }
+    }
+}
+
+/// In-flight Explorer query started by `spawn_detect`.
+pub struct SortProbe {
+    #[cfg(windows)]
+    rx: std::sync::mpsc::Receiver<Option<SortSpec>>,
+    started: Instant,
+}
+
+/// Spawns the Explorer query on a dedicated COM thread, concurrent with the
+/// caller's folder scan (spec §5).
+#[cfg(windows)]
+pub fn spawn_detect(folder: PathBuf) -> SortProbe {
+    let started = Instant::now();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let foreground = FOREGROUND_AT_LAUNCH.get().copied();
+    std::thread::spawn(move || {
+        let _ = tx.send(detect_sort_spec(&folder, foreground));
+    });
+    SortProbe { rx, started }
+}
+
+/// Non-Windows stub: no Explorer, always resolves to None (I4).
+#[cfg(not(windows))]
+pub fn spawn_detect(folder: PathBuf) -> SortProbe {
+    let _ = folder;
+    SortProbe {
+        started: Instant::now(),
+    }
+}
+
+impl SortProbe {
+    /// Returns (detected spec, elapsed ms). Waits only for the remainder of
+    /// the 300ms budget measured from spawn; timeout or any COM failure is
+    /// None. The COM call cannot be cancelled, so on timeout the worker
+    /// thread stays detached (§6.3).
+    pub fn join(self) -> (Option<SortSpec>, f64) {
+        #[cfg(windows)]
+        let spec = {
+            let remaining = DETECT_TIMEOUT.saturating_sub(self.started.elapsed());
+            self.rx.recv_timeout(remaining).ok().flatten()
+        };
+        #[cfg(not(windows))]
+        let spec = None;
+        (spec, self.started.elapsed().as_secs_f64() * 1000.0)
+    }
+}
+
+/// Walks the open Explorer windows/tabs and returns the sort setting of the
+/// one showing `folder`. Runs on a dedicated thread (spawn_detect) or a
+/// probe binary; initializes STA COM for the duration of the query (§6.3).
+#[cfg(windows)]
+pub fn detect_sort_spec(
+    folder: &std::path::Path,
+    foreground_hwnd: Option<isize>,
+) -> Option<SortSpec> {
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if hr.is_err() {
+        return None;
+    }
+    let result = imp::scan_shell_windows(folder, foreground_hwnd);
+    unsafe { CoUninitialize() };
+    result
+}
+
 /// Normalizes a filesystem path for comparing an Explorer window's current
 /// folder against the target folder (§6.3 step 6): strips the `\\?\` prefix,
 /// unifies separators, drops trailing separators, lowercases. Compiled on all
 /// platforms so the contract stays unit-tested on CI (ubuntu); only the
 /// Windows COM path calls it at runtime.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn normalize_path(p: &str) -> String {
+pub fn normalize_path(p: &str) -> String {
     let p = p.strip_prefix(r"\\?\").unwrap_or(p);
     p.replace('/', "\\").trim_end_matches('\\').to_lowercase()
 }
@@ -46,11 +136,165 @@ mod imp {
             descending: col.direction.0 < 0,
         })
     }
+
+    use super::normalize_path;
+    use std::path::Path;
+    use windows::core::Interface;
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, IDispatch, CLSCTX_ALL};
+    use windows::Win32::System::Variant::{VARIANT, VARIANT_0_0, VARIANT_0_0_0, VT_I4};
+    use windows::Win32::UI::Shell::{
+        IFolderView2, IPersistFolder2, IShellBrowser, IShellView, IShellWindows,
+        IUnknown_QueryService, SHGetPathFromIDListW, ShellWindows, SID_STopLevelBrowser,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+
+    pub(super) fn scan_shell_windows(
+        folder: &Path,
+        foreground: Option<isize>,
+    ) -> Option<SortSpec> {
+        let target = normalize_path(&folder.to_string_lossy());
+        let shell_windows: IShellWindows =
+            unsafe { CoCreateInstance(&ShellWindows, None::<&windows::core::IUnknown>, CLSCTX_ALL) }
+                .ok()?;
+        let count = unsafe { shell_windows.Count() }.ok()?;
+        let mut first_match: Option<Option<SortSpec>> = None;
+        for i in 0..count {
+            let Some((view, top_hwnd)) = entry_at(&shell_windows, i) else {
+                continue;
+            };
+            let Some(path) = current_folder_path(&view) else {
+                continue;
+            };
+            if normalize_path(&path) != target {
+                continue;
+            }
+            let spec = read_sort_spec(&view);
+            // The window the user launched from wins outright (§6.3) — even
+            // when its sort key is unmapped (=> Name fallback, D-P2-5).
+            if foreground.is_some() && top_hwnd == foreground {
+                return spec;
+            }
+            if first_match.is_none() {
+                first_match = Some(spec);
+            }
+        }
+        first_match.flatten()
+    }
+
+    /// Resolves one IShellWindows entry to its folder view and top-level
+    /// frame HWND. Entries can be non-browser shell hosts or vanish
+    /// mid-enumeration; any failure skips the entry.
+    fn entry_at(shell_windows: &IShellWindows, index: i32) -> Option<(IFolderView2, Option<isize>)> {
+        let mut idx = VARIANT::default();
+        idx.Anonymous.Anonymous = std::mem::ManuallyDrop::new(VARIANT_0_0 {
+            vt: VT_I4,
+            wReserved1: 0,
+            wReserved2: 0,
+            wReserved3: 0,
+            Anonymous: VARIANT_0_0_0 { lVal: index },
+        });
+        let disp: IDispatch = unsafe { shell_windows.Item(&idx) }.ok()?;
+        let browser: IShellBrowser =
+            unsafe { IUnknown_QueryService(&disp, &SID_STopLevelBrowser) }.ok()?;
+        let view: IShellView = unsafe { browser.QueryActiveShellView() }.ok()?;
+        let view2: IFolderView2 = view.cast().ok()?;
+        // A Windows 11 tab's browser window is a child of the shared
+        // top-level frame; GetForegroundWindow returns the frame, so
+        // normalize via GA_ROOT before comparing (D-P2-3).
+        let top = unsafe { browser.GetWindow() }
+            .ok()
+            .map(|h| unsafe { GetAncestor(h, GA_ROOT) }.0 as isize);
+        Some((view2, top))
+    }
+
+    /// Real path of the folder the view is showing, via PIDL (§6.3 step 5).
+    /// IWebBrowser2::LocationURL is NOT used (escaping/UNC format issues).
+    fn current_folder_path(view: &IFolderView2) -> Option<String> {
+        let persist: IPersistFolder2 = unsafe { view.GetFolder::<IPersistFolder2>() }.ok()?;
+        let pidl = unsafe { persist.GetCurFolder() }.ok()?;
+        if pidl.is_null() {
+            return None;
+        }
+        let mut buf = [0u16; 260];
+        let ok = unsafe { SHGetPathFromIDListW(pidl, &mut buf) }.as_bool();
+        unsafe { CoTaskMemFree(Some(pidl as *const core::ffi::c_void)) };
+        if !ok {
+            // Virtual folders (This PC, ...) and > MAX_PATH folders (D-P2-7)
+            // have no filesystem path here.
+            return None;
+        }
+        let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        Some(String::from_utf16_lossy(&buf[..len]))
+    }
+
+    /// First sort column of the view, mapped to SortSpec (appendix B).
+    /// Secondary columns are recorded to the perf log only (R12).
+    fn read_sort_spec(view: &IFolderView2) -> Option<SortSpec> {
+        let count = unsafe { view.GetSortColumnCount() }.ok()?;
+        if count < 1 {
+            return None;
+        }
+        let mut cols = vec![SORTCOLUMN::default(); count as usize];
+        unsafe { view.GetSortColumns(&mut cols) }.ok()?;
+        log_view_details(view, &cols);
+        map_sort_column(&cols[0])
+    }
+
+    /// R12 (multi-column sorts) and R3 (grouping): recorded to the
+    /// SPICA_PERF log as future decision material; never shown in UI (D4).
+    fn log_view_details(view: &IFolderView2, cols: &[SORTCOLUMN]) {
+        if !crate::utils::perf::enabled() {
+            return;
+        }
+        if cols.len() > 1 {
+            let all: Vec<String> = cols
+                .iter()
+                .map(|c| format!("{:?}/{}:{}", c.propkey.fmtid, c.propkey.pid, c.direction.0))
+                .collect();
+            eprintln!(
+                r#"{{"perf":"rust","op":"explorer_sort_columns","detail":{}}}"#,
+                serde_json::Value::String(all.join(";"))
+            );
+        }
+        let mut key = PROPERTYKEY::default();
+        let mut ascending = windows::core::BOOL(0);
+        if unsafe { view.GetGroupBy(&mut key, Some(&mut ascending)) }.is_ok()
+            && key.fmtid != windows::core::GUID::default()
+        {
+            eprintln!(
+                r#"{{"perf":"rust","op":"explorer_group_by","detail":{}}}"#,
+                serde_json::Value::String(format!(
+                    "{:?}/{}:asc={}",
+                    key.fmtid,
+                    key.pid,
+                    ascending.as_bool()
+                ))
+            );
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn probe_on_unopened_folder_yields_none_within_budget() {
+        // A fresh temp dir is never shown in any Explorer window, so the
+        // probe must resolve to None on every platform. On Windows this
+        // exercises the real COM chain (no matching window / no Explorer).
+        let dir = tempfile::tempdir().unwrap();
+        let started = Instant::now();
+        let probe = spawn_detect(dir.path().to_path_buf());
+        let (spec, ms) = probe.join();
+        assert!(spec.is_none());
+        assert!(ms >= 0.0);
+        // join() must never wait past the 300ms budget by more than scheduling
+        // slack (generous bound to avoid flakes on loaded machines).
+        assert!(started.elapsed().as_millis() < 2000);
+    }
 
     #[test]
     fn normalize_path_ignores_case_and_trailing_separator() {

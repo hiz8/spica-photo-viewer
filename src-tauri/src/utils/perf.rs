@@ -5,7 +5,7 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 
-fn enabled() -> bool {
+pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         std::env::var("SPICA_PERF").map(|v| v == "1").unwrap_or(false)
