@@ -1,5 +1,25 @@
 use std::cmp::Ordering;
 
+/// Compares filenames in the same order as Explorer's "Name" column.
+#[cfg(windows)]
+pub fn natural_cmp(a: &str, b: &str) -> Ordering {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::StrCmpLogicalW;
+
+    let aw: Vec<u16> = a.encode_utf16().chain(std::iter::once(0)).collect();
+    let bw: Vec<u16> = b.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: both buffers are NUL-terminated and live across the call.
+    let r = unsafe { StrCmpLogicalW(PCWSTR(aw.as_ptr()), PCWSTR(bw.as_ptr())) };
+    r.cmp(&0)
+}
+
+/// Compares filenames in the same order as Explorer's "Name" column.
+/// Non-Windows builds use the pure-Rust approximation (spec §6.1).
+#[cfg(not(windows))]
+pub fn natural_cmp(a: &str, b: &str) -> Ordering {
+    natural_cmp_fallback(a, b)
+}
+
 /// Non-Windows natural-order comparator. Exists so CI (ubuntu-latest) can
 /// compile and run tests; it does NOT guarantee Explorer-identical order
 /// (spec §6.1). Digit runs compare numerically, everything else
@@ -88,5 +108,10 @@ mod tests {
         let ba = natural_cmp_fallback("img_1.jpg", "IMG_1.jpg");
         assert_ne!(ab, Ordering::Equal);
         assert_eq!(ab, ba.reverse());
+    }
+
+    #[test]
+    fn platform_natural_cmp_meets_natural_contract() {
+        assert_natural_contract(natural_cmp);
     }
 }
