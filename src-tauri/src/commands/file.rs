@@ -30,9 +30,6 @@ pub struct ImageInfo {
     pub created_ns: u64,
 }
 
-// Variants other than Name are constructed by Phase 2's Explorer
-// detection (detect_sort_spec); until then only tests construct them.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortKey {
     Name,
