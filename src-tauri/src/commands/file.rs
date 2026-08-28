@@ -17,7 +17,16 @@ pub struct ImageInfo {
     pub filename: String,
     pub size: u64,
     pub modified: u64,
+    /// UNIX seconds; falls back to `modified` where the platform/filesystem
+    /// has no creation time (e.g. Linux). Spec §6.5.
+    pub created: u64,
     pub format: String,
+    /// Sort-only full-precision timestamps (spec D5). Never serialized:
+    /// ns since epoch exceeds JavaScript's safe-integer range (2^53).
+    #[serde(skip)]
+    pub modified_ns: u64,
+    #[serde(skip)]
+    pub created_ns: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -303,12 +312,18 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         .unwrap_or("unknown")
         .to_lowercase();
 
-    let modified = metadata
+    let modified_dur = metadata
         .modified()
         .map_err(|e| format!("Failed to get modification time: {}", e))?
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("Failed to convert time: {}", e))?
-        .as_secs();
+        .map_err(|e| format!("Failed to convert time: {}", e))?;
+    let modified = modified_dur.as_secs();
+
+    let created_dur = metadata
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .unwrap_or(modified_dur);
 
     // Note: Image validation is deferred to actual image loading time (spica-img protocol serve,
     // generate_thumbnail) to avoid opening 900+ files during folder scan, which causes significant
@@ -319,7 +334,10 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         filename,
         size: metadata.len(),
         modified,
+        created: created_dur.as_secs(),
         format,
+        modified_ns: modified_dur.as_nanos() as u64,
+        created_ns: created_dur.as_nanos() as u64,
     })
 }
 
@@ -417,6 +435,24 @@ mod tests {
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
         assert_eq!(images[2].filename, "image3.gif");
+    }
+
+    #[tokio::test]
+    async fn test_image_info_timestamps_full_precision() {
+        let temp_dir = create_temp_dir();
+        create_test_jpeg(temp_dir.path(), "ts.jpg");
+
+        let images = get_folder_images(temp_dir.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        let info = &images[0];
+
+        // seconds fields are the ns fields truncated (D5)
+        assert_eq!(info.modified, info.modified_ns / 1_000_000_000);
+        assert_eq!(info.created, info.created_ns / 1_000_000_000);
+        // a freshly created file has non-zero timestamps
+        assert!(info.modified_ns > 0);
+        assert!(info.created_ns > 0);
     }
 
     #[tokio::test]
