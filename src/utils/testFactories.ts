@@ -32,13 +32,15 @@ export const createImageList = (
   count: number = 3,
   baseName: string = "image",
 ): ImageInfo[] => {
-  return Array.from({ length: count }, (_, index) =>
-    createImageInfo({
+  return Array.from({ length: count }, (_, index) => {
+    const modifiedSec = Math.floor(Date.now() / 1000) - (count - index);
+    return createImageInfo({
       path: `/test/${baseName}${index + 1}.jpg`,
       filename: `${baseName}${index + 1}.jpg`,
-      modified: Math.floor(Date.now() / 1000) - (count - index),
-    }),
-  );
+      modified: modifiedSec,
+      created: modifiedSec,
+    });
+  });
 };
 
 export const createErrorImageData = (
