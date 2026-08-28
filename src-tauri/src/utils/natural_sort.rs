@@ -25,6 +25,11 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
 /// (spec §6.1). Digit runs compare numerically, everything else
 /// case-insensitively; equal strings fall back to a case-sensitive compare
 /// so the result is deterministic.
+///
+/// Known divergence from StrCmpLogicalW: punctuation vs digit. Word sort
+/// puts punctuation before digits ("IMG_1" < "img2" on Windows), while this
+/// comparator orders by code point ('_' > '2'). Cross-platform test data
+/// must not hinge on such pairs.
 #[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn natural_cmp_fallback(a: &str, b: &str) -> Ordering {
     let av: Vec<char> = a.chars().collect();
@@ -78,6 +83,10 @@ mod tests {
         assert_eq!(cmp("01.jpg", "2.jpg"), Ordering::Less);
         // case-insensitive: the digits decide, not the case
         assert_eq!(cmp("IMG_1.jpg", "img_2.jpg"), Ordering::Less);
+        // case difference with no punctuation stays digit-decided
+        // (pairs used by sort_images tests in commands/file.rs)
+        assert_eq!(cmp("img2.jpg", "IMG3.jpg"), Ordering::Less);
+        assert_eq!(cmp("IMG3.jpg", "img10.jpg"), Ordering::Less);
         // digits after non-ASCII text still compare numerically
         assert_eq!(cmp("写真2.jpg", "写真10.jpg"), Ordering::Less);
         // identical strings

@@ -532,13 +532,16 @@ mod tests {
 
     #[test]
     fn test_sort_images_name_natural_order() {
+        // Data must sort identically under StrCmpLogicalW and the non-Windows
+        // fallback (see natural_sort.rs): digits decide, no punctuation-vs-digit
+        // comparisons. "IMG_1.jpg" vs "img2.jpg" would diverge ('_' vs '2').
         let mut v = vec![
             sort_info("img10.jpg", 1, 1, 1, "jpeg"),
             sort_info("img2.jpg", 1, 1, 1, "jpeg"),
-            sort_info("IMG_1.jpg", 1, 1, 1, "jpeg"),
+            sort_info("IMG3.jpg", 1, 1, 1, "jpeg"),
         ];
         sort_images(&mut v, SortSpec::default());
-        assert_eq!(names(&v), ["IMG_1.jpg", "img2.jpg", "img10.jpg"]);
+        assert_eq!(names(&v), ["img2.jpg", "IMG3.jpg", "img10.jpg"]);
 
         sort_images(
             &mut v,
@@ -547,7 +550,7 @@ mod tests {
                 descending: true,
             },
         );
-        assert_eq!(names(&v), ["img10.jpg", "img2.jpg", "IMG_1.jpg"]);
+        assert_eq!(names(&v), ["img10.jpg", "IMG3.jpg", "img2.jpg"]);
     }
 
     #[test]
