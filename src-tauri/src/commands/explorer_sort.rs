@@ -104,7 +104,7 @@ pub fn normalize_path(p: &str) -> String {
     p.replace('/', "\\").trim_end_matches('\\').to_lowercase()
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 pub(crate) use imp::map_sort_column;
 
 #[cfg(windows)]
@@ -253,7 +253,7 @@ mod imp {
                 .map(|c| format!("{:?}/{}:{}", c.propkey.fmtid, c.propkey.pid, c.direction.0))
                 .collect();
             eprintln!(
-                r#"{{"perf":"rust","op":"explorer_sort_columns","detail":{}}}"#,
+                r#"{{"perf":"rust","op":"explorer_sort_columns","ms":0.00,"detail":{}}}"#,
                 serde_json::Value::String(all.join(";"))
             );
         }
@@ -263,7 +263,7 @@ mod imp {
             && key.fmtid != windows::core::GUID::default()
         {
             eprintln!(
-                r#"{{"perf":"rust","op":"explorer_group_by","detail":{}}}"#,
+                r#"{{"perf":"rust","op":"explorer_group_by","ms":0.00,"detail":{}}}"#,
                 serde_json::Value::String(format!(
                     "{:?}/{}:asc={}",
                     key.fmtid,
