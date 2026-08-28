@@ -16,5 +16,10 @@ spec 付録 A の C# プローブを、アプリ本体と同じ windows crate �
 | `./compare-order.ps1 <folder>` | 上 2 つを diff(一致で exit 0) |
 | `./set-sort-via-ui.ps1 -Path <folder> -Column <ヘッダ名> [-Clicks n]` | 詳細表示に切替えて列ヘッダを UIA クリック(1=昇順, 2=降順) |
 
+`-Hwnd` が影響するのは stderr の検出結果行(`detect_sort_spec`)のみ。
+stdout の並びは `get_folder_images` の実経路で、プローブ実行では起動時
+foreground 退避が無いため常に列挙順先頭の窓が選ばれる。複数窓の選択ロジック
+検証は stderr の検出結果で行うこと。
+
 PROPERTYKEY の読み方(spec 付録 B): fmtid B725F130-… の pid 10=名前 /
 12=サイズ / 14=更新日時 / 15=作成日時 / 4=種類。dir 1=昇順, -1=降順。
