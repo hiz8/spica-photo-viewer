@@ -12,7 +12,7 @@ use walkdir::WalkDir;
 #[cfg(target_os = "windows")]
 const MAX_PATH_EXTENDED: usize = 32768;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
     pub filename: String,
@@ -72,6 +72,9 @@ pub fn sort_images(images: &mut [ImageInfo], spec: SortSpec) {
         } else {
             primary
         };
+        // natural_cmp can return Equal for case-insensitively equal names
+        // ("IMG_1.jpg" vs "img_1.jpg" under StrCmpLogicalW). The tiebreak is
+        // then a no-op and the stable sort keeps enumeration order.
         primary.then_with(|| natural_cmp(&a.filename, &b.filename))
     });
 }
@@ -93,6 +96,11 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         return Err("Invalid folder path".to_string());
     }
 
+    // Ask Explorer for this folder's sort setting concurrently with the scan
+    // (spec §5); the answer is picked up after the scan with whatever remains
+    // of the 300ms budget.
+    let probe = crate::commands::explorer_sort::spawn_detect(folder_path.to_path_buf());
+
     // First, collect all valid image paths (fast, no metadata reads)
     let image_paths: Vec<_> = WalkDir::new(folder_path)
         .max_depth(1)
@@ -112,7 +120,24 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         .filter_map(|path| get_image_info(path).ok())
         .collect();
 
-    sort_images(&mut images, SortSpec::default());
+    let (detected, probe_ms) = probe.join();
+    if crate::utils::perf::enabled() {
+        // Sort provenance (§6.5): explorer = a window's setting was adopted,
+        // fallback = Name ascending. Log-only; never surfaced in UI (D4).
+        let (source, key, descending) = match detected {
+            Some(s) => ("explorer", format!("{:?}", s.key), s.descending),
+            None => ("fallback", "Name".to_string(), false),
+        };
+        eprintln!(
+            r#"{{"perf":"rust","op":"explorer_sort","path":{},"ms":{:.2},"source":"{}","key":"{}","descending":{}}}"#,
+            serde_json::to_string(&path).unwrap_or_else(|_| "\"?\"".into()),
+            probe_ms,
+            source,
+            key,
+            descending
+        );
+    }
+    sort_images(&mut images, detected.unwrap_or_default());
     Ok(images)
 }
 
@@ -482,6 +507,23 @@ mod tests {
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
         assert_eq!(images[2].filename, "image3.gif");
+    }
+
+    #[tokio::test]
+    async fn test_get_folder_images_unopened_folder_uses_name_order() {
+        // No Explorer window shows a fresh temp dir, so detection resolves to
+        // None and the order must be natural-name ascending (G2/I2). Also
+        // guards the probe wiring: the command must not error or hang.
+        let temp_dir = create_temp_dir();
+        create_test_jpeg(temp_dir.path(), "img10.jpg");
+        create_test_jpeg(temp_dir.path(), "img2.jpg");
+        create_test_png(temp_dir.path(), "img3.png");
+
+        let images = get_folder_images(temp_dir.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        let names: Vec<&str> = images.iter().map(|i| i.filename.as_str()).collect();
+        assert_eq!(names, ["img2.jpg", "img3.png", "img10.jpg"]);
     }
 
     #[tokio::test]
