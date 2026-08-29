@@ -8,7 +8,6 @@ import {
   MAX_CONCURRENT_LOADS,
 } from "../../constants/timing";
 
-// Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
   index: number,
   overrides: Partial<ImageInfo> = {},
@@ -27,7 +26,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-// Mock the store
 const mockStore = {
   folder: {
     images: [] as ImageInfo[],
@@ -45,7 +43,6 @@ const mockStore = {
   setThumbnailGeneration: vi.fn(),
 };
 
-// Mock getState to return fresh state
 const mockGetState = vi.fn(() => ({
   folder: mockStore.folder,
   currentImage: mockStore.currentImage,
@@ -133,7 +130,6 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Should not have called immediately
       expect(mockInvoke).not.toHaveBeenCalled();
 
       // Fast-forward just before debounce - still should not have called
@@ -194,7 +190,6 @@ describe("useThumbnailGenerator", () => {
       });
       expect(mockInvoke).not.toHaveBeenCalled();
 
-      // Navigate to different image - should reset debounce
       mockStore.currentImage.index = 3;
       rerender();
 
@@ -205,7 +200,6 @@ describe("useThumbnailGenerator", () => {
       });
       expect(mockInvoke).not.toHaveBeenCalled();
 
-      // Complete the new debounce
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
@@ -239,16 +233,14 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
-        // Allow all async operations to complete
         await vi.runAllTimersAsync();
       });
 
       // Priority order from index 2: [2, 3, 1, 4, 0]
-      expect(callOrder).toContain("/test/image2.jpg"); // Current image first
+      expect(callOrder).toContain("/test/image2.jpg");
     });
 
     it("should limit initial queue to THUMBNAIL_GENERATION_INITIAL_RANGE", async () => {
@@ -279,13 +271,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
-      // Initial queue should be limited to ±THUMBNAIL_GENERATION_INITIAL_RANGE
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining(`±${THUMBNAIL_GENERATION_INITIAL_RANGE}`),
       );
@@ -300,7 +290,6 @@ describe("useThumbnailGenerator", () => {
       mockStore.folder.images = images;
       mockStore.currentImage.index = 2;
 
-      // Pre-cache some thumbnails
       mockStore.cache.thumbnails.set("/test/image2.jpg", {
         base64: "cached",
         width: 800,
@@ -312,7 +301,6 @@ describe("useThumbnailGenerator", () => {
         height: 600,
       });
 
-      // Update mockGetState to return the updated cache
       mockGetState.mockReturnValue({
         folder: mockStore.folder,
         currentImage: mockStore.currentImage,
@@ -338,13 +326,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Should not generate for cached images
       expect(generatedPaths).not.toContain("/test/image2.jpg");
       expect(generatedPaths).not.toContain("/test/image3.jpg");
     });
@@ -380,13 +366,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Max concurrent calls should not exceed MAX_CONCURRENT_LOADS
       expect(maxConcurrentCalls).toBeLessThanOrEqual(MAX_CONCURRENT_LOADS);
     });
   });
@@ -399,7 +383,6 @@ describe("useThumbnailGenerator", () => {
 
       mockInvoke.mockImplementation(async (cmd) => {
         if (cmd === "get_cached_thumbnail") {
-          // Return cached thumbnail with dimensions
           return ["cachedBase64", 1920, 1080];
         }
         return null;
@@ -407,7 +390,6 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
@@ -422,7 +404,6 @@ describe("useThumbnailGenerator", () => {
         size: THUMBNAIL_SIZE,
         previewBox: expect.stringMatching(/^\d+x\d+$/),
       });
-      // Should not call generate_thumbnail_with_dimensions
       expect(mockInvoke).not.toHaveBeenCalledWith(
         "generate_thumbnail_with_dimensions",
         expect.anything(),
@@ -436,7 +417,6 @@ describe("useThumbnailGenerator", () => {
 
       mockInvoke.mockImplementation(async (cmd) => {
         if (cmd === "get_cached_thumbnail") {
-          // Return cached thumbnail without dimensions
           return ["cachedBase64", null, null];
         }
         if (cmd === "generate_thumbnail_with_dimensions") {
@@ -452,13 +432,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Should have regenerated the thumbnail
       expect(mockInvoke).toHaveBeenCalledWith(
         "generate_thumbnail_with_dimensions",
         {
@@ -495,7 +473,6 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
@@ -549,25 +526,19 @@ describe("useThumbnailGenerator", () => {
 
       const { rerender } = renderHook(() => useThumbnailGenerator());
 
-      // Start generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
-      // Navigate to different image before generation completes
       mockStore.currentImage.index = 5;
       rerender();
 
-      // The hook should have aborted previous generation
-      // and started new one after debounce
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
-      // Previous generation should have been aborted
-      // New generation should be in progress
       expect(mockInvoke).toHaveBeenCalled();
     });
 
@@ -594,16 +565,13 @@ describe("useThumbnailGenerator", () => {
 
       const { unmount } = renderHook(() => useThumbnailGenerator());
 
-      // Unmount before debounce completes
       unmount();
 
-      // Fast-forward past debounce
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS + 100);
         await Promise.resolve();
       });
 
-      // No thumbnails should have been generated
       expect(mockInvoke).not.toHaveBeenCalledWith(
         "generate_thumbnail_with_dimensions",
         expect.anything(),
@@ -639,7 +607,6 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger initial generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
@@ -660,7 +627,6 @@ describe("useThumbnailGenerator", () => {
       mockStore.folder.images = images;
       mockStore.currentImage.index = 2;
 
-      // Pre-cache all thumbnails
       for (const img of images) {
         mockStore.cache.thumbnails.set(img.path, {
           base64: "cached",
@@ -688,7 +654,6 @@ describe("useThumbnailGenerator", () => {
         await vi.runAllTimersAsync();
       });
 
-      // Should log that all thumbnails are already generated
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("All"),
       );

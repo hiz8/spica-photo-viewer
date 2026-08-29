@@ -155,7 +155,7 @@ describe("bitmapLoader", () => {
 
     it("falls back to the bitmap's own dimensions but tags 'preview' (upgradeable) when both natural headers are missing", async () => {
       // Was previously asserted "full" — a missing header must not silently
-      // cap display quality by skipping the zoom upgrade (see F1 review fix).
+      // cap display quality by skipping the zoom upgrade.
       stubPreviewFetch({});
       vi.stubGlobal(
         "createImageBitmap",

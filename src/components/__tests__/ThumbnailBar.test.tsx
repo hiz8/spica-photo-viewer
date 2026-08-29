@@ -14,7 +14,6 @@ class MockResizeObserver {
 globalThis.ResizeObserver =
   MockResizeObserver as unknown as typeof ResizeObserver;
 
-// Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
   index: number,
   overrides: Partial<ImageInfo> = {},
@@ -28,7 +27,6 @@ const createMockImageInfo = (
   ...overrides,
 });
 
-// Create default mock store state
 const createDefaultMockStore = () => ({
   folder: {
     images: [] as ImageInfo[],
@@ -106,7 +104,6 @@ describe("ThumbnailBar", () => {
       const images = [createMockImageInfo(0)];
       mockStoreState.folder.images = images;
       mockStoreState.currentImage.index = 0;
-      // No thumbnail in cache
 
       render(<ThumbnailBar />);
 
@@ -198,14 +195,13 @@ describe("ThumbnailBar", () => {
         createMockImageInfo(i),
       );
       mockStoreState.folder.images = images;
-      mockStoreState.currentImage.index = 2; // Last image
+      mockStoreState.currentImage.index = 2;
 
       render(<ThumbnailBar />);
 
       const nav = screen.getByRole("navigation");
       fireEvent.wheel(nav, { deltaY: 100 });
 
-      // Should not call navigateToImage because already at last
       expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
     });
 
@@ -214,14 +210,13 @@ describe("ThumbnailBar", () => {
         createMockImageInfo(i),
       );
       mockStoreState.folder.images = images;
-      mockStoreState.currentImage.index = 0; // First image
+      mockStoreState.currentImage.index = 0;
 
       render(<ThumbnailBar />);
 
       const nav = screen.getByRole("navigation");
       fireEvent.wheel(nav, { deltaY: -100 });
 
-      // Should not call navigateToImage because already at first
       expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
     });
   });
@@ -316,13 +311,11 @@ describe("ThumbnailBar", () => {
       mockStoreState.folder.images = images;
       mockStoreState.currentImage.index = 5;
 
-      // Mock scrollTo
       const scrollToMock = vi.fn();
       Element.prototype.scrollTo = scrollToMock;
 
       render(<ThumbnailBar />);
 
-      // Advance timers past debounce
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_SCROLL_DEBOUNCE_MS);
       });
@@ -363,7 +356,6 @@ describe("ThumbnailBar", () => {
       mockStoreState.folder.images = images;
       mockStoreState.currentImage.index = 1;
 
-      // Set different states for thumbnails
       mockStoreState.cache.thumbnails.set("/test/image0.jpg", {
         base64: "data0",
         width: 800,
@@ -374,7 +366,6 @@ describe("ThumbnailBar", () => {
 
       render(<ThumbnailBar />);
 
-      // Check different states are rendered
       const items = screen.getAllByRole("button");
       expect(screen.getByAltText("image0.jpg")).toBeInTheDocument(); // Image rendered
       expect(items[1]).toBeEmptyDOMElement(); // Loading: blank slot, no icon

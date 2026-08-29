@@ -8,9 +8,6 @@ import {
 import { vi } from "vitest";
 import type { ImageData, ImageInfo } from "../types";
 
-// Test utilities for common test scenarios
-
-// Sample test data
 export const mockImageData: ImageData = {
   path: "/test/image.jpg",
   src: "data:jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
@@ -55,7 +52,6 @@ export const mockImageList: ImageInfo[] = [
   },
 ];
 
-// Custom render function that can include providers
 export const renderWithProviders = (
   ui: React.ReactElement,
   options?: Omit<RenderOptions, "wrapper">,
@@ -63,7 +59,6 @@ export const renderWithProviders = (
   return render(ui, options);
 };
 
-// Async render helper that wraps components in act()
 export const renderAsync = async (
   ui: React.ReactElement,
   options?: Omit<RenderOptions, "wrapper">,
@@ -75,7 +70,6 @@ export const renderAsync = async (
   return result;
 };
 
-// Store mock factory
 export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   currentImage: {
     path: "",
@@ -120,7 +114,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     thumbnailDisplayed: false,
     isCheckingStartupFile: true,
   },
-  // Mock functions
   setCurrentImage: vi.fn(),
   setImageData: vi.fn(),
   setImageError: vi.fn(),
@@ -159,7 +152,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-// Wait for async operations with act wrapper
 export const waitForAsync = async (callback: () => void | Promise<void>) => {
   await act(async () => {
     if (typeof callback === "function") {
@@ -168,9 +160,7 @@ export const waitForAsync = async (callback: () => void | Promise<void>) => {
   });
 };
 
-// Standardized async test patterns
 export const asyncTestPatterns = {
-  // Render component with async operations
   renderWithAsyncOps: async (
     ui: React.ReactElement,
     options?: Omit<RenderOptions, "wrapper">,
@@ -182,7 +172,6 @@ export const asyncTestPatterns = {
     return result;
   },
 
-  // Wait for component to settle after async operations
   waitForComponentToSettle: async (callback?: () => void | Promise<void>) => {
     await act(async () => {
       if (callback) {
@@ -193,14 +182,12 @@ export const asyncTestPatterns = {
     });
   },
 
-  // Execute async action and wait for completion
   executeAsyncAction: async (action: () => void | Promise<void>) => {
     await act(async () => {
       await action();
     });
   },
 
-  // Wait for expectations with act wrapper
   waitForExpectations: async (expectations: () => void | Promise<void>) => {
     await act(async () => {
       await vi.waitFor(async () => {
@@ -210,7 +197,6 @@ export const asyncTestPatterns = {
   },
 };
 
-// Mock window resize helper
 export const mockWindowResize = (width: number, height: number) => {
   Object.defineProperty(window, "innerWidth", {
     writable: true,
@@ -225,7 +211,6 @@ export const mockWindowResize = (width: number, height: number) => {
   window.dispatchEvent(new Event("resize"));
 };
 
-// Mock mouse event helpers
 export const createMouseEvent = (
   type: string,
   clientX: number = 0,
@@ -241,7 +226,6 @@ export const createMouseEvent = (
   });
 };
 
-// Mock wheel event helper
 export const createWheelEvent = (
   deltaY: number,
   clientX: number = 0,
@@ -256,7 +240,6 @@ export const createWheelEvent = (
   });
 };
 
-// Mock keyboard event helper
 export const createKeyboardEvent = (
   key: string,
   ctrlKey: boolean = false,

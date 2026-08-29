@@ -52,17 +52,14 @@ vi.mock("../../utils/previewBox", () => ({
   currentPreviewBox: () => "1920x1080",
 }));
 
-// Mock the useThumbnailGenerator hook
 vi.mock("../../hooks/useThumbnailGenerator", () => ({
   useThumbnailGenerator: vi.fn(),
 }));
 
-// Mock the useImagePreloader hook
 vi.mock("../../hooks/useImagePreloader", () => ({
   useImagePreloader: vi.fn(),
 }));
 
-// Mock the store
 const mockStore = {
   currentImage: {
     path: "",
@@ -173,7 +170,6 @@ const previewResult = (
 describe("ImageViewer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset store state
     mockStore.currentImage.path = "";
     mockStore.currentImage.data = null;
     mockStore.currentImage.error = null;
@@ -308,12 +304,10 @@ describe("ImageViewer", () => {
       // No thumbnail in cache, so this takes the direct-load branch
       mockStore.currentImage.path = "/test/image.jpg";
       mockStore.currentImage.data = null;
-      // No thumbnail in cache
       mockStore.cache.thumbnails = new Map();
 
       const { rerender } = render(<ImageViewer />);
 
-      // Advance past the debounce delay
       await act(async () => {
         vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
@@ -322,14 +316,11 @@ describe("ImageViewer", () => {
       expect(mockStore.setLoading).toHaveBeenCalledWith(true);
       expect(mockStore.setImageError).toHaveBeenCalledWith(null);
 
-      // Wait for async operation
       await act(async () => {
         await vi.waitFor(() => {
-          // Should load via the spica-img protocol (no thumbnail cached)
           expect(mockLoadImageViaProtocol).toHaveBeenCalledWith(
             "/test/image.jpg",
           );
-          // Should set image data carrying the protocol URL
           expect(mockStore.setImageData).toHaveBeenCalledWith(
             expect.objectContaining({
               path: "/test/image.jpg",
@@ -364,7 +355,6 @@ describe("ImageViewer", () => {
 
       render(<ImageViewer />);
 
-      // Advance past the debounce delay
       await act(async () => {
         vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
@@ -391,7 +381,6 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Advance past the debounce delay
       await act(async () => {
         vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
@@ -448,7 +437,6 @@ describe("ImageViewer", () => {
       const image = screen.getByRole("img");
       fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
 
-      // Image should change to grabbing cursor during drag
       expect(image).toHaveStyle({ cursor: "grabbing" });
     });
 
@@ -459,10 +447,8 @@ describe("ImageViewer", () => {
       const container = image.parentElement as HTMLElement;
       expect(container).not.toBeNull();
 
-      // Start drag on image
       fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
 
-      // Move mouse on container
       fireEvent.mouseMove(container, { clientX: 120, clientY: 70 });
 
       expect(mockStore.setPan).toHaveBeenCalled();
@@ -474,7 +460,6 @@ describe("ImageViewer", () => {
       const container = screen.getByRole("img").parentElement as HTMLElement;
       expect(container).not.toBeNull();
 
-      // Start and stop drag
       fireEvent.mouseDown(container, { clientX: 100, clientY: 50 });
       fireEvent.mouseUp(container);
 
@@ -488,7 +473,6 @@ describe("ImageViewer", () => {
       const container = screen.getByRole("img").parentElement as HTMLElement;
       expect(container).not.toBeNull();
 
-      // Start drag and leave
       fireEvent.mouseDown(container, { clientX: 100, clientY: 50 });
       fireEvent.mouseLeave(container);
 
@@ -502,13 +486,11 @@ describe("ImageViewer", () => {
       const container = screen.getByRole("img").parentElement;
       expect(container).not.toBeNull();
 
-      // Verify that the container is properly rendered and can receive events
       expect(container).toBeInTheDocument();
       expect(container).toHaveClass("image-viewer");
     });
 
     it("should handle wheel event for zooming", () => {
-      // Mock getBoundingClientRect
       const mockGetBoundingClientRect = vi.fn(() => ({
         left: 0,
         top: 0,
@@ -528,7 +510,6 @@ describe("ImageViewer", () => {
       (container as HTMLElement).getBoundingClientRect =
         mockGetBoundingClientRect;
 
-      // Use fireEvent.wheel directly with proper event properties
       fireEvent.wheel(container as HTMLElement, {
         deltaY: -120,
         clientX: 400,
@@ -548,10 +529,8 @@ describe("ImageViewer", () => {
     it("should refit image on window resize", () => {
       render(<ImageViewer />);
 
-      // Clear previous calls
       mockStore.fitToWindow.mockClear();
 
-      // Trigger resize
       fireEvent(window, new Event("resize"));
 
       expect(mockStore.fitToWindow).toHaveBeenCalledWith(
@@ -585,7 +564,6 @@ describe("ImageViewer", () => {
 
       const image = screen.getByRole("img");
 
-      // Start drag on image
       fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
 
       expect(image).toHaveStyle({ transition: "none" });
@@ -600,7 +578,6 @@ describe("ImageViewer", () => {
 
       const image = screen.getByRole("img");
 
-      // In normal state (not dragging, suppressTransition=false), transition should be enabled
       expect(image).toHaveStyle({ transition: "transform 0.1s ease-out" });
     });
 
@@ -613,7 +590,6 @@ describe("ImageViewer", () => {
 
       const image = screen.getByRole("img");
 
-      // When suppressTransition is true, transition should be disabled
       expect(image).toHaveStyle({ transition: "none" });
     });
   });
@@ -626,7 +602,6 @@ describe("ImageViewer", () => {
 
       render(<ImageViewer />);
 
-      // Image element won't be rendered when data is null
       const viewer = screen.getByRole("region", { name: /image viewer/i });
       expect(viewer).toBeInTheDocument();
       // Note: Cannot test opacity value since image element is not rendered when data is null
@@ -640,7 +615,6 @@ describe("ImageViewer", () => {
       render(<ImageViewer />);
 
       const image = screen.getByRole("img");
-      // When suppressTransition is true but data exists, opacity should be 1 for instant display
       expect(image).toHaveStyle({ opacity: "1" });
     });
 
@@ -652,7 +626,6 @@ describe("ImageViewer", () => {
       render(<ImageViewer />);
 
       const image = screen.getByRole("img");
-      // In normal state (suppressTransition=false), opacity should always be 1
       expect(image).toHaveStyle({ opacity: "1" });
     });
   });
@@ -756,7 +729,6 @@ describe("ImageViewer", () => {
 
       render(<ImageViewer />);
 
-      // Should render empty container when path exists but no data, not crash
       const container = document.querySelector(".image-viewer");
       expect(container).toBeInTheDocument();
     });
@@ -770,7 +742,6 @@ describe("ImageViewer", () => {
         top: "0px",
       });
 
-      // Update view state
       mockStore.view.imageLeft = 200;
       mockStore.view.imageTop = 100;
 
@@ -808,7 +779,6 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Advance past debounce
       await act(async () => {
         vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
@@ -894,16 +864,13 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Advance past debounce
       await act(async () => {
         vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Wait for async operations
       await act(async () => {
         await vi.waitFor(() => {
-          // Should have called setImageData (thumbnail then preview)
           expect(mockStore.setImageData).toHaveBeenCalledWith(
             expect.objectContaining({ src: PREVIEW_SRC("/test/image.jpg") }),
           );
@@ -933,7 +900,6 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Advance past debounce
       await act(async () => {
         vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
@@ -961,7 +927,6 @@ describe("ImageViewer", () => {
         height: 1080,
         format: "jpeg",
       });
-      // Simulate saved view state
       mockStore.cache.imageViewStates.set("/test/image.jpg", {
         zoom: 150,
         panX: 50,
@@ -972,13 +937,11 @@ describe("ImageViewer", () => {
         render(<ImageViewer />);
       });
 
-      // Advance past debounce
       await act(async () => {
         vi.advanceTimersByTime(IMAGE_LOAD_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
-      // updateImageDimensions should be called for images with saved state
       expect(mockStore.updateImageDimensions).toHaveBeenCalledWith(1920, 1080);
 
       vi.useRealTimers();
@@ -1057,7 +1020,6 @@ describe("ImageViewer", () => {
     });
 
     it("does not redraw the canvas on an unrelated re-render while mounted", () => {
-      // Canvas is already mounted and drawn with a bitmap in place.
       setBitmap(path, fakeBitmap(800, 600));
       mockStore.currentImage.path = path;
       mockStore.currentImage.data = data;
@@ -1484,7 +1446,6 @@ describe("ImageViewer", () => {
 
       const { rerender } = render(<ImageViewer />);
 
-      // Navigate away before the debounce elapses.
       mockStore.currentImage.path = "/test/other.jpg";
       mockStore.currentImage.data = null;
       rerender(<ImageViewer />);

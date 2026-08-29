@@ -26,7 +26,6 @@ const makeImageInfo = (path: string) =>
 
 describe("AppStore", () => {
   beforeEach(() => {
-    // Reset store to initial state before each test
     useAppStore.setState({
       currentImage: {
         path: "",
@@ -101,11 +100,9 @@ describe("AppStore", () => {
     it("should reset error when setting new image", () => {
       const { setCurrentImage, setImageError } = useAppStore.getState();
 
-      // Set an error first
       setImageError(new Error("Test error"));
       expect(useAppStore.getState().currentImage.error).not.toBeNull();
 
-      // Setting new image should clear error
       setCurrentImage("/test/new-image.jpg", 0);
       expect(useAppStore.getState().currentImage.error).toBeNull();
     });
@@ -113,7 +110,6 @@ describe("AppStore", () => {
     it("should clear image data when setting new image", () => {
       const { setCurrentImage, setImageData } = useAppStore.getState();
 
-      // Set initial image with data
       setCurrentImage("/test/image1.jpg", 0);
       setImageData(mockImageData);
 
@@ -121,7 +117,6 @@ describe("AppStore", () => {
       expect(stateWithData.currentImage.data).not.toBeNull();
       expect(stateWithData.currentImage.path).toBe("/test/image1.jpg");
 
-      // Setting new image should clear data
       setCurrentImage("/test/image2.jpg", 1);
 
       const stateAfter = useAppStore.getState();
@@ -151,23 +146,18 @@ describe("AppStore", () => {
         setCurrentImage,
       } = useAppStore.getState();
 
-      // Set up first folder with images and view states
       setFolderImages("/test/folder1", mockImageList);
       setCurrentImage(mockImageList[0].path, 0);
       setZoom(150);
       setPan(100, 50);
 
-      // Navigate to save the state
       navigateToImage(1);
 
-      // Verify state was saved
       let state = useAppStore.getState();
       expect(state.cache.imageViewStates.has(mockImageList[0].path)).toBe(true);
 
-      // Change to a different folder
       setFolderImages("/test/folder2", mockImageList);
 
-      // imageViewStates should be cleared
       state = useAppStore.getState();
       expect(state.cache.imageViewStates.size).toBe(0);
     });
@@ -181,24 +171,19 @@ describe("AppStore", () => {
         setCurrentImage,
       } = useAppStore.getState();
 
-      // Set up folder with images and view states
       setFolderImages("/test/folder", mockImageList);
       setCurrentImage(mockImageList[0].path, 0);
       setZoom(150);
       setPan(100, 50);
 
-      // Navigate to save the state
       navigateToImage(1);
 
-      // Verify state was saved
       let state = useAppStore.getState();
       expect(state.cache.imageViewStates.has(mockImageList[0].path)).toBe(true);
       const savedState = state.cache.imageViewStates.get(mockImageList[0].path);
 
-      // Set the same folder again (e.g., refresh)
       setFolderImages("/test/folder", mockImageList);
 
-      // imageViewStates should be preserved
       state = useAppStore.getState();
       expect(state.cache.imageViewStates.has(mockImageList[0].path)).toBe(true);
       expect(state.cache.imageViewStates.get(mockImageList[0].path)).toEqual(
@@ -232,12 +217,10 @@ describe("AppStore", () => {
     it("should reset pan when setting zoom", () => {
       const { setPan, setZoom } = useAppStore.getState();
 
-      // Set some pan values
       setPan(100, 50);
       expect(useAppStore.getState().view.panX).toBe(100);
       expect(useAppStore.getState().view.panY).toBe(50);
 
-      // Setting zoom should reset pan
       setZoom(200);
       expect(useAppStore.getState().view.panX).toBe(0);
       expect(useAppStore.getState().view.panY).toBe(0);
@@ -265,7 +248,6 @@ describe("AppStore", () => {
     it("should reset view when navigating to new image without saved state", () => {
       const { navigateToImage, setZoom, setPan } = useAppStore.getState();
 
-      // Set some view state
       setZoom(200);
       setPan(50, 25);
 
@@ -281,17 +263,13 @@ describe("AppStore", () => {
       const { navigateToImage, setZoom, setPan, setCurrentImage } =
         useAppStore.getState();
 
-      // Set current image
       setCurrentImage(mockImageList[0].path, 0);
 
-      // Set some view state
       setZoom(150);
       setPan(100, 50);
 
-      // Navigate to another image
       navigateToImage(1);
 
-      // Check that the view state was saved for the first image
       const state = useAppStore.getState();
       const savedState = state.cache.imageViewStates.get(mockImageList[0].path);
       expect(savedState).toBeDefined();
@@ -304,18 +282,14 @@ describe("AppStore", () => {
       const { navigateToImage, setZoom, setPan, setCurrentImage } =
         useAppStore.getState();
 
-      // Set current image and view state
       setCurrentImage(mockImageList[0].path, 0);
       setZoom(180);
       setPan(75, 40);
 
-      // Navigate to another image
       navigateToImage(1);
 
-      // Navigate back to the first image
       navigateToImage(0);
 
-      // View state should be restored
       const state = useAppStore.getState();
       expect(state.view.zoom).toBe(180);
       expect(state.view.panX).toBe(75);
@@ -328,7 +302,6 @@ describe("AppStore", () => {
       const { navigateToImage, setZoom, setPan, setCurrentImage } =
         useAppStore.getState();
 
-      // Image 0: zoom 120, pan (10, 20)
       setCurrentImage(mockImageList[0].path, 0);
       setZoom(120);
       setPan(10, 20);
@@ -336,21 +309,18 @@ describe("AppStore", () => {
       // Wait past rapid navigation threshold
       vi.advanceTimersByTime(RAPID_NAVIGATION_THRESHOLD_MS + 50);
 
-      // Navigate to image 1: zoom 150, pan (30, 40)
       navigateToImage(1);
       setZoom(150);
       setPan(30, 40);
 
       vi.advanceTimersByTime(RAPID_NAVIGATION_THRESHOLD_MS + 50);
 
-      // Navigate to image 2: zoom 200, pan (50, 60)
       navigateToImage(2);
       setZoom(200);
       setPan(50, 60);
 
       vi.advanceTimersByTime(RAPID_NAVIGATION_THRESHOLD_MS + 50);
 
-      // Go back to image 0
       navigateToImage(0);
       let state = useAppStore.getState();
       expect(state.view.zoom).toBe(120);
@@ -359,7 +329,6 @@ describe("AppStore", () => {
 
       vi.advanceTimersByTime(RAPID_NAVIGATION_THRESHOLD_MS + 50);
 
-      // Go to image 1
       navigateToImage(1);
       state = useAppStore.getState();
       expect(state.view.zoom).toBe(150);
@@ -368,7 +337,6 @@ describe("AppStore", () => {
 
       vi.advanceTimersByTime(RAPID_NAVIGATION_THRESHOLD_MS + 50);
 
-      // Go to image 2
       navigateToImage(2);
       state = useAppStore.getState();
       expect(state.view.zoom).toBe(200);
@@ -384,7 +352,6 @@ describe("AppStore", () => {
       const { navigateToImage, setZoom, setPan, setCurrentImage } =
         useAppStore.getState();
 
-      // Image 0: zoom 120, pan (10, 20)
       setCurrentImage(mockImageList[0].path, 0);
       setZoom(120);
       setPan(10, 20);
@@ -392,13 +359,10 @@ describe("AppStore", () => {
       // Wait past rapid navigation threshold to save image 0's state
       vi.advanceTimersByTime(RAPID_NAVIGATION_THRESHOLD_MS + 50);
 
-      // Navigate to image 1: zoom 150, pan (30, 40)
       navigateToImage(1);
       setZoom(150);
       setPan(30, 40);
 
-      // Immediately navigate to image 2 (within threshold) - this is rapid navigation
-      // Image 1's view state should NOT be saved
       navigateToImage(2);
 
       const state = useAppStore.getState();
@@ -452,12 +416,10 @@ describe("AppStore", () => {
     it("should not navigate beyond last image", () => {
       const { navigateNext, setCurrentImage } = useAppStore.getState();
 
-      // Go to last image
       setCurrentImage(mockImageList[2].path, 2);
 
       navigateNext();
 
-      // Should stay at last image
       expect(useAppStore.getState().currentImage.index).toBe(2);
     });
 
@@ -473,7 +435,6 @@ describe("AppStore", () => {
 
       navigateNext();
 
-      // Should skip to third image
       const state = useAppStore.getState();
       expect(state.currentImage.index).toBe(2);
       expect(state.currentImage.path).toBe(mockImageList[2].path);
@@ -500,12 +461,10 @@ describe("AppStore", () => {
     it("should not navigate before first image", () => {
       const { navigatePrevious, setCurrentImage } = useAppStore.getState();
 
-      // Go to first image
       setCurrentImage(mockImageList[0].path, 0);
 
       navigatePrevious();
 
-      // Should stay at first image
       expect(useAppStore.getState().currentImage.index).toBe(0);
     });
 
@@ -521,7 +480,6 @@ describe("AppStore", () => {
 
       navigatePrevious();
 
-      // Should skip to first image
       const state = useAppStore.getState();
       expect(state.currentImage.index).toBe(0);
       expect(state.currentImage.path).toBe(mockImageList[0].path);
@@ -672,7 +630,6 @@ describe("AppStore", () => {
     it("should calculate correct zoom for image smaller than window", () => {
       const { fitToWindow } = useAppStore.getState();
 
-      // Mock window size
       Object.defineProperty(window, "innerWidth", {
         value: 1920,
         configurable: true,
@@ -684,14 +641,12 @@ describe("AppStore", () => {
 
       fitToWindow(800, 600);
 
-      // Should stay at 100% for smaller images
       expect(useAppStore.getState().view.zoom).toBe(100);
     });
 
     it("should calculate correct zoom for image larger than window", () => {
       const { fitToWindow } = useAppStore.getState();
 
-      // Mock smaller window
       Object.defineProperty(window, "innerWidth", {
         value: 800,
         configurable: true,
@@ -703,7 +658,6 @@ describe("AppStore", () => {
 
       fitToWindow(1600, 1200);
 
-      // Should zoom out to fit
       const state = useAppStore.getState();
       expect(state.view.zoom).toBeLessThan(100);
       expect(state.view.panX).toBe(0);
@@ -725,7 +679,6 @@ describe("AppStore", () => {
       fitToWindow(2000, 1500);
 
       const state = useAppStore.getState();
-      // Should store original dimensions, not scaled dimensions
       expect(state.view.imageWidth).toBe(2000);
       expect(state.view.imageHeight).toBe(1500);
     });
@@ -792,8 +745,8 @@ describe("AppStore", () => {
       fitToWindow(7680, 4320);
 
       const state = useAppStore.getState();
-      expect(state.view.zoom).toBeLessThan(50); // Should be significantly scaled down
-      expect(state.view.zoom).toBeGreaterThan(10); // But not below minimum
+      expect(state.view.zoom).toBeLessThan(50);
+      expect(state.view.zoom).toBeGreaterThan(10);
     });
 
     it("should handle tiny images by keeping them at 100%", () => {
@@ -808,11 +761,10 @@ describe("AppStore", () => {
         configurable: true,
       });
 
-      // Very small image
       fitToWindow(64, 64);
 
       const state = useAppStore.getState();
-      expect(state.view.zoom).toBe(100); // Should stay at 100%
+      expect(state.view.zoom).toBe(100);
       expect(state.view.imageWidth).toBe(64);
       expect(state.view.imageHeight).toBe(64);
     });
@@ -833,7 +785,7 @@ describe("AppStore", () => {
       fitToWindow(760, 480);
 
       const state = useAppStore.getState();
-      expect(state.view.zoom).toBe(100); // Should stay at 100%
+      expect(state.view.zoom).toBe(100);
       expect(state.view.imageWidth).toBe(760);
       expect(state.view.imageHeight).toBe(480);
     });
@@ -854,7 +806,7 @@ describe("AppStore", () => {
       fitToWindow(50000, 30000);
 
       const state = useAppStore.getState();
-      expect(state.view.zoom).toBe(10); // Should be clamped to minimum
+      expect(state.view.zoom).toBe(10);
       expect(state.view.imageWidth).toBe(50000);
       expect(state.view.imageHeight).toBe(30000);
     });
@@ -897,7 +849,6 @@ describe("AppStore", () => {
       fitToWindow(1000, 800);
 
       const state = useAppStore.getState();
-      // Should clamp to minimum zoom even with zero window size
       expect(state.view.zoom).toBe(10);
     });
 
@@ -957,11 +908,9 @@ describe("AppStore", () => {
         configurable: true,
       });
 
-      // Zero width but valid height
       fitToWindow(0, 1000);
 
       const state = useAppStore.getState();
-      // Should not throw error
       // Zoom is calculated based on clamped dimensions (1px for zero width)
       // Height 1000 fits in available height (1000 > available 960), so scales to ~96%
       expect(state.view.zoom).toBeCloseTo(96, 0);
@@ -1210,7 +1159,6 @@ describe("AppStore", () => {
 
       expect(useAppStore.getState().ui.suppressTransition).toBe(true);
 
-      // Fast-forward time by 300ms
       vi.advanceTimersByTime(300);
 
       const state = useAppStore.getState();
@@ -1244,7 +1192,6 @@ describe("AppStore", () => {
       const secondTimeoutId =
         useAppStore.getState().ui.suppressTransitionTimeoutId;
 
-      // Should have a new timeout ID
       expect(secondTimeoutId).not.toBeNull();
       expect(secondTimeoutId).not.toBe(firstTimeoutId);
       expect(useAppStore.getState().ui.suppressTransition).toBe(true);
@@ -1252,7 +1199,6 @@ describe("AppStore", () => {
       // Fast-forward remaining time (50ms + 300ms for new timeout)
       vi.advanceTimersByTime(300);
 
-      // Should be false after the new timeout completes
       expect(useAppStore.getState().ui.suppressTransition).toBe(false);
     });
 
@@ -1313,7 +1259,7 @@ describe("AppStore", () => {
       });
 
       const { navigateToImage } = useAppStore.getState();
-      navigateToImage(0); // Navigate to image1.jpg
+      navigateToImage(0);
 
       const state = useAppStore.getState();
       // No bitmap retained and no tier on the cached entry, so the hit
@@ -1343,7 +1289,7 @@ describe("AppStore", () => {
         cache: {
           ...initialState.cache,
           preloaded: new Map([["/test/image1.jpg", cachedImageData]]),
-          imageViewStates: new Map(), // No saved view state
+          imageViewStates: new Map(),
         },
       });
 
@@ -1351,7 +1297,6 @@ describe("AppStore", () => {
       navigateToImage(0);
 
       const state = useAppStore.getState();
-      // Should apply fit-to-window zoom (large image should be scaled down)
       expect(state.view.zoom).toBeLessThan(100);
       expect(state.view.zoom).toBeGreaterThanOrEqual(10);
     });
@@ -1381,7 +1326,6 @@ describe("AppStore", () => {
       navigateToImage(0);
 
       const state = useAppStore.getState();
-      // imageLeft and imageTop should be set (for centering)
       expect(state.view.imageLeft).toBeDefined();
       expect(state.view.imageTop).toBeDefined();
       expect(typeof state.view.imageLeft).toBe("number");
@@ -1420,7 +1364,6 @@ describe("AppStore", () => {
       navigateToImage(0);
 
       const state = useAppStore.getState();
-      // Should restore saved view state
       expect(state.view.zoom).toBe(150);
       expect(state.view.panX).toBe(50);
       expect(state.view.panY).toBe(30);
@@ -1436,7 +1379,7 @@ describe("AppStore", () => {
         },
         cache: {
           ...initialState.cache,
-          preloaded: new Map(), // No cached images
+          preloaded: new Map(),
         },
       });
 
@@ -1444,7 +1387,6 @@ describe("AppStore", () => {
       navigateToImage(0);
 
       const state = useAppStore.getState();
-      // Should not set data immediately for uncached images
       expect(state.currentImage.data).toBeNull();
       expect(state.currentImage.path).toBe("/test/image1.jpg");
     });
@@ -1483,7 +1425,6 @@ describe("AppStore", () => {
       const { setCachedThumbnail, removeCachedThumbnail } =
         useAppStore.getState();
 
-      // Add thumbnail first
       setCachedThumbnail("/test/image.jpg", {
         base64: "thumbnailBase64",
         width: 800,
@@ -1493,7 +1434,6 @@ describe("AppStore", () => {
         useAppStore.getState().cache.thumbnails.has("/test/image.jpg"),
       ).toBe(true);
 
-      // Remove it
       removeCachedThumbnail("/test/image.jpg");
       expect(
         useAppStore.getState().cache.thumbnails.has("/test/image.jpg"),
@@ -1586,15 +1526,14 @@ describe("AppStore", () => {
         cache: {
           ...initialState.cache,
           thumbnails: new Map([["/test/image1.jpg", cachedThumbnail]]),
-          preloaded: new Map(), // No full resolution cached
+          preloaded: new Map(),
         },
       });
 
       const { navigateToImage } = useAppStore.getState();
-      navigateToImage(0); // Navigate to image1.jpg
+      navigateToImage(0);
 
       const state = useAppStore.getState();
-      // Should have data immediately from thumbnail
       expect(state.currentImage.data).not.toBeNull();
       expect(state.currentImage.data?.src).toBe(
         "data:jpeg;base64,thumbnailBase64",
@@ -1689,7 +1628,6 @@ describe("AppStore", () => {
       navigateToImage(0);
 
       const state = useAppStore.getState();
-      // Should use full resolution, not thumbnail
       expect(state.currentImage.data?.src).toBe(
         "data:jpeg;base64,fullResBase64",
       );
@@ -1715,7 +1653,6 @@ describe("AppStore", () => {
       navigateToImage(0);
 
       const state = useAppStore.getState();
-      // Should not use error thumbnail
       expect(state.currentImage.data).toBeNull();
       expect(state.ui.thumbnailDisplayed).toBe(false);
     });
@@ -1723,7 +1660,7 @@ describe("AppStore", () => {
     it("should calculate fit-to-window zoom for thumbnail dimensions", () => {
       const cachedThumbnail = {
         base64: "thumbnailBase64",
-        width: 3840, // Large image
+        width: 3840,
         height: 2160,
       };
 
@@ -1738,7 +1675,7 @@ describe("AppStore", () => {
           ...initialState.cache,
           thumbnails: new Map([["/test/image1.jpg", cachedThumbnail]]),
           preloaded: new Map(),
-          imageViewStates: new Map(), // No saved view state
+          imageViewStates: new Map(),
         },
       });
 
@@ -1746,7 +1683,6 @@ describe("AppStore", () => {
       navigateToImage(0);
 
       const state = useAppStore.getState();
-      // Should apply fit-to-window zoom for large image
       expect(state.view.zoom).toBeLessThan(100);
       expect(state.view.zoom).toBeGreaterThanOrEqual(10);
     });
@@ -1808,7 +1744,6 @@ describe("AppStore", () => {
     it("should clear thumbnails when changing to different folder", () => {
       const { setFolderImages, setCachedThumbnail } = useAppStore.getState();
 
-      // Set up folder with thumbnails
       setFolderImages("/test/folder1", mockImageList);
       setCachedThumbnail("/test/image1.jpg", {
         base64: "data",
@@ -1818,17 +1753,14 @@ describe("AppStore", () => {
 
       expect(useAppStore.getState().cache.thumbnails.size).toBe(1);
 
-      // Change to different folder
       setFolderImages("/test/folder2", mockImageList);
 
-      // Thumbnails should be cleared
       expect(useAppStore.getState().cache.thumbnails.size).toBe(0);
     });
 
     it("should preserve thumbnails when setting same folder", () => {
       const { setFolderImages, setCachedThumbnail } = useAppStore.getState();
 
-      // Set up folder with thumbnails
       setFolderImages("/test/folder", mockImageList);
       setCachedThumbnail("/test/image1.jpg", {
         base64: "data",
@@ -1838,10 +1770,8 @@ describe("AppStore", () => {
 
       expect(useAppStore.getState().cache.thumbnails.size).toBe(1);
 
-      // Set same folder again
       setFolderImages("/test/folder", mockImageList);
 
-      // Thumbnails should be preserved
       expect(useAppStore.getState().cache.thumbnails.size).toBe(1);
     });
   });
