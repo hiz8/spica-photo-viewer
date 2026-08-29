@@ -11,8 +11,8 @@
 
 **CMYK/YCCK ソースでは ICC プロファイルを落とす**
 
-> ICC is carried only when the SOURCE was encoded as RGB/RGBA; for CMYK/YCCK sources
-> the decoder already converted to RGB and the embedded profile would describe the
+> X1: ICC is carried only when the SOURCE was encoded as RGB/RGBA; for CMYK/YCCK
+> sources the decoder already converted to RGB and the embedded profile would describe the
 > wrong color space, so it is dropped. Must be checked against the *original*
 > (pre-decode) color type, not the decoded `DynamicImage`'s — `image`'s JPEG decoder
 > always hands back RGB8 pixels for a CMYK/YCCK source, so gating on the decoded type
