@@ -4,9 +4,11 @@
 // revisions and the results must match byte for byte, so any code change at
 // all is caught. Rust has no equivalent tool available here, so it is checked
 // line-wise instead: every added or removed line must be a whole-line comment
-// or blank. A changed line that mixes code with a trailing comment cannot be
-// judged that way, so it is reported for manual review (exit 2) rather than
-// silently accepted.
+// or blank. A changed line that mixes code with `//` cannot be judged that
+// way — it may be a trailing comment or a `//` inside a string — so it is
+// reported for manual review (exit 2) rather than silently accepted. Added
+// files (no base-ref revision to diff against) land in the same manual-review
+// bucket.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -21,12 +23,23 @@ export const tsCodeEquivalent = (before, after, loader) =>
 export const isCommentOrBlank = (line) => {
   const t = line.trim();
   return (
-    t === "" || t.startsWith("//") || t.startsWith("/*") || t.startsWith("*")
+    t === "" ||
+    t.startsWith("//") ||
+    t.startsWith("/*") ||
+    t === "*" ||
+    t === "*/" ||
+    t.startsWith("* ")
   );
 };
 
 const DIFF_HEADER =
   /^(diff |index |new file|deleted file|similarity |rename |old mode|new mode|Binary files)/;
+
+// `--- `/`+++ ` are diff file-markers only when followed by a/, b/, or
+// /dev/null. A removed/added content line that happens to start with those
+// three characters (e.g. a line reading "-- keep sorted by mtime" inside a
+// string) must not be mistaken for one.
+const DIFF_FILE_MARKER = /^(?:--- |\+\+\+ )(?:a\/|b\/|\/dev\/null)/;
 
 export const classifyRustDiff = (diff) => {
   const hard = [];
@@ -38,9 +51,8 @@ export const classifyRustDiff = (diff) => {
       continue;
     }
     if (
-      line.startsWith("--- ") ||
-      line.startsWith("+++ ") ||
       line.startsWith("@@") ||
+      DIFF_FILE_MARKER.test(line) ||
       DIFF_HEADER.test(line)
     ) {
       continue;
@@ -51,6 +63,40 @@ export const classifyRustDiff = (diff) => {
     (body.includes("//") ? manual : hard).push(`${file}: ${line}`);
   }
   return { hard, manual };
+};
+
+// Classifies one changed TS/TSX path given its git status and the pieces
+// already fetched for it. Pure and IO-free so it is directly unit-testable:
+// - status "A" (added in this range): nothing to diff against, so it is
+//   routed to manual review instead of being silently skipped.
+// - `before` an Error (git show failed for any other reason, e.g. a
+//   transient git error): routed to hard with the error text, instead of
+//   being swallowed as if the file were merely added.
+// - otherwise, deleted / code-changed / equivalent as before.
+export const classifyTsFileChange = ({
+  path,
+  status,
+  before,
+  after,
+  loader,
+  fileExists,
+}) => {
+  if (status === "A") {
+    return {
+      hard: null,
+      manual: `${path}: added in this range — not verifiable by comparison, review by eye`,
+    };
+  }
+  if (before instanceof Error) {
+    return { hard: `${path}: git show failed — ${before.message}`, manual: null };
+  }
+  if (!fileExists) {
+    return { hard: `${path}: file deleted`, manual: null };
+  }
+  if (!tsCodeEquivalent(before, after, loader)) {
+    return { hard: `${path}: code changed (esbuild output differs)`, manual: null };
+  }
+  return { hard: null, manual: null };
 };
 
 const git = (args) =>
@@ -64,33 +110,44 @@ const main = () => {
   const hard = [];
   const manual = [];
 
-  const changed = git([
+  const statuses = git([
     "diff",
-    "--name-only",
+    "--name-status",
     baseRef,
     "--",
     "src",
     "src-tauri/src",
   ])
     .split("\n")
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((line) => {
+      const cols = line.split("\t");
+      return { status: cols[0], path: cols[cols.length - 1] };
+    });
 
-  for (const path of changed) {
+  for (const { status, path } of statuses) {
     if (!/\.tsx?$/.test(path)) continue;
-    let before;
-    try {
-      before = git(["show", `${baseRef}:${path}`]);
-    } catch {
-      continue; // added in this range: there is nothing to preserve
+
+    let before = null;
+    if (status !== "A") {
+      try {
+        before = git(["show", `${baseRef}:${path}`]);
+      } catch (err) {
+        before = err instanceof Error ? err : new Error(String(err));
+      }
     }
-    if (!existsSync(path)) {
-      hard.push(`${path}: file deleted`);
-      continue;
-    }
-    const loader = path.endsWith(".tsx") ? "tsx" : "ts";
-    if (!tsCodeEquivalent(before, readFileSync(path, "utf8"), loader)) {
-      hard.push(`${path}: code changed (esbuild output differs)`);
-    }
+
+    const fileExists = existsSync(path);
+    const result = classifyTsFileChange({
+      path,
+      status,
+      before,
+      after: fileExists ? readFileSync(path, "utf8") : null,
+      loader: path.endsWith(".tsx") ? "tsx" : "ts",
+      fileExists,
+    });
+    if (result.hard) hard.push(result.hard);
+    if (result.manual) manual.push(result.manual);
   }
 
   const rust = classifyRustDiff(
@@ -105,12 +162,14 @@ const main = () => {
     process.exit(1);
   }
   if (manual.length > 0) {
-    console.error("TRAILING-COMMENT LINE — confirm by eye that only the comment changed:");
+    console.error("MANUAL REVIEW REQUIRED — could not be judged automatically, confirm by eye:");
+    console.error("  (a line containing // may be a trailing comment or a // inside a string;");
+    console.error("   an added file has no prior revision to diff against)");
     for (const l of manual) console.error(`  ${l}`);
     process.exit(2);
   }
   console.log(
-    `verify-comment-only: OK — ${changed.length} file(s) vs ${baseRef}, comments only`,
+    `verify-comment-only: OK — ${statuses.length} file(s) vs ${baseRef}, comments only`,
   );
 };
 

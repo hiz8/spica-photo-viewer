@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyRustDiff,
+  classifyTsFileChange,
   isCommentOrBlank,
   tsCodeEquivalent,
 } from "../verify-comment-only.mjs";
@@ -59,6 +60,21 @@ test("isCommentOrBlank rejects code, with or without a trailing comment", () => 
   }
 });
 
+test("isCommentOrBlank rejects a Rust dereference that starts with an asterisk", () => {
+  for (const line of [
+    '*s.get_mut("preview_files").unwrap() += 1;',
+    "*count += 1;",
+  ]) {
+    assert.equal(isCommentOrBlank(line), false, line);
+  }
+});
+
+test("isCommentOrBlank still accepts bare and closing asterisk comment lines", () => {
+  for (const line of ["*", "*/", "  * doc continuation"]) {
+    assert.equal(isCommentOrBlank(line), true, line);
+  }
+});
+
 test("classifyRustDiff passes a comment-only hunk", () => {
   const diff = [
     "diff --git a/src-tauri/src/a.rs b/src-tauri/src/a.rs",
@@ -113,4 +129,113 @@ test("classifyRustDiff ignores rename and mode headers", () => {
   const { hard, manual } = classifyRustDiff(diff);
   assert.deepEqual(hard, []);
   assert.deepEqual(manual, []);
+});
+
+test("classifyRustDiff routes a changed dereference line to hard, not dropped", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1 @@",
+    '-*s.get_mut("preview_files").unwrap() += 1;',
+    '+*s.get_mut("preview_files").unwrap() += 2;',
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.equal(hard.length, 2);
+  assert.deepEqual(manual, []);
+  assert.ok(hard[0].includes("src-tauri/src/a.rs"));
+});
+
+test("classifyRustDiff does not swallow a removed content line that starts with --- ", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +0,0 @@",
+    "--- keep sorted by mtime",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.equal(hard.length, 1);
+  assert.deepEqual(manual, []);
+  assert.ok(hard[0].includes("--- keep sorted by mtime"));
+});
+
+test("classifyRustDiff does not swallow an added content line that starts with +++ ", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -0,0 +1 @@",
+    "+++ keep sorted by mtime",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.equal(hard.length, 1);
+  assert.deepEqual(manual, []);
+  assert.ok(hard[0].includes("+++ keep sorted by mtime"));
+});
+
+test("classifyTsFileChange routes an added file to manual instead of skipping it", () => {
+  const result = classifyTsFileChange({
+    path: "src/new-module.ts",
+    status: "A",
+    before: null,
+    after: "export const x = 1;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.hard, null);
+  assert.equal(
+    result.manual,
+    "src/new-module.ts: added in this range — not verifiable by comparison, review by eye",
+  );
+});
+
+test("classifyTsFileChange routes a git-show failure to hard with the error text, not skipped", () => {
+  const result = classifyTsFileChange({
+    path: "src/broken.ts",
+    status: "M",
+    before: new Error("fatal: path does not exist in <ref>"),
+    after: "export const x = 1;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.manual, null);
+  assert.ok(result.hard.includes("src/broken.ts"));
+  assert.ok(result.hard.includes("fatal: path does not exist in <ref>"));
+});
+
+test("classifyTsFileChange still flags a real code change as hard", () => {
+  const result = classifyTsFileChange({
+    path: "src/const.ts",
+    status: "M",
+    before: "export const N = 50;\n",
+    after: "export const N = 51;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.manual, null);
+  assert.ok(result.hard.includes("code changed"));
+});
+
+test("classifyTsFileChange passes a comment-only modification", () => {
+  const result = classifyTsFileChange({
+    path: "src/const.ts",
+    status: "M",
+    before: "// old note\nexport const N = 50;\n",
+    after: "// new note\nexport const N = 50;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.hard, null);
+  assert.equal(result.manual, null);
+});
+
+test("classifyTsFileChange flags a deleted file as hard", () => {
+  const result = classifyTsFileChange({
+    path: "src/gone.ts",
+    status: "M",
+    before: "export const N = 50;\n",
+    after: null,
+    loader: "ts",
+    fileExists: false,
+  });
+  assert.equal(result.manual, null);
+  assert.ok(result.hard.includes("file deleted"));
 });
