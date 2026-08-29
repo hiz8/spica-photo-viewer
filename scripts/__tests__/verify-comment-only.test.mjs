@@ -240,6 +240,71 @@ test("classifyRustDiff pairs each duplicate removed statement with its own disti
   assert.equal(manual.length, 4);
 });
 
+test("classifyRustDiff hard-flags the excess removal when two removed lines match only one added line", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1,2 +1 @@",
+    "-        assert!(result.is_ok()); // first",
+    "-        assert!(result.is_ok()); // second",
+    "+        assert!(result.is_ok());",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // The first removed line (diff order) claims the one available added
+  // line; the second is a real net deletion (one fewer statement than
+  // before) and must not be waved through as manual just because it once
+  // had a trailing comment.
+  assert.equal(hard.length, 1);
+  assert.ok(hard[0].includes("// second"));
+  assert.equal(manual.length, 2);
+});
+
+test("classifyRustDiff hard-flags the excess addition when one removed line matches only one of two added lines", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1,2 @@",
+    "-        assert!(result.is_ok()); // note",
+    "+        assert!(result.is_ok());",
+    "+        let y = 5;",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // The first added line pairs with the removed line (comment-only change,
+  // manual). The second added line is a genuinely new statement with no
+  // removed counterpart at all and no "//" of its own — it must stay hard,
+  // not get silently absorbed by the unrelated pairing above it.
+  assert.equal(hard.length, 1);
+  assert.ok(hard[0].includes("let y = 5;"));
+  assert.equal(manual.length, 2);
+});
+
+test("classifyRustDiff pairs same-file cross-hunk matches by text alone — a known, accepted limitation", () => {
+  // KNOWN LIMITATION, not a bug: pairing matches on exact text equality of
+  // the code portion, scoped to the whole file, with no notion of hunk or
+  // line proximity (the coordinator's requirement was exact-text matching,
+  // not fuzzy or line-number-based). So a genuinely deleted statement in one
+  // hunk — even one carrying real rationale in its trailing comment — can
+  // pair against a coincidentally text-identical added line in a completely
+  // unrelated hunk elsewhere in the same file, and the pair is classified
+  // manual instead of hard. This is the accepted, documented behavior; do
+  // not "fix" it into per-hunk-only matching without re-reading why it was
+  // deliberately file-scoped (see task-10-report.md's gate-fix section) —
+  // narrowing to per-hunk matching would just as easily miss a legitimate
+  // trailing-comment-only edit whose surrounding context git chose to diff
+  // as two separate hunks.
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -10 +10,0 @@",
+    "-        assert!(migrated); // must run once before the v2 cutover",
+    "@@ -50,0 +51 @@",
+    "+        assert!(migrated);",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.equal(manual.length, 2);
+});
+
 test("classifyRustDiff does not swallow an added content line that starts with +++ ", () => {
   const diff = [
     "--- a/src-tauri/src/a.rs",

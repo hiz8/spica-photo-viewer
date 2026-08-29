@@ -798,6 +798,7 @@ mod tests {
         assert!(result.is_ok());
 
         let images = result.unwrap();
+        // Both files are included (validation deferred to load time for performance)
         assert_eq!(images.len(), 2);
         assert_eq!(images[0].filename, "corrupted.jpg");
         assert_eq!(images[1].filename, "valid.jpg");

@@ -53,18 +53,20 @@
 
   現在はこの節への 1 行参照のみ。
 
-- テスト `icc_applies_only_to_rgb_like_color_types` 内（`#[cfg(test)]` 配下。
-  この根拠移行タスクは非テスト領域のみを対象としたため**現在も変更なし**）:
+- テスト `icc_applies_only_to_rgb_like_color_types` 内（`#[cfg(test)]` 配下）。この根拠
+  移行タスクは当初非テスト領域のみを対象とし、テスト領域への反映は後続タスクに委ねて
+  いた。後続タスクで対応済み — 全文は上の本節と同一内容の再掲だったため、現在はこの
+  節への 1 行参照に置き換え済み:
 
-  > X1: this is the case that motivated switching from the decoded `DynamicImage`'s
-  > color (always RGB8 post-decode) to the source's original color type — a
-  > CMYK/YCCK JPEG must not carry its profile.
+  > X1: CMYK/YCCK must not carry its profile — docs/code-rationale.md#x1
 
-- テスト `generate_drops_cmyk_icc_profiles` 内（同上、**現在も変更なし**）:
+- テスト `generate_drops_cmyk_icc_profiles` 内（同上）。対応済み — このテスト固有の
+  結論（プロファイルヘッダのチェックが唯一残る判定手段である理由）は残しつつ、
+  再説明していた `image` 0.25 の挙動の部分をこの節への参照に置き換え済み:
 
-  > The decoded pixels are RGB either way (X1's caveat: `image` 0.25's JPEG decoder
-  > reports CMYK/YCCK sources as RGB too), so this profile header is the only signal
-  > that stops it being carried through.
+  > The decoded pixels are RGB either way (X1's `image` 0.25 caveat —
+  > docs/code-rationale.md#x1), so this profile header is the only
+  > signal that stops it being carried through.
 
 参照元: `src-tauri/src/utils/preview.rs`
 
