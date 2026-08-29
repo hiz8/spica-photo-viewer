@@ -2,6 +2,8 @@
 //! Serves validated local image files to the WebView as raw bytes,
 //! replacing the decode→re-encode→base64→IPC pipeline. Windows WebView2
 //! exposes the scheme as http://spica-img.localhost/<percent-encoded path>.
+//!
+//! Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
 
 use crate::commands::cache::{self, PreviewSidecar};
 use crate::utils::image::is_supported_image;
@@ -76,7 +78,7 @@ pub fn resolve_preview_request(rest: &str) -> Result<(PreviewBox, PathBuf), Stri
         .ok_or_else(|| "missing path".to_string())?;
     let bbox = PreviewBox::parse(box_part).ok_or_else(|| "unsupported preview box".to_string())?;
     let path = resolve_image_path(path_part)?;
-    // F2: GIF has no preview (design spec) — reject here rather than caching a
+    // GIF has no preview (§6.1) — reject here rather than caching a
     // static JPEG of frame 1 under a box key.
     if is_gif_path(&path) {
         return Err("no preview for gif".to_string());

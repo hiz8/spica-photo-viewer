@@ -1,3 +1,5 @@
+//! Spec: docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+
 use std::cmp::Ordering;
 
 /// Compares filenames in the same order as Explorer's "Name" column.
@@ -14,7 +16,7 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
 }
 
 /// Compares filenames in the same order as Explorer's "Name" column.
-/// Non-Windows builds use the pure-Rust approximation (spec §6.1).
+/// Non-Windows builds use the pure-Rust approximation (§6.1).
 #[cfg(not(windows))]
 pub fn natural_cmp(a: &str, b: &str) -> Ordering {
     natural_cmp_fallback(a, b)
@@ -22,7 +24,7 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
 
 /// Non-Windows natural-order comparator. Exists so CI (ubuntu-latest) can
 /// compile and run tests; it does NOT guarantee Explorer-identical order
-/// (spec §6.1). Digit runs compare numerically, everything else
+/// (§6.1). Digit runs compare numerically, everything else
 /// case-insensitively; equal strings fall back to a case-sensitive compare
 /// so the result is deterministic.
 ///
@@ -74,7 +76,7 @@ mod tests {
     use super::*;
 
     // Shared contract: must hold for BOTH the fallback and (from Task 2)
-    // the platform comparator. Spec §7.1.
+    // the platform comparator. §7.1.
     fn assert_natural_contract(cmp: fn(&str, &str) -> Ordering) {
         // digit runs compare as numbers
         assert_eq!(cmp("img2.jpg", "img10.jpg"), Ordering::Less);
@@ -89,7 +91,6 @@ mod tests {
         assert_eq!(cmp("IMG3.jpg", "img10.jpg"), Ordering::Less);
         // digits after non-ASCII text still compare numerically
         assert_eq!(cmp("写真2.jpg", "写真10.jpg"), Ordering::Less);
-        // identical strings
         assert_eq!(cmp("image.jpg", "image.jpg"), Ordering::Equal);
         // prefix orders before longer string
         assert_eq!(cmp("img.jpg", "img1.jpg"), Ordering::Less);
@@ -111,8 +112,7 @@ mod tests {
 
     #[test]
     fn fallback_breaks_case_tie_deterministically() {
-        // Case-insensitively equal names must still order deterministically
-        // (I1: stable navigation / preload window).
+        // I1: stable navigation / preload window need this tie-break to be deterministic.
         let ab = natural_cmp_fallback("IMG_1.jpg", "img_1.jpg");
         let ba = natural_cmp_fallback("img_1.jpg", "IMG_1.jpg");
         assert_ne!(ab, Ordering::Equal);

@@ -24,6 +24,17 @@ cd src-tauri && cargo test commands::file::tests  # Run specific test module
 
 - All tests must pass before committing
 
+## Comments
+
+- コメントは Why を書く。What（コードを読めば判ること）は書かない。詳細は [コメント整理の設計](./docs/superpowers/specs/2026-08-29-comment-cleanup-design.md) §6.1。
+- **DEL（書かない・消す）**: 直後のコードの言い換え / 名前を言い換えただけの JSDoc 1 行目 / テストの手続き実況 / コメントアウトされたコード / 型やシグネチャが既に述べていること。
+- **CMP（圧縮する）**: 「What 行 + Why 行」は Why 1 行に統合する。スペックに定義がある内容は再説明せず `§6.6` / `(I2)` で参照する。
+- **KEEP（必ず残す）**: なぜこの実装でないと壊れるか / 数値の根拠 / 外部ライブラリ・OS の落とし穴 / 意図的な非採用 / 不変条件の表明。
+- **孤児ラベルを作らない**: 新しい根拠に `X1` のようなラベルを付けるなら、定義を [docs/code-rationale.md](./docs/code-rationale.md) に置き、コードからは 1 行で参照する。コードのコメントだけが唯一の記録という状態にしない。
+- **スペック参照**: ファイル先頭に 1 回だけ `Spec: docs/superpowers/specs/<file>.md` を書き、以降のインラインは `§6.6` / `(I2)` のみ。日付とパスを繰り返さない。**1 ファイルが 2 つのスペックにまたがる場合**は `Spec (preview): ...` / `Spec (sort): ...` のようにヘッダー行それぞれにラベルを付け、以降のインライン参照も全て `(sort §6.2)` / `(preview I1)` のようにラベルで修飾する（異なるスペックが同じ節番号・ラベル名を再利用することがあり、無修飾のままだとどちらのスペックを指すか読み手が判別できないため）。
+- **機能を持つコメントは削除しない**: `biome-ignore`（`useImagePreloader.ts` で使用中）/ `@ts-expect-error`（`vite.config.ts` で使用中）/ `/// <reference ... />`（`vite-env.d.ts` の唯一の行）。`// @vitest-environment` と `/* @__PURE__ */` は現在このリポジトリでは未使用だが、導入された場合も同様に扱う。
+- コメントのみの変更は `npm run verify:comments -- <base-ref>` で検証する（TS/TSX は esbuild でコード一致を機械確認、Rust は差分の行検査）。exit 1 はコード変更の検出（ファイル削除、`git show` 失敗、base-ref を解決できない場合も含む）。exit 2 は自動判定できなかった行の目視確認を求めるもので、原因は 2 つある: (a) `//` を含む変更行（行末コメントか、文字列中の `//` かを機械的に区別できない）、(b) 範囲内で新規追加された TS/TSX ファイル（比較対象の版が無く esbuild 検査を行えない）。いずれも目視で確認できれば受理してよい。
+
 ## Project Specs
 
 For detailed specifications, see [PROJECT_SPEC.md](./PROJECT_SPEC.md).

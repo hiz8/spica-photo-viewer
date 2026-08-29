@@ -2,12 +2,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
-// Mock Tauri app API
 vi.mock("@tauri-apps/api/app", () => ({
   getVersion: vi.fn(() => Promise.resolve("1.0.0")),
 }));
 
-// Mock the store
 const mockStore = {
   ui: {
     showAbout: false,
@@ -54,21 +52,18 @@ describe("AboutDialog", () => {
       render(<AboutDialog />);
     });
 
-    // Wait for version to load
     await act(async () => {
       await vi.waitFor(() => {
         expect(screen.getByText("Version 1.0.0")).toBeInTheDocument();
       });
     });
 
-    // Check for description
     expect(
       screen.getByText(
         /A lightweight, fast image viewer application for Windows/,
       ),
     ).toBeInTheDocument();
 
-    // Check for features section
     expect(screen.getByText("Features")).toBeInTheDocument();
     expect(
       screen.getByText(/Support for JPEG, PNG, WebP, and GIF formats/),
@@ -84,7 +79,6 @@ describe("AboutDialog", () => {
 
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
 
-    // Check for some key shortcuts based on actual component
     expect(screen.getByText("←/→")).toBeInTheDocument();
     expect(screen.getByText("Navigate images")).toBeInTheDocument();
 
@@ -180,17 +174,14 @@ describe("AboutDialog", () => {
   it("should handle rapid show/hide toggles", async () => {
     const { rerender } = render(<AboutDialog />);
 
-    // Initially hidden
     expect(screen.queryByText("Spica Photo Viewer")).not.toBeInTheDocument();
 
-    // Show dialog
     mockStore.ui.showAbout = true;
     await act(async () => {
       rerender(<AboutDialog />);
     });
     expect(screen.getByText("Spica Photo Viewer")).toBeInTheDocument();
 
-    // Hide dialog
     mockStore.ui.showAbout = false;
     rerender(<AboutDialog />);
     expect(screen.queryByText("Spica Photo Viewer")).not.toBeInTheDocument();
@@ -208,7 +199,6 @@ describe("AboutDialog", () => {
       .closest(".about-dialog");
     expect(content).not.toBeNull();
 
-    // Content click should not close dialog
     fireEvent.click(content as HTMLElement);
     expect(mockStore.setShowAbout).not.toHaveBeenCalled();
   });

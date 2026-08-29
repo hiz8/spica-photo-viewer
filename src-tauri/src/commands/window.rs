@@ -63,7 +63,7 @@ pub async fn resize_window_to_image(
     let displayed_width = (image_width as f64 * zoom_factor) as u32;
     let displayed_height = (image_height as f64 * zoom_factor) as u32;
 
-    // Padding for UI elements (thumbnail bar, etc.)
+    // Accounts for the thumbnail bar and other UI chrome.
     let padding_width = 40;
     let padding_height = 80;
 

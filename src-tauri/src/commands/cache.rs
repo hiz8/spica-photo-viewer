@@ -1,3 +1,5 @@
+//! Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -41,19 +43,16 @@ const STALE_TMP_AGE_SECS: u64 = 60 * 60;
 
 pub(crate) fn get_cache_dir() -> Result<PathBuf, String> {
     let cache_dir = if cfg!(target_os = "windows") {
-        // Windows: %APPDATA%\SpicaPhotoViewer\cache
         let app_data =
             std::env::var("APPDATA").map_err(|_| "Failed to get APPDATA directory".to_string())?;
         Path::new(&app_data).join("SpicaPhotoViewer").join("cache")
     } else if cfg!(target_os = "macos") {
-        // macOS: ~/Library/Caches/SpicaPhotoViewer
         let home = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
         Path::new(&home)
             .join("Library")
             .join("Caches")
             .join("SpicaPhotoViewer")
     } else {
-        // Linux: $XDG_CACHE_HOME/SpicaPhotoViewer or ~/.cache/SpicaPhotoViewer
         let cache_base = std::env::var("XDG_CACHE_HOME").unwrap_or_else(|_| {
             match std::env::var("HOME") {
                 Ok(home) => format!("{}/.cache", home),
@@ -129,7 +128,7 @@ pub fn source_stamp(path: &Path) -> Option<(u64, u64)> {
 /// Write to a sibling temp file, then rename over the target (atomic on NTFS;
 /// `std::fs::rename` replaces an existing destination on Windows).
 pub fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    // M3: pid+nanos alone can collide when the command path and the protocol
+    // pid+nanos alone can collide when the command path and the protocol
     // path race to write the same preview within one tick; a process-wide
     // counter makes every temp name unique regardless of timer resolution.
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -204,7 +203,7 @@ pub fn store_thumbnail_entry(
 /// stamp at all (couldn't stat the source when the error was recorded);
 /// once a stamp is on record it is honored like any other entry, so
 /// replacing a corrupt file with a valid one clears "error" immediately
-/// instead of waiting out the 24h TTL (F3).
+/// instead of waiting out the 24h TTL.
 pub fn lookup_thumbnail(
     cache_dir: &Path,
     path: &str,
@@ -221,7 +220,7 @@ pub fn lookup_thumbnail(
             if entry.preview_box.as_deref() != Some(bk) {
                 return None;
             }
-            // F1: metadata-only — do not read the (0.3-1.5 MB) preview jpg just
+            // metadata-only — do not read the (0.3-1.5 MB) preview jpg just
             // to confirm it exists on this hot thumbnail-bar path.
             preview_is_fresh(cache_dir, path, bk)?;
         }
@@ -249,7 +248,7 @@ pub fn store_preview(
 
 /// Metadata-only freshness check for the preview named `box_key`: parses the
 /// sidecar, confirms its stamp still matches the source file, and confirms
-/// the jpg is on disk — without reading the jpg's bytes (F1). Use this on
+/// the jpg is on disk — without reading the jpg's bytes. Use this on
 /// hot paths that only need a yes/no answer; use `load_preview` when the
 /// bytes are actually needed.
 pub fn preview_is_fresh(cache_dir: &Path, path: &str, box_key: &str) -> Option<PreviewSidecar> {
@@ -293,7 +292,7 @@ pub fn sweep(cache_dir: &Path, now_secs: u64, max_age_secs: u64, cap_bytes: u64)
             .unwrap_or("")
             .to_string();
         if name.contains(".tmp-") {
-            // M4: orphaned `write_atomic` temp file from a crash mid-write —
+            // Orphaned `write_atomic` temp file from a crash mid-write —
             // normally live for milliseconds, so anything this old is dead
             // and otherwise invisible to `stats`.
             let mtime = fs::metadata(&p)
@@ -460,7 +459,7 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u64>, String> {
     let Ok(cache_dir) = get_cache_dir() else {
         return Ok(HashMap::new());
     };
-    // M6: reads and parses every JSON file in the cache directory — off the
+    // Reads and parses every JSON file in the cache directory — off the
     // async runtime's core threads, like `clear_old_cache`.
     tauri::async_runtime::spawn_blocking(move || {
         stats(&cache_dir, current_unix_time(), CACHE_DURATION)
@@ -568,7 +567,7 @@ mod tests {
         assert!(lookup_thumbnail(dir.path(), &p, 20, Some("2560x1440")).is_none());
         // Without a box request the thumbnail alone is enough.
         assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_some());
-        // F1: the metadata-only check must catch a deleted jpg (sidecar still
+        // The metadata-only check must catch a deleted jpg (sidecar still
         // present) without ever reading the jpg's bytes.
         fs::remove_file(preview_file(dir.path(), &p, "1920x1080")).unwrap();
         assert!(lookup_thumbnail(dir.path(), &p, 20, Some("1920x1080")).is_none());
@@ -587,7 +586,7 @@ mod tests {
         store_thumbnail_entry(dir.path(), &p, 20, &err_entry).unwrap();
         assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_some());
         // Corrupt source replaced with a fixed one → stamp no longer matches →
-        // "error" clears immediately instead of sticking around for 24h (F3).
+        // "error" clears immediately instead of sticking around for 24h.
         fs::write(&img, b"replaced with a different, valid-looking payload").unwrap();
         assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_none());
     }
@@ -662,7 +661,6 @@ mod tests {
         };
         let old_path = touch("old.jpg");
         let now = 1_000_000u64;
-        // Expired thumbnail entry.
         let old = CacheEntry {
             created: now - 100_000,
             ..entry(Some((1, 1)), None)

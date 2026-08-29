@@ -22,10 +22,8 @@ export const useWindowState = () => {
       }
     };
 
-    // Check initial state
     checkWindowState();
 
-    // Listen for window resize events
     const handleResize = () => {
       checkWindowState();
     };
@@ -53,7 +51,6 @@ export const useWindowState = () => {
           },
         );
 
-        // Cleanup function
         return () => {
           unlistenResize();
           unlistenMaximize();

@@ -63,7 +63,6 @@ mod tests {
 
     #[test]
     fn test_timer_disabled_without_env_var() {
-        // SPICA_PERF is not set in the test environment
         assert!(PerfTimer::start("decode", "x.jpg").is_none());
     }
 }

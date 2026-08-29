@@ -55,7 +55,6 @@ const DropZone: React.FC<DropZoneProps> = ({ className = "", children }) => {
         return;
       }
 
-      // For now, show a message that drag & drop from file system is not yet implemented
       setError(
         new Error(
           "File drag & drop from file system not yet implemented. Please use a file dialog instead.",

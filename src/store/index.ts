@@ -16,10 +16,8 @@ import { displayTierOf } from "../utils/displayTier";
 import { getFilename, getFolderPath } from "../utils/path";
 import { perfEvent, perfMark } from "../utils/perf";
 
-// Constants
 const THUMBNAIL_BAR_HEIGHT = 80;
 
-// Helper function to calculate fit-to-window zoom level
 const calculateFitToWindowZoom = (
   imageWidth: number,
   imageHeight: number,
@@ -27,11 +25,9 @@ const calculateFitToWindowZoom = (
   const MARGIN = 20;
   const MIN_DIMENSION = 1; // Minimum to prevent division by zero
 
-  // Validate image dimensions to prevent division by zero or invalid results
   const validImageWidth = Math.max(MIN_DIMENSION, imageWidth);
   const validImageHeight = Math.max(MIN_DIMENSION, imageHeight);
 
-  // Validate window dimensions to prevent division by zero
   const windowWidth = Math.max(MIN_DIMENSION, window.innerWidth);
   const windowHeight = Math.max(MIN_DIMENSION, window.innerHeight);
 
@@ -109,7 +105,6 @@ interface AppActions {
 type AppStore = AppState & AppActions;
 
 export const useAppStore = create<AppStore>((set, get) => ({
-  // Initial state
   currentImage: {
     path: "",
     index: -1,
@@ -151,7 +146,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     isCheckingStartupFile: true,
   },
 
-  // Actions
   setCurrentImage: (path, index) =>
     set((state) => ({
       currentImage: {
@@ -293,17 +287,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       perfMark("open:request", { path: image.path, index, trigger: "nav" });
 
-      // Check if navigating quickly (within threshold of last navigation)
       const now = Date.now();
       const lastNavTime = state.cache.lastNavigationTime;
       const isRapidNavigation =
         now - lastNavTime < RAPID_NAVIGATION_THRESHOLD_MS;
 
-      // Restore saved view state for the new image, or use default
       const savedViewState = state.cache.imageViewStates.get(image.path);
 
       set((state) => {
-        // Create new imageViewStates Map
         const newImageViewStates = new Map(state.cache.imageViewStates);
 
         // Only save current image's view state if NOT in rapid navigation mode
@@ -341,7 +332,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           // Priority 2: Check if thumbnail is available for instant display
           const cachedThumbnail = state.cache.thumbnails.get(image.path);
           if (cachedThumbnail && cachedThumbnail !== "error") {
-            // Display thumbnail immediately with actual image dimensions
             imageData = thumbnailToImageData(image.path, cachedThumbnail);
             thumbnailDisplayed = true;
             console.log(
@@ -357,17 +347,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
           thumbnailFallback: thumbnailDisplayed,
         });
 
-        // Determine zoom value
         let viewZoom = savedViewState?.zoom ?? 100;
         if (imageData && imageData.width > 0 && !savedViewState) {
-          // Calculate fit zoom for cached images with valid dimensions
           viewZoom = calculateFitToWindowZoom(
             imageData.width,
             imageData.height,
           );
         }
 
-        // Calculate image position for cached images with valid dimensions
         let viewImagePosition = {};
         if (imageData && imageData.width > 0) {
           const containerWidth = window.innerWidth;
@@ -405,14 +392,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ui: {
             ...state.ui,
             suppressTransition: true,
-            thumbnailDisplayed, // Set thumbnail display flag
+            thumbnailDisplayed,
             // Atomically create new timeout and store ID to prevent race conditions
             suppressTransitionTimeoutId: (() => {
-              // Clear old timeout if exists
               if (state.ui.suppressTransitionTimeoutId !== null) {
                 clearTimeout(state.ui.suppressTransitionTimeoutId);
               }
-              // Create new timeout that will reset suppressTransition after delay
               return setTimeout(() => {
                 const currentState = get();
                 set({
@@ -446,7 +431,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       nextIndex++;
     }
 
-    // If no valid image found, try the regular navigation
     if (state.currentImage.index + 1 < state.folder.images.length) {
       get().navigateToImage(state.currentImage.index + 1);
     }
@@ -468,7 +452,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       prevIndex--;
     }
 
-    // If no valid image found, try the regular navigation
     if (state.currentImage.index - 1 >= 0) {
       get().navigateToImage(state.currentImage.index - 1);
     }
@@ -477,7 +460,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   resetZoom: () => {
     const state = get();
     if (state.currentImage.data) {
-      // Reset to fit-to-window when resetting zoom
       get().fitToWindow(
         state.currentImage.data.width,
         state.currentImage.data.height,
@@ -558,7 +540,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   fitToWindow: (imageWidth, imageHeight, preserveZoom = false) => {
-    // Calculate fit-to-window zoom level
     const fitZoom = calculateFitToWindowZoom(imageWidth, imageHeight);
 
     // Calculate center position for the original image (before CSS scaling)
@@ -566,7 +547,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const containerWidth = window.innerWidth;
     const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
 
-    // Position the original image so its center aligns with container center
     const centerX = (containerWidth - imageWidth) / 2;
     const centerY = (containerHeight - imageHeight) / 2;
 
@@ -576,11 +556,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         zoom: preserveZoom ? state.view.zoom : fitZoom,
         panX: preserveZoom ? state.view.panX : 0,
         panY: preserveZoom ? state.view.panY : 0,
-        // Store original image dimensions and calculated position
         imageLeft: centerX,
         imageTop: centerY,
-        imageWidth, // Original image width
-        imageHeight, // Original image height
+        imageWidth,
+        imageHeight,
       },
     }));
   },
@@ -639,7 +618,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return;
       }
 
-      // Find the index of the specific image
       const imageIndex = images.findIndex(
         (img: ImageInfo) => img.path === imagePath,
       );
@@ -665,7 +643,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           ui: {
             ...state.ui,
-            isLoading: false, // Reset loading state after folder scan
+            isLoading: false,
           },
         }));
       } else {
@@ -680,17 +658,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           currentImage: {
             ...state.currentImage,
-            index: 0, // Default to first if not found
+            index: 0,
           },
           view: {
             ...state.view,
-            zoom: 100, // Reset zoom to default
+            zoom: 100,
             panX: 0,
             panY: 0,
           },
           ui: {
             ...state.ui,
-            isLoading: false, // Reset loading state
+            isLoading: false,
           },
         }));
       }
@@ -805,7 +783,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const state = get();
 
-      // Check if conditions are met for resizing
       if (
         !state.view.isMaximized ||
         state.view.isFullscreen ||
@@ -817,14 +794,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const { width, height } = state.currentImage.data;
       const currentZoom = state.view.zoom;
 
-      // Get image element to calculate its actual screen position
       const imageElement = document.querySelector(
         ".image-viewer img",
       ) as HTMLImageElement;
       if (imageElement) {
         const rect = imageElement.getBoundingClientRect();
 
-        // Calculate center of the image on screen
         const imageScreenCenterX = rect.left + rect.width / 2;
         const imageScreenCenterY = rect.top + rect.height / 2;
 
@@ -877,7 +852,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
 
       if (selected && typeof selected === "string") {
-        // Use openImageFromPath to handle the rest
         await get().openImageFromPath(selected);
       }
     } catch (error) {
@@ -910,7 +884,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const state = get();
 
-      // Check if there's a current image loaded
       if (!state.currentImage.path) {
         set((state) => ({
           ui: {
@@ -921,7 +894,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return;
       }
 
-      // Call the Tauri command to open the "Open With" dialog
       await invoke("open_with_dialog", {
         path: state.currentImage.path,
       });

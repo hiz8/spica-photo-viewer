@@ -1,3 +1,4 @@
+/** Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md */
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImageData, ImageInfo } from "../../types";
@@ -234,7 +235,6 @@ describe("useImagePreloader (visible-range preview window)", () => {
     showFullRes(0);
     renderHook(() => useImagePreloader());
     await flush();
-    // 4th target launched after a completion freed a slot
     expect(loadedPaths()).toContain(img(4));
     expect(hasBitmap(img(1), "preview")).toBe(true);
     expect(hasBitmap(img(1), "full")).toBe(false);
@@ -518,12 +518,10 @@ describe("useImagePreloader (visible-range preview window)", () => {
     showFullRes(0); // window (direction +1) = [1, 2, 3, 4], farthest = 4
     renderHook(() => useImagePreloader());
 
-    // Farthest-priority victims evicted until bytes <= budget...
     expect(b4.close).toHaveBeenCalledOnce();
     expect(b3.close).toHaveBeenCalledOnce();
     expect(hasBitmap(img(4))).toBe(false);
     expect(hasBitmap(img(3))).toBe(false);
-    // ...nearer neighbors and the current image survive.
     expect(b1.close).not.toHaveBeenCalled();
     expect(b2.close).not.toHaveBeenCalled();
     expect(current.close).not.toHaveBeenCalled();

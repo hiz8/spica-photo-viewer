@@ -1,5 +1,7 @@
+//! Spec: docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+//!
 //! Detects the sort setting of the Explorer window/tab showing a folder
-//! (spec §6.3). Every COM failure collapses to `None` so callers fall back
+//! (§6.3). Every COM failure collapses to `None` so callers fall back
 //! to natural name order (I2). Non-Windows builds are a stub that always
 //! yields `None` (I4).
 
@@ -52,7 +54,7 @@ pub struct SortProbe {
 }
 
 /// Spawns the Explorer query on a dedicated COM thread, concurrent with the
-/// caller's folder scan (spec §5).
+/// caller's folder scan (§5).
 #[cfg(windows)]
 pub fn spawn_detect(folder: PathBuf) -> SortProbe {
     use std::sync::atomic::Ordering;
@@ -153,7 +155,7 @@ mod imp {
     use windows::Win32::UI::Shell::SORTCOLUMN;
 
     /// PSGUID_STORAGE: the fmtid shared by the standard column PROPERTYKEYs
-    /// (spec appendix B).
+    /// (appendix B).
     const FMTID_STORAGE: windows::core::GUID =
         windows::core::GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC);
 

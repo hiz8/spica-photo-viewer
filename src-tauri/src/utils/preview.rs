@@ -1,4 +1,6 @@
-//! Display-resolution preview generation (design spec 2026-08-21 §6.1).
+//! Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+//!
+//! Display-resolution preview generation (§6.1).
 //! One decode produces both the preview JPEG (orientation applied, ICC kept,
 //! alpha flattened onto the viewer's black background, fitted inside the
 //! screen box without upscaling) and the 20px thumbnail derived from it.
@@ -88,9 +90,8 @@ pub fn fit_within(w: u32, h: u32, bbox: PreviewBox) -> Option<(u32, u32)> {
 struct Decoded {
     image: DynamicImage,
     icc: Option<Vec<u8>>,
-    /// The source file's color type *before* decoding converted it (X1) — a
-    /// CMYK/YCCK JPEG is already RGB pixels in `image` by the time it's a
-    /// `DynamicImage`, but `original_color` still says `Cmyk8`.
+    /// The source's colour type before decoding (X1); differs from the
+    /// decoded image's for CMYK/YCCK — docs/code-rationale.md#x1
     original_color: ExtendedColorType,
 }
 
@@ -120,10 +121,8 @@ fn decode_oriented(path: &Path) -> Result<Decoded, String> {
 /// RGB8 with any alpha composited onto black (the viewer background), so the
 /// JPEG preview looks identical to the original over the black canvas.
 ///
-/// M1: takes `image` by value and uses `into_*` instead of `to_*` — for the
-/// common no-alpha case `into_rgb8()` returns the decoder's own buffer with
-/// no copy at all (vs. `to_rgb8()`'s always-copy), which matters at ~72 MB
-/// for a 24 MP photo.
+/// M1: no-copy conversion via `into_rgb8()` for the common no-alpha case
+/// (~72 MB for a 24 MP photo). Why this beats `to_rgb8()` — docs/code-rationale.md#m1
 fn flatten_to_rgb8(image: DynamicImage) -> RgbImage {
     if !image.color().has_alpha() {
         return image.into_rgb8();
@@ -141,18 +140,8 @@ fn flatten_to_rgb8(image: DynamicImage) -> RgbImage {
     out
 }
 
-/// X1: ICC is carried only when the SOURCE was encoded as RGB/RGBA; for
-/// CMYK/YCCK sources the decoder already converted to RGB and the embedded
-/// profile would describe the wrong color space, so it is dropped. Must be
-/// checked against the *original* (pre-decode) color type, not the decoded
-/// `DynamicImage`'s — `image`'s JPEG decoder always hands back RGB8 pixels
-/// for a CMYK/YCCK source, so gating on the decoded type would let a CMYK
-/// profile through and stamp it onto already-converted RGB pixels. This
-/// check alone is not enough for every decoder, though: `image` 0.25's JPEG
-/// decoder reports CMYK/YCCK sources as `original_color_type() == Rgb8` too
-/// (it collapses to RGB at the same point it configures pixel decoding), so
-/// `icc_describes_rgb` below double-checks the profile's own declared data
-/// color space.
+/// X1: ICC is carried only when the source was encoded as RGB/RGBA.
+/// Why, and why the decoded type is not enough — docs/code-rationale.md#x1
 fn icc_applies(original: ExtendedColorType) -> bool {
     matches!(
         original,
@@ -174,13 +163,8 @@ fn icc_describes_rgb(icc: &[u8]) -> bool {
 
 /// Lanczos3 downscale through `fast_image_resize`'s *typed* API.
 ///
-/// Build-time note: the dynamic `Resizer::resize(&DynamicImage, &mut Image)`
-/// entry point is generic over the image types, and its body matches on the
-/// runtime pixel type — so the caller's crate instantiates the convolution
-/// kernels for all 13 pixel types × every SIMD path. That alone made this
-/// crate's LLVM pass ~80 s longer (2026-08-23 measurement). Going through
-/// `TypedImageRef<U8x3>` / `resize_typed` instantiates only the RGB8 path;
-/// the filter, SIMD dispatch and rayon row splitting are identical.
+/// Build-time: `TypedImageRef<U8x3>` avoids the ~80s LLVM build-time cost of
+/// the dynamic, generic `Resizer::resize` entry point — docs/code-rationale.md#build-time
 fn resize_rgb8(src: RgbImage, tw: u32, th: u32) -> Result<RgbImage, String> {
     let (sw, sh) = (src.width(), src.height());
     let src_buf = src.into_raw();
@@ -215,9 +199,8 @@ fn encode_jpeg(rgb: &RgbImage, quality: u8, icc: Option<&[u8]>) -> Result<Vec<u8
     let mut encoder = JpegEncoderFast::new(&mut out, quality);
     encoder.set_sampling_factor(SamplingFactor::F_2_2); // 4:2:0
     if let Some(icc) = icc {
-        // X2: a profile the encoder refuses (e.g. > 254 APP2 chunks, so over
-        // ~15.9 MB) must not fail the whole preview — degrade to no ICC
-        // rather than lose the bar thumbnail generated alongside it.
+        // X2: a rejected ICC profile must not fail the whole preview —
+        // docs/code-rationale.md#x2
         if let Err(e) = encoder.add_icc_profile(icc) {
             eprintln!("preview: dropping ICC profile ({e})");
         }
@@ -249,10 +232,7 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
         decode_oriented(path)?
     };
     let (natural_width, natural_height) = (image.width(), image.height());
-    // X1 + coordinator follow-up: the decoder's original color type is
-    // checked (correct for formats whose decoders do report CMYK, e.g.
-    // TIFF), AND the profile's own header is checked, because `image`
-    // 0.25's JPEG decoder reports CMYK/YCCK sources as RGB regardless.
+    // X1 — docs/code-rationale.md#x1
     let icc = icc.filter(|p| icc_applies(original_color) && icc_describes_rgb(p));
     let rgb = flatten_to_rgb8(image);
     let (preview, resized) = match fit_within(natural_width, natural_height, bbox) {
@@ -343,9 +323,7 @@ mod tests {
         assert!(!icc_applies(ExtendedColorType::La8));
         assert!(!icc_applies(ExtendedColorType::L16));
         assert!(!icc_applies(ExtendedColorType::La16));
-        // X1: this is the case that motivated switching from the decoded
-        // `DynamicImage`'s color (always RGB8 post-decode) to the source's
-        // original color type — a CMYK/YCCK JPEG must not carry its profile.
+        // X1: CMYK/YCCK must not carry its profile — docs/code-rationale.md#x1
         assert!(!icc_applies(ExtendedColorType::Cmyk8));
     }
 
@@ -434,9 +412,9 @@ mod tests {
     #[test]
     fn generate_drops_cmyk_icc_profiles() {
         let dir = create_temp_dir();
-        // The decoded pixels are RGB either way (X1's caveat: `image` 0.25's
-        // JPEG decoder reports CMYK/YCCK sources as RGB too), so this profile
-        // header is the only signal that stops it being carried through.
+        // The decoded pixels are RGB either way (X1's `image` 0.25 caveat —
+        // docs/code-rationale.md#x1), so this profile header is the only
+        // signal that stops it being carried through.
         let mut icc: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
         icc[16..20].copy_from_slice(b"CMYK");
         let src =

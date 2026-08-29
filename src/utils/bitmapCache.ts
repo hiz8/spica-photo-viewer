@@ -1,18 +1,25 @@
 /**
- * Module-level cache of decoded bitmaps (hypothesis C), keyed by path and
- * tier. Keeps decoded pixels alive independent of the renderer's own
- * image-cache eviction, so a preload-hit navigation can paint without
+ * Spec (preview):   docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ * Spec (nav-rapid): docs/superpowers/specs/2026-08-16-nav-rapid-bitmap-window-design.md
+ *
+ * This file spans both specs; every inline reference below is qualified
+ * `(preview ...)` or `(nav-rapid ...)`.
+ *
+ * Module-level cache of decoded bitmaps (nav-rapid hypothesis C), keyed by
+ * path and tier. Keeps decoded pixels alive independent of the renderer's
+ * own image-cache eviction, so a preload-hit navigation can paint without
  * re-decoding. Not part of the Zustand store: ImageBitmap objects are large
  * mutable resources, not immutable state. Eviction POLICY lives in
  * useImagePreloader (it knows index/direction/budget); this module only
  * does bookkeeping and deterministic release via close().
  *
  * Each path can hold up to two independently-retained bitmaps: a
- * display-resolution "preview" (design spec 2026-08-21 §6.4) and the
- * "full" resolution decode. They coexist so a preview can keep painting
- * while a full-resolution upgrade decodes in the background. Callers that
- * only care about "the best bitmap available" (the pre-Phase-3 API) use
- * `getBitmap`/`getRetained`, which prefer full over preview.
+ * display-resolution "preview" (preview §6.4) and the "full" resolution
+ * decode. They coexist so a preview can keep painting while a
+ * full-resolution upgrade decodes in the background. Callers that only care
+ * about "the best bitmap available" (the API predating the preview tier,
+ * preview §9 Phase 3) use `getBitmap`/`getRetained`, which prefer full over
+ * preview.
  */
 export type BitmapTier = "preview" | "full";
 

@@ -25,42 +25,40 @@ import { currentPreviewBox } from "../utils/previewBox";
 const RESIZE_DEBOUNCE_MS = 200;
 
 /**
- * Visible-range preview window scheduler (design spec 2026-08-21 §6.6).
- * Keeps a decoded display-resolution PREVIEW for every image the thumbnail
- * bar can currently show (current ± visibleThumbnailRadius), so navigating
- * anywhere inside the visible strip paints from already-decoded pixels —
- * "if you can see the thumbnail, the image is ready". Full resolution is
- * retained for the current image only: a 20MP RGBA decode is ~80MB, while a
- * screen-box preview is ~8MB, so the whole visible window costs less than
- * five full decodes.
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ *
+ * Visible-range preview window scheduler (§6.6). Keeps a decoded preview-tier
+ * bitmap for every image the thumbnail bar can show (current ±
+ * visibleThumbnailRadius) — "if you can see the thumbnail, the image is
+ * ready". Full resolution is retained for the current image only: a 20MP
+ * RGBA decode is ~80MB vs ~8MB for a screen-box preview, so the whole
+ * visible window costs less than five full decodes.
  *
  * Invariants (non-GIF):
- * - I2 (window = visible range): once fill settles, every path in
- *   {current} ∪ window holds a preview-tier bitmap; everything outside is
- *   evicted from both the bitmap cache and cache.preloaded. The current
- *   path is in `keep` (never evicted) but is never filled here — its
- *   bitmap comes from the viewer, which is already decoding it.
- * - I3 (honest hits): a cache.preloaded entry ⇒ a bitmap for that path
- *   exists — eviction always removes both, so a "preloaded" hit implies
- *   decoded pixels of the tier the store reports.
+ * - I2 (window = visible range): §5. The current path is in `keep` (never
+ *   evicted) but is never filled here — its bitmap comes from the viewer,
+ *   which is already decoding it.
+ * - I3 (honest hits): §5. Eviction always removes the bitmap and the
+ *   cache.preloaded entry together, so a hit always has decoded pixels of
+ *   the tier the store reports behind it.
  *
  * Fill is gated per path on cache.thumbnails holding a non-"error" entry:
- * by invariant I1 (Phase 2) that means the preview for this screen's box is
- * already on disk, so the load is a file read instead of a decode racing the
- * thumbnail generator. cache.thumbnails is an effect dependency, so the
- * window fills progressively as the generator works outward from the current
- * image (its own order is distance-first) — no allGenerated gate.
+ * (I1) means the preview is already on disk, so the load is a file read
+ * instead of a decode racing the thumbnail generator. cache.thumbnails is an
+ * effect dependency, so the window fills progressively as the generator
+ * works outward from the current image (distance-first) — no allGenerated
+ * gate.
  *
  * pump() is split into two phases so eviction/budget enforcement can never
- * be silently skipped: the maintenance phase (full-tier sweep, evict outside
- * the window, enforce the byte budget, abort stale fetches) runs
- * unconditionally whenever there's a valid current index; the fill phase
- * (launch new decodes) is gated on the current image itself being displayed
- * at non-placeholder resolution, so window decodes never compete with the
- * decode the user is waiting for (protects NAV_cold / TTFI_cold). Without
- * this split, browsing during a folder's thumbnail-generation window would
- * retain unbounded decoded bitmaps (ImageViewer's retainElementAsBitmap
- * retains unconditionally) with no eviction and no budget enforcement.
+ * be silently skipped: maintenance (full-tier sweep, evict outside the
+ * window, enforce the byte budget, abort stale fetches) runs unconditionally
+ * whenever there's a valid current index; fill (launch new decodes) is
+ * gated on the current image itself being displayed at non-placeholder
+ * resolution, so window decodes never compete with the decode the user is
+ * waiting for (protects NAV_cold / TTFI_cold). Without this split, browsing
+ * during a folder's thumbnail-generation window would retain unbounded
+ * decoded bitmaps (ImageViewer's retainElementAsBitmap retains
+ * unconditionally) with no eviction and no budget enforcement.
  */
 export const useImagePreloader = (): void => {
   const { folder, currentImage, cache, ui } = useAppStore();
@@ -123,14 +121,11 @@ export const useImagePreloader = (): void => {
       if (!hasBitmap(path)) state.removePreloadedImage(path);
     }
 
-    // Evict decoded bitmaps AND bitmap-less preload entries outside the
-    // window. Sweeping the union of bitmapPaths() and cache.preloaded keys
-    // (not just bitmapPaths()) also catches entries the bitmap cache never
-    // knew about: stale entries surviving a folder switch via
-    // openImageFromPath, GIF entries, and permanent error entries — without
-    // this, an error entry parked outside the window would never leave
-    // cache.preloaded, so a transient failure could never retry even after
-    // the path re-enters the window.
+    // Sweeps bitmapPaths() ∪ cache.preloaded keys, not just bitmapPaths(),
+    // so entries the bitmap cache never knew about — stale entries from a
+    // folder switch via openImageFromPath, GIF entries, permanent error
+    // entries — are also evicted outside the window; otherwise a parked
+    // error entry could never retry even after the path re-enters it.
     const trackedPaths = new Set<string>(bitmapPaths());
     for (const path of state.cache.preloaded.keys()) trackedPaths.add(path);
     for (const path of trackedPaths) {
@@ -211,13 +206,11 @@ export const useImagePreloader = (): void => {
             bitmap.close(); // superseded, aborted, or evicted while decoding
             return;
           }
-          // Always the preview TIER, even when loaded.tier is "full":
-          // loadPreviewBitmap reports "full" when the box needed no
-          // downscaling (so the viewer skips a redundant upgrade), but the
-          // pixels are still what the preview route served. Retaining them
-          // under the full tier would make the sweep above drop them on the
-          // very next pump and the fill below re-fetch them, forever. The
-          // loader's own verdict survives in the stored ImageData.tier.
+          // Stored as preview TIER always, even when loaded.tier is "full"
+          // (no downscaling needed, so the viewer skips a redundant
+          // upgrade): filing it as full would make the sweep above drop it
+          // next pump and fill below re-fetch it, forever. The loader's own
+          // verdict still survives in the stored ImageData.tier.
           setBitmap(path, bitmap, "preview");
           useAppStore.getState().setPreloadedImage(path, loaded);
           perfEvent("preload:done", { path, tier: loaded.tier });

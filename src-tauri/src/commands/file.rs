@@ -1,3 +1,10 @@
+//! Spec (preview): docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+//! Spec (sort):    docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+//!
+//! This file spans both specs; every inline reference below is qualified
+//! `(preview ...)` or `(sort ...)` since both specs define their own §6.2,
+//! §6.5, I1, D4, D5.
+
 use crate::commands::cache::{self, CacheEntry, PreviewSidecar};
 use crate::utils::image::is_supported_image;
 use crate::utils::natural_sort::natural_cmp;
@@ -8,7 +15,6 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-// Windows API constants
 #[cfg(target_os = "windows")]
 const MAX_PATH_EXTENDED: usize = 32768;
 
@@ -19,10 +25,10 @@ pub struct ImageInfo {
     pub size: u64,
     pub modified: u64,
     /// UNIX seconds; falls back to `modified` where the platform/filesystem
-    /// has no creation time (e.g. Linux). Spec §6.5.
+    /// has no creation time (e.g. Linux) (sort §6.5).
     pub created: u64,
     pub format: String,
-    /// Sort-only full-precision timestamps (spec D5). Never serialized:
+    /// Sort-only full-precision timestamps (sort D5). Never serialized:
     /// ns since epoch exceeds JavaScript's safe-integer range (2^53).
     #[serde(skip)]
     pub modified_ns: u64,
@@ -55,9 +61,9 @@ impl Default for SortSpec {
 }
 
 /// Sorts images the way Explorer displays them for the given sort setting.
-/// Pure function: no COM, unit-testable (spec §5). Ties on the primary key
+/// Pure function: no COM, unit-testable (sort §6.2). Ties on the primary key
 /// always break by natural name order ASCENDING regardless of `descending`,
-/// so the order is deterministic (I1).
+/// so the order is deterministic (sort I1).
 pub fn sort_images(images: &mut [ImageInfo], spec: SortSpec) {
     images.sort_by(|a, b| {
         let primary = match spec.key {
@@ -84,7 +90,7 @@ pub struct ThumbnailWithDimensions {
     pub thumbnail_base64: String,
     pub original_width: u32,
     pub original_height: u32,
-    /// true when a display-resolution preview for the requested box is now on disk (I1).
+    /// true when a display-resolution preview for the requested box is now on disk (preview I1).
     pub preview_available: bool,
 }
 
@@ -97,7 +103,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
     }
 
     // Ask Explorer for this folder's sort setting concurrently with the scan
-    // (spec §5); the answer is picked up after the scan with whatever remains
+    // (sort §5); the answer is picked up after the scan with whatever remains
     // of the 300ms budget.
     let probe = crate::commands::explorer_sort::spawn_detect(folder_path.to_path_buf());
 
@@ -113,8 +119,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         .map(|entry| entry.path().to_path_buf())
         .collect();
 
-    // Process metadata in parallel using rayon
-    // This dramatically speeds up folder scanning for large folders (900+ images)
+    // Parallel: 900+ image folders are dominated by per-file metadata reads.
     let mut images: Vec<ImageInfo> = image_paths
         .par_iter()
         .filter_map(|path| get_image_info(path).ok())
@@ -122,8 +127,8 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
 
     let (detected, probe_ms) = probe.join();
     if crate::utils::perf::enabled() {
-        // Sort provenance (§6.5): explorer = a window's setting was adopted,
-        // fallback = Name ascending. Log-only; never surfaced in UI (D4).
+        // Sort provenance (sort §6.5): explorer = a window's setting was adopted,
+        // fallback = Name ascending. Log-only; never surfaced in UI (sort D4).
         let (source, key, descending) = match detected {
             Some(s) => ("explorer", format!("{:?}", s.key), s.descending),
             None => ("fallback", "Name".to_string(), false),
@@ -265,7 +270,7 @@ pub async fn generate_thumbnail_with_dimensions(
 ) -> Result<ThumbnailWithDimensions, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let _t = crate::utils::perf::PerfTimer::start("thumb_preview", &path);
-        // M5: validate before touching the cache dir, so a bad path fails
+        // Validate before touching the cache dir, so a bad path fails
         // without creating the real cache directory as a side effect.
         validate_image_path(Path::new(&path))?;
         let cache_dir = cache::get_cache_dir()?;
@@ -275,13 +280,9 @@ pub async fn generate_thumbnail_with_dimensions(
     .map_err(|e| format!("thumbnail task failed: {e}"))?
 }
 
-/// Validates the file path and converts it to a short path name (8.3 format) for Windows.
-///
-/// This function handles special characters (parentheses, spaces, Japanese characters, etc.)
-/// by converting the path to Windows short path name format, which avoids command-line
-/// escaping issues when passing to rundll32.exe.
-///
-/// Returns the prepared path as a String, or an error if validation fails.
+/// Short-path (8.3) conversion avoids rundll32.exe command-line escaping
+/// issues with special characters (parentheses, spaces, Japanese characters,
+/// etc.) in file names.
 #[cfg(target_os = "windows")]
 fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
     use windows::core::PCWSTR;
@@ -289,7 +290,6 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
 
     let file_path = Path::new(path);
 
-    // Validate file exists
     if !file_path.exists() {
         return Err("File not found".to_string());
     }
@@ -298,19 +298,15 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         return Err("Path is not a file".to_string());
     }
 
-    // Convert path to absolute path
     let absolute_path = file_path
         .canonicalize()
         .map_err(|e| format!("Failed to get absolute path: {}", e))?;
 
-    // Convert to string and remove the UNC prefix (\\?\) if present
     let mut path_str = absolute_path.to_string_lossy().to_string();
     if path_str.starts_with(r"\\?\") {
         path_str = path_str[4..].to_string();
     }
 
-    // Convert to short path name (8.3 format) to avoid issues with special characters
-    // like parentheses, spaces, etc. in file names
     let path_wide: Vec<u16> = path_str.encode_utf16().chain(Some(0)).collect();
     let mut short_path_buf: Vec<u16> = vec![0; MAX_PATH_EXTENDED];
 
@@ -320,18 +316,16 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         let result = GetShortPathNameW(PCWSTR(path_wide.as_ptr()), Some(&mut short_path_buf));
 
         if result == 0 {
-            // GetShortPathNameW failed - check the error code
+            // Known failure codes: ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED
+            // (5), ERROR_INVALID_NAME (123). Fall back to the original path so
+            // Open With still works when short-path conversion isn't available.
             let error = GetLastError();
-            // ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED (5), ERROR_INVALID_NAME (123)
-            // Log the error but fall back to original path for compatibility
-            // This allows the function to work even if short path conversion is not available
             eprintln!(
                 "GetShortPathNameW failed with error code {:?}, falling back to original path",
                 error
             );
             Ok(path_str)
         } else {
-            // Use the short path name
             let short_path = String::from_utf16_lossy(&short_path_buf[..result as usize]);
             Ok(short_path)
         }
@@ -340,10 +334,8 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub fn open_with_dialog(path: String) -> Result<(), String> {
-    // Windows-specific implementation
     #[cfg(target_os = "windows")]
     {
-        // Validate and prepare the path
         let _prepared_path = prepare_path_for_open_with(&path)?;
 
         // Skip actual dialog spawn during tests to avoid UI interaction
@@ -361,7 +353,6 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
         Ok(())
     }
 
-    // Non-Windows platforms
     #[cfg(not(target_os = "windows"))]
     {
         Err("Open With dialog is only supported on Windows".to_string())
@@ -492,7 +483,6 @@ mod tests {
     async fn test_get_folder_images_with_valid_folder() {
         let temp_dir = create_temp_dir();
 
-        // Create test images
         create_test_jpeg(temp_dir.path(), "image1.jpg");
         create_test_png(temp_dir.path(), "image2.png");
         create_test_gif(temp_dir.path(), "image3.gif");
@@ -512,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_folder_images_unopened_folder_uses_name_order() {
         // No Explorer window shows a fresh temp dir, so detection resolves to
-        // None and the order must be natural-name ascending (G2/I2). Also
+        // None and the order must be natural-name ascending (sort G2/I2). Also
         // guards the probe wiring: the command must not error or hang.
         let temp_dir = create_temp_dir();
         create_test_jpeg(temp_dir.path(), "img10.jpg");
@@ -536,10 +526,9 @@ mod tests {
             .unwrap();
         let info = &images[0];
 
-        // seconds fields are the ns fields truncated (D5)
+        // seconds fields are the ns fields truncated (sort D5)
         assert_eq!(info.modified, info.modified_ns / 1_000_000_000);
         assert_eq!(info.created, info.created_ns / 1_000_000_000);
-        // a freshly created file has non-zero timestamps
         assert!(info.modified_ns > 0);
         assert!(info.created_ns > 0);
     }
@@ -609,7 +598,7 @@ mod tests {
         assert_eq!(names(&v), ["a.jpg", "c.jpg", "b.jpg"]);
 
         // Descending flips the primary key only; the tie between a/c stays
-        // name-ASCENDING (I1).
+        // name-ASCENDING (sort I1).
         sort_images(
             &mut v,
             SortSpec {
@@ -624,7 +613,7 @@ mod tests {
     fn test_sort_images_modified_uses_ns_precision() {
         // Same second, different ns. Name order is the REVERSE of ns order,
         // so a seconds-truncated compare would fall to the name tiebreak and
-        // produce the wrong result (D5 regression test).
+        // produce the wrong result (sort D5 regression test).
         let base = 1_700_000_000_000_000_000u64;
         let mut v = vec![
             sort_info("a.jpg", 1, base + 500_000_000, 1, "jpeg"),
@@ -639,7 +628,6 @@ mod tests {
         );
         assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
 
-        // Descending flips the primary (ns) order.
         sort_images(
             &mut v,
             SortSpec {
@@ -653,7 +641,7 @@ mod tests {
     #[test]
     fn test_sort_images_modified_tie_breaks_by_name() {
         // Identical modified_ns: even with descending set, the tiebreak
-        // stays name-ASCENDING (I1) — descending only flips the primary key.
+        // stays name-ASCENDING (sort I1) — descending only flips the primary key.
         let same = 1_700_000_000_000_000_000u64;
         let mut v = vec![
             sort_info("b.jpg", 1, same, 1, "jpeg"),
@@ -685,7 +673,6 @@ mod tests {
         );
         assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
 
-        // Descending flips the primary (ns) order.
         sort_images(
             &mut v,
             SortSpec {
@@ -712,7 +699,6 @@ mod tests {
         );
         assert_eq!(names(&v), ["c.gif", "a.jpg", "b.png"]);
 
-        // Descending flips the primary (format) order.
         sort_images(
             &mut v,
             SortSpec {
@@ -788,7 +774,6 @@ mod tests {
     async fn test_get_folder_images_with_mixed_files() {
         let temp_dir = create_temp_dir();
 
-        // Create test images and non-image files
         create_test_jpeg(temp_dir.path(), "image1.jpg");
         create_invalid_image(temp_dir.path(), "textfile.txt");
         create_test_png(temp_dir.path(), "image2.png");
@@ -797,7 +782,7 @@ mod tests {
         assert!(result.is_ok());
 
         let images = result.unwrap();
-        assert_eq!(images.len(), 2); // Only valid images
+        assert_eq!(images.len(), 2);
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
     }
@@ -806,7 +791,6 @@ mod tests {
     async fn test_get_folder_images_defers_validation_to_load_time() {
         let temp_dir = create_temp_dir();
 
-        // Create valid and corrupted images with valid extensions
         create_test_jpeg(temp_dir.path(), "valid.jpg");
         create_fake_image(temp_dir.path(), "corrupted.jpg");
 
@@ -824,10 +808,8 @@ mod tests {
     async fn test_get_folder_images_with_subdirectories() {
         let temp_dir = create_temp_dir();
 
-        // Create image in root
         create_test_jpeg(temp_dir.path(), "root.jpg");
 
-        // Create subdirectory with image
         let sub_dir = temp_dir.path().join("subdir");
         fs::create_dir(&sub_dir).unwrap();
         create_test_png(&sub_dir, "sub.png");
@@ -845,7 +827,6 @@ mod tests {
     async fn test_get_folder_images_case_insensitive_extensions() {
         let temp_dir = create_temp_dir();
 
-        // Create images with different case extensions
         create_test_jpeg(temp_dir.path(), "lower.jpg");
         create_test_jpeg(temp_dir.path(), "upper.JPG");
         create_test_jpeg(temp_dir.path(), "mixed.Jpeg");
@@ -934,7 +915,7 @@ mod tests {
 
         let result = validate_image_file(temp_dir.path().to_string_lossy().to_string());
         assert!(result.is_ok());
-        assert!(!result.unwrap()); // Directory should not be valid
+        assert!(!result.unwrap());
     }
 
     #[test]
@@ -1004,7 +985,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for special characters (parentheses) in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
@@ -1025,7 +1005,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for spaces in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
@@ -1046,7 +1025,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for non-ASCII characters (Japanese) in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {

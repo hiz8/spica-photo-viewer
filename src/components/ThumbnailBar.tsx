@@ -60,7 +60,6 @@ const ThumbnailBar: React.FC = () => {
   const thumbnailBarRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
-  // Get thumbnail data from cache
   const getThumbnailData = useCallback(
     (imagePath: string): string | null => {
       const thumbnail = cache.thumbnails.get(imagePath);
@@ -88,7 +87,6 @@ const ThumbnailBar: React.FC = () => {
     (e: React.WheelEvent) => {
       e.preventDefault();
       if (e.deltaY > 0) {
-        // Scroll down = next image
         const nextIndex = Math.min(
           currentImage.index + 1,
           folder.images.length - 1,
@@ -97,7 +95,6 @@ const ThumbnailBar: React.FC = () => {
           navigateToImage(nextIndex);
         }
       } else {
-        // Scroll up = previous image
         const prevIndex = Math.max(currentImage.index - 1, 0);
         if (prevIndex !== currentImage.index) {
           navigateToImage(prevIndex);
@@ -118,7 +115,6 @@ const ThumbnailBar: React.FC = () => {
         const itemLeft = activeItem.offsetLeft;
         const itemWidth = activeItem.offsetWidth;
 
-        // Calculate center position
         const scrollLeft = itemLeft - containerWidth / 2 + itemWidth / 2;
         container.scrollTo({
           left: scrollLeft,
@@ -158,12 +154,14 @@ const ThumbnailBar: React.FC = () => {
     }
     const image = folder.images[currentImage.index];
 
-    // Show dimensions if full image is loaded
     if (currentImage.data?.width && currentImage.data.height) {
       return `${image.filename} (${currentImage.data.width} × ${currentImage.data.height})`;
     }
 
-    // Show filename only while loading or preview
+    // currentImage.data is null only in the brief window right after
+    // navigation, before any tier has painted; the thumbnail placeholder and
+    // preview tiers both already carry width/height, so this branch is not
+    // reached once either one has loaded.
     return image.filename;
   }, [currentImage.path, currentImage.index, currentImage.data, folder.images]);
 

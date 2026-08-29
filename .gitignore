@@ -34,3 +34,6 @@ e2e/screenshots/
 # Bench results are machine-specific; only the committed baseline is tracked
 bench-results/*
 !bench-results/baseline.json
+
+# Superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/

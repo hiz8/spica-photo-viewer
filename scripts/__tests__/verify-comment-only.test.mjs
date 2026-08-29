@@ -1,0 +1,388 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  classifyRustDiff,
+  classifyTsFileChange,
+  isCommentOrBlank,
+  tsCodeEquivalent,
+} from "../verify-comment-only.mjs";
+
+test("a comment-only rewrite is equivalent", () => {
+  const before = "/**\n * Debounce delay for image loading\n * Prevents intermediate loads\n */\nexport const N = 50;\n";
+  const after = "/** Prevents intermediate loads during rapid navigation. */\nexport const N = 50;\n";
+  assert.equal(tsCodeEquivalent(before, after, "ts"), true);
+});
+
+test("a one-character value change is not equivalent", () => {
+  assert.equal(
+    tsCodeEquivalent("export const N = 50;\n", "export const N = 51;\n", "ts"),
+    false,
+  );
+});
+
+test("a removed trailing comment is equivalent", () => {
+  assert.equal(
+    tsCodeEquivalent("const a = 1; // note\n", "const a = 1;\n", "ts"),
+    true,
+  );
+});
+
+test("a legal comment is stripped rather than preserved", () => {
+  assert.equal(
+    tsCodeEquivalent("/** @license MIT */\nconst a = 1;\n", "const a = 1;\n", "ts"),
+    true,
+  );
+});
+
+test("tsx is handled", () => {
+  assert.equal(
+    tsCodeEquivalent("// c\nexport const C = () => <div />;\n", "export const C = () => <div />;\n", "tsx"),
+    true,
+  );
+});
+
+test("deleting an object-literal property comment is equivalent (esbuild retains these otherwise)", () => {
+  const before = "const o = {\n  // Initial state\n  gamma: 3,\n};\n";
+  const after = "const o = {\n  gamma: 3,\n};\n";
+  assert.equal(tsCodeEquivalent(before, after, "ts"), true);
+});
+
+test("an object-literal property VALUE change is not equivalent, even with the same comment removed", () => {
+  const before = "const o = {\n  // Initial state\n  gamma: 3,\n};\n";
+  const after = "const o = {\n  gamma: 4,\n};\n";
+  assert.equal(tsCodeEquivalent(before, after, "ts"), false);
+});
+
+test("a changed string literal containing // is not equivalent (not mistaken for a comment)", () => {
+  const before = 'const url = "http://a//b";\n';
+  const after = 'const url = "http://a//c";\n';
+  assert.equal(tsCodeEquivalent(before, after, "ts"), false);
+});
+
+test("a renamed identifier is not equivalent", () => {
+  assert.equal(
+    tsCodeEquivalent("const a = 1;\nexport { a };\n", "const b = 1;\nexport { b as a };\n", "ts"),
+    false,
+  );
+});
+
+test("isCommentOrBlank accepts comment and blank lines", () => {
+  for (const line of ["", "   ", "// x", "  /// doc", "//! module", "/* open", "  * cont", "  */"]) {
+    assert.equal(isCommentOrBlank(line), true, line);
+  }
+});
+
+test("isCommentOrBlank rejects code, with or without a trailing comment", () => {
+  for (const line of ["let x = 1;", "let x = 1; // note", "}"]) {
+    assert.equal(isCommentOrBlank(line), false, line);
+  }
+});
+
+test("isCommentOrBlank rejects a Rust dereference that starts with an asterisk", () => {
+  for (const line of [
+    '*s.get_mut("preview_files").unwrap() += 1;',
+    "*count += 1;",
+  ]) {
+    assert.equal(isCommentOrBlank(line), false, line);
+  }
+});
+
+test("isCommentOrBlank still accepts bare and closing asterisk comment lines", () => {
+  for (const line of ["*", "*/", "  * doc continuation"]) {
+    assert.equal(isCommentOrBlank(line), true, line);
+  }
+});
+
+test("classifyRustDiff passes a comment-only hunk", () => {
+  const diff = [
+    "diff --git a/src-tauri/src/a.rs b/src-tauri/src/a.rs",
+    "index 111..222 100644",
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1,2 +1,1 @@",
+    "-// What this does",
+    "-// Why it must be so",
+    "+// Why it must be so",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.deepEqual(manual, []);
+});
+
+test("classifyRustDiff flags a changed code line", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1 @@",
+    "-let x = 1;",
+    "+let x = 2;",
+  ].join("\n");
+  const { hard } = classifyRustDiff(diff);
+  assert.equal(hard.length, 2);
+  assert.ok(hard[0].includes("src-tauri/src/a.rs"));
+});
+
+test("classifyRustDiff routes a trailing-comment line to manual review", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1 @@",
+    "-previews.sort_by_key(|p| p.1); // oldest first",
+    "+previews.sort_by_key(|p| p.1); // oldest first, so the sweep drops the stalest",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.equal(manual.length, 2);
+});
+
+test("classifyRustDiff ignores rename and mode headers", () => {
+  const diff = [
+    "diff --git a/src-tauri/src/a.rs b/src-tauri/src/b.rs",
+    "similarity index 100%",
+    "rename from src-tauri/src/a.rs",
+    "rename to src-tauri/src/b.rs",
+    "old mode 100644",
+    "new mode 100755",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.deepEqual(manual, []);
+});
+
+test("classifyRustDiff routes a changed dereference line to hard, not dropped", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1 @@",
+    '-*s.get_mut("preview_files").unwrap() += 1;',
+    '+*s.get_mut("preview_files").unwrap() += 2;',
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.equal(hard.length, 2);
+  assert.deepEqual(manual, []);
+  assert.ok(hard[0].includes("src-tauri/src/a.rs"));
+});
+
+test("classifyRustDiff does not swallow a removed content line that starts with --- ", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +0,0 @@",
+    "--- keep sorted by mtime",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.equal(hard.length, 1);
+  assert.deepEqual(manual, []);
+  assert.ok(hard[0].includes("--- keep sorted by mtime"));
+});
+
+test("classifyRustDiff routes a trailing-comment removal pair to manual, not hard", () => {
+  const diff = [
+    "--- a/src-tauri/src/commands/file.rs",
+    "+++ b/src-tauri/src/commands/file.rs",
+    "@@ -1 +1 @@",
+    "-        assert_eq!(images.len(), 2); // Only valid images",
+    "+        assert_eq!(images.len(), 2);",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.equal(manual.length, 2);
+  assert.ok(manual[0].includes("// Only valid images"));
+  assert.ok(manual[1].includes("assert_eq!(images.len(), 2);"));
+});
+
+test("classifyRustDiff still flags a genuinely changed code line even with a trailing comment on both sides", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1 @@",
+    "-        assert_eq!(x, 1); // note",
+    "+        assert_eq!(x, 2); // note",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // The code portions differ (1 vs 2), so pairing must not match them up —
+  // this is not excused just because both sides carry an identical comment.
+  assert.equal(hard.length, 1);
+  assert.ok(hard[0].includes("assert_eq!(x, 1); // note"));
+  assert.equal(manual.length, 1);
+  assert.ok(manual[0].includes("assert_eq!(x, 2); // note"));
+});
+
+test("classifyRustDiff hard-flags a deleted statement that carried a trailing comment, with no replacement", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +0,0 @@",
+    "-        assert_eq!(images.len(), 2); // Only valid images",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // No added line at all: this must never be classified as "manual" just
+  // because it happens to contain "//" — it is a deleted assertion.
+  assert.equal(hard.length, 1);
+  assert.ok(
+    hard[0].includes("assert_eq!(images.len(), 2); // Only valid images"),
+  );
+  assert.deepEqual(manual, []);
+});
+
+test("classifyRustDiff pairs each duplicate removed statement with its own distinct added counterpart", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1,2 +1,2 @@",
+    "-        assert!(result.is_ok()); // first",
+    "-        assert!(result.is_ok()); // second",
+    "+        assert!(result.is_ok());",
+    "+        assert!(result.is_ok()); // second, reworded",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.equal(manual.length, 4);
+});
+
+test("classifyRustDiff hard-flags the excess removal when two removed lines match only one added line", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1,2 +1 @@",
+    "-        assert!(result.is_ok()); // first",
+    "-        assert!(result.is_ok()); // second",
+    "+        assert!(result.is_ok());",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // The first removed line (diff order) claims the one available added
+  // line; the second is a real net deletion (one fewer statement than
+  // before) and must not be waved through as manual just because it once
+  // had a trailing comment.
+  assert.equal(hard.length, 1);
+  assert.ok(hard[0].includes("// second"));
+  assert.equal(manual.length, 2);
+});
+
+test("classifyRustDiff hard-flags the excess addition when one removed line matches only one of two added lines", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1,2 @@",
+    "-        assert!(result.is_ok()); // note",
+    "+        assert!(result.is_ok());",
+    "+        let y = 5;",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // The first added line pairs with the removed line (comment-only change,
+  // manual). The second added line is a genuinely new statement with no
+  // removed counterpart at all and no "//" of its own — it must stay hard,
+  // not get silently absorbed by the unrelated pairing above it.
+  assert.equal(hard.length, 1);
+  assert.ok(hard[0].includes("let y = 5;"));
+  assert.equal(manual.length, 2);
+});
+
+test("classifyRustDiff pairs same-file cross-hunk matches by text alone — a known, accepted limitation", () => {
+  // KNOWN LIMITATION, not a bug: pairing matches on exact text equality of
+  // the code portion, scoped to the whole file, with no notion of hunk or
+  // line proximity (the coordinator's requirement was exact-text matching,
+  // not fuzzy or line-number-based). So a genuinely deleted statement in one
+  // hunk — even one carrying real rationale in its trailing comment — can
+  // pair against a coincidentally text-identical added line in a completely
+  // unrelated hunk elsewhere in the same file, and the pair is classified
+  // manual instead of hard. This is the accepted, documented behavior; do
+  // not "fix" it into per-hunk-only matching without re-reading why it was
+  // deliberately file-scoped (see task-10-report.md's gate-fix section) —
+  // narrowing to per-hunk matching would just as easily miss a legitimate
+  // trailing-comment-only edit whose surrounding context git chose to diff
+  // as two separate hunks.
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -10 +10,0 @@",
+    "-        assert!(migrated); // must run once before the v2 cutover",
+    "@@ -50,0 +51 @@",
+    "+        assert!(migrated);",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.equal(manual.length, 2);
+});
+
+test("classifyRustDiff does not swallow an added content line that starts with +++ ", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -0,0 +1 @@",
+    "+++ keep sorted by mtime",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.equal(hard.length, 1);
+  assert.deepEqual(manual, []);
+  assert.ok(hard[0].includes("+++ keep sorted by mtime"));
+});
+
+test("classifyTsFileChange routes an added file to manual instead of skipping it", () => {
+  const result = classifyTsFileChange({
+    path: "src/new-module.ts",
+    status: "A",
+    before: null,
+    after: "export const x = 1;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.hard, null);
+  assert.equal(
+    result.manual,
+    "src/new-module.ts: added in this range — not verifiable by comparison, review by eye",
+  );
+});
+
+test("classifyTsFileChange routes a git-show failure to hard with the error text, not skipped", () => {
+  const result = classifyTsFileChange({
+    path: "src/broken.ts",
+    status: "M",
+    before: new Error("fatal: path does not exist in <ref>"),
+    after: "export const x = 1;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.manual, null);
+  assert.ok(result.hard.includes("src/broken.ts"));
+  assert.ok(result.hard.includes("fatal: path does not exist in <ref>"));
+});
+
+test("classifyTsFileChange still flags a real code change as hard", () => {
+  const result = classifyTsFileChange({
+    path: "src/const.ts",
+    status: "M",
+    before: "export const N = 50;\n",
+    after: "export const N = 51;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.manual, null);
+  assert.ok(result.hard.includes("code changed"));
+});
+
+test("classifyTsFileChange passes a comment-only modification", () => {
+  const result = classifyTsFileChange({
+    path: "src/const.ts",
+    status: "M",
+    before: "// old note\nexport const N = 50;\n",
+    after: "// new note\nexport const N = 50;\n",
+    loader: "ts",
+    fileExists: true,
+  });
+  assert.equal(result.hard, null);
+  assert.equal(result.manual, null);
+});
+
+test("classifyTsFileChange flags a deleted file as hard", () => {
+  const result = classifyTsFileChange({
+    path: "src/gone.ts",
+    status: "M",
+    before: "export const N = 50;\n",
+    after: null,
+    loader: "ts",
+    fileExists: false,
+  });
+  assert.equal(result.manual, null);
+  assert.ok(result.hard.includes("file deleted"));
+});

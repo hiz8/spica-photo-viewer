@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { createKeyboardEvent } from "../../utils/testUtils";
 
-// Mock Tauri window API
 const mockWindow = {
   isFullscreen: vi.fn(),
   setFullscreen: vi.fn(),
@@ -13,7 +12,6 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => mockWindow),
 }));
 
-// Mock the store
 const mockStore = {
   navigateNext: vi.fn(),
   navigatePrevious: vi.fn(),
@@ -42,7 +40,6 @@ describe("useKeyboard", () => {
     mockStore.view.isFullscreen = false;
     mockStore.ui.showAbout = false;
 
-    // Reset window API mocks
     mockWindow.isFullscreen.mockResolvedValue(false);
     mockWindow.setFullscreen.mockResolvedValue(undefined);
     mockWindow.close.mockResolvedValue(undefined);
@@ -98,7 +95,6 @@ describe("useKeyboard", () => {
 
     expect(event.defaultPrevented).toBe(true);
 
-    // Wait for async operation
     await vi.waitFor(() => {
       expect(mockWindow.isFullscreen).toHaveBeenCalledOnce();
     });
@@ -221,7 +217,6 @@ describe("useKeyboard", () => {
     const event = createKeyboardEvent("Space");
     document.dispatchEvent(event);
 
-    // Should not call any store methods
     expect(mockStore.navigateNext).not.toHaveBeenCalled();
     expect(mockStore.navigatePrevious).not.toHaveBeenCalled();
     expect(mockStore.zoomIn).not.toHaveBeenCalled();
@@ -230,7 +225,6 @@ describe("useKeyboard", () => {
     expect(mockStore.setFullscreen).not.toHaveBeenCalled();
     expect(mockStore.setShowAbout).not.toHaveBeenCalled();
 
-    // Should not prevent default
     expect(event.defaultPrevented).toBe(false);
   });
 
@@ -294,7 +288,6 @@ describe("useKeyboard", () => {
   it("should handle multiple sequential key presses correctly", () => {
     renderHook(() => useKeyboard());
 
-    // Simulate rapid key presses
     const leftEvent = createKeyboardEvent("ArrowLeft");
     const rightEvent = createKeyboardEvent("ArrowRight");
     const upEvent = createKeyboardEvent("ArrowUp");

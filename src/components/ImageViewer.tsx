@@ -1,3 +1,6 @@
+/**
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ */
 import type React from "react";
 import {
   useCallback,
@@ -56,7 +59,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     setThumbnailDisplayed,
   } = useAppStore();
 
-  // Initialize thumbnail generation and preloading
   useThumbnailGenerator();
   useImagePreloader();
 
@@ -75,10 +77,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const suppressTransition = ui.suppressTransition;
 
   /**
-   * Display-resolution preview path (design spec 2026-08-21 §6.4): fetches
-   * the preview instead of the 20MP original and paints it from the decoded
-   * bitmap. Returns "failed" when the preview could not be fetched/decoded
-   * (404 for a GIF or a missing preview) so the caller can fall back to the
+   * Display-resolution preview path (§6.5 route (2)): fetches the preview
+   * instead of the 20MP original and paints it from the decoded bitmap.
+   * Returns "failed" when the preview could not be fetched/decoded (404 for
+   * a GIF or a missing preview) so the caller falls back to the
    * full-resolution load, and "stale" when the navigation moved on.
    */
   const displayPreview = useCallback(
@@ -150,7 +152,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
-      // Mark this path as actively loading
       activeLoadPathRef.current = path;
 
       try {
@@ -163,8 +164,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         } = useAppStore.getState();
 
         // A thumbnail cache entry for a non-GIF path proves its
-        // display-resolution preview is on disk (Phase 2 invariant I1), so
-        // the viewer can fetch the preview instead of the full original.
+        // display-resolution preview is on disk (I1), so the viewer can
+        // fetch the preview instead of the full original.
         const thumbnailEntry = currentCache.thumbnails.get(path);
         const isGif =
           (folder.imagesByPath.get(path)?.format ?? imageFormat(path)) ===
@@ -172,21 +173,20 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         const previewEligible =
           !isGif && !!thumbnailEntry && thumbnailEntry !== "error";
 
-        // Check if we already have full resolution data (not just thumbnail)
         const hasFullResolution =
           current.path === path &&
           current.data &&
           current.data.path === path &&
-          current.data.width > 0 && // Full resolution images have actual dimensions
-          !currentUi.thumbnailDisplayed; // Not just a thumbnail display
+          current.data.width > 0 &&
+          !currentUi.thumbnailDisplayed;
 
         if (hasFullResolution) {
-          // Full resolution already loaded by navigateToImage - skip
+          // Already loaded by navigateToImage.
           return;
         }
 
-        // FAST PATH: If thumbnail is displayed, upgrade to full resolution immediately
-        // Skip debounce since something is already visible
+        // Fast path: thumbnail already visible, so skip the debounce and
+        // upgrade to full resolution immediately.
         const isThumbnailUpgrade =
           currentUi.thumbnailDisplayed && current.path === path;
 
@@ -195,11 +195,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             `Upgrading thumbnail to display resolution: ${getFilename(path)}`,
           );
 
-          // Set loading state for consistent UX
           setLoading(true);
           setImageError(null);
 
-          // Check if this image has saved view state
           const hasSavedState = currentCache.imageViewStates.has(path);
 
           if (previewEligible) {
@@ -210,7 +208,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             // Preview missing/undecodable: fall through to the full load.
           }
 
-          // Load full resolution directly
           const { data: loadedData, element } =
             await loadImageViaProtocol(path);
 
@@ -220,44 +217,36 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
           const fullImageData: ImageData = { ...loadedData, tier: "full" };
 
-          // Update with full resolution
           setImageData(fullImageData);
 
-          // Update dimensions
           if (!hasSavedState) {
             fitToWindow(fullImageData.width, fullImageData.height);
           } else {
             updateImageDimensions(fullImageData.width, fullImageData.height);
           }
 
-          // Add to preload cache
           setPreloadedImage(path, fullImageData);
           retainElementAsBitmap(path, element);
 
-          // Clear thumbnail flag
           setThumbnailDisplayed(false);
 
           return;
         }
 
-        // Check if this image has saved view state
         const hasSavedState = currentCache.imageViewStates.has(path);
 
-        // Check if image is already preloaded
         const preloadedImage = currentCache.preloaded.get(path);
         if (preloadedImage) {
           if (preloadedImage.format === "error") {
             throw new Error("Image failed to load previously");
           }
 
-          // Check if loading was cancelled or navigation changed
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
           }
 
           setImageData(preloadedImage);
 
-          // Auto-fit or update dimensions based on saved state
           if (!hasSavedState) {
             fitToWindow(preloadedImage.width, preloadedImage.height);
           } else {
@@ -266,37 +255,30 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           return;
         }
 
-        // Image not preloaded - set loading state before invoking backend
         setLoading(true);
         setImageError(null);
 
-        // Get image info from folder to determine format (O(1) lookup)
         const imageInfo = folder.imagesByPath.get(path);
 
-        // Use two-phase loading for all images except GIFs (to preserve animation)
+        // GIFs skip two-phase loading to preserve their animation.
         const skipProgressive = imageInfo?.format === "gif";
 
-        // Two-phase loading for non-GIF images
         if (!skipProgressive) {
-          // Try to use cached thumbnail as preview
           const cachedThumbnail = thumbnailEntry;
           if (cachedThumbnail && cachedThumbnail !== "error") {
             try {
-              // PHASE 1: Display thumbnail preview immediately with cached dimensions
-              // No need to call get_image_dimensions_only since thumbnail includes dimensions
-
-              // Check if loading was cancelled
+              // Phase 1: thumbnail already carries dimensions, so no
+              // separate get_image_dimensions_only call is needed.
               if (signal.aborted || activeLoadPathRef.current !== path) {
                 return;
               }
 
               setImageData(thumbnailToImageData(path, cachedThumbnail));
-              // This is a placeholder, not the image: without the flag
-              // displayTierOf would label it "full" (data-tier on the
-              // element and the tier of its paint:done mark).
+              // Not the real image yet: without this flag, displayTierOf
+              // would call it "full" (both the element's data-tier and the
+              // paint:done mark).
               setThumbnailDisplayed(true);
 
-              // Fit to window or restore saved view state
               if (!hasSavedState) {
                 fitToWindow(cachedThumbnail.width, cachedThumbnail.height);
               } else {
@@ -306,8 +288,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
                 );
               }
 
-              // PHASE 2: Load the display-resolution preview in the
-              // background (full resolution only if the preview is missing).
+              // Phase 2: preview in the background; falls through to full
+              // resolution only if the preview failed.
               if (previewEligible) {
                 const outcome = await displayPreview(
                   path,
@@ -322,19 +304,16 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               const { data: loadedData, element } =
                 await loadImageViaProtocol(path);
 
-              // Check if loading was cancelled
               if (signal.aborted || activeLoadPathRef.current !== path) {
                 return;
               }
 
               const fullImageData: ImageData = { ...loadedData, tier: "full" };
 
-              // Replace with full resolution
               setImageData(fullImageData);
-              // The PHASE 1 placeholder is gone.
+              // The phase-1 placeholder is gone.
               setThumbnailDisplayed(false);
 
-              // Update dimensions if needed
               if (!hasSavedState) {
                 fitToWindow(fullImageData.width, fullImageData.height);
               } else {
@@ -344,7 +323,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
                 );
               }
 
-              // Add to preload cache
               setPreloadedImage(path, fullImageData);
               retainElementAsBitmap(path, element);
               return;
@@ -357,11 +335,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             }
           }
 
-          // Direct load (no cached thumbnail)
           const { data: loadedData, element } =
             await loadImageViaProtocol(path);
 
-          // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
           }
@@ -369,25 +345,22 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           const fullImageData: ImageData = { ...loadedData, tier: "full" };
 
           setImageData(fullImageData);
-          // No-op on the cold path; clears the PHASE 1 placeholder when the
+          // No-op on the cold path; clears the phase-1 placeholder when the
           // two-phase branch fell through to here after an error.
           setThumbnailDisplayed(false);
 
-          // Fit to window or update dimensions based on saved state
           if (!hasSavedState) {
             fitToWindow(fullImageData.width, fullImageData.height);
           } else {
             updateImageDimensions(fullImageData.width, fullImageData.height);
           }
 
-          // Add to preload cache
           setPreloadedImage(path, fullImageData);
           retainElementAsBitmap(path, element);
         } else {
-          // GIF files - use direct loading to preserve animation
+          // GIFs: direct load preserves animation.
           const imageData = (await loadImageViaProtocol(path)).data;
 
-          // Check if loading was cancelled
           if (signal.aborted || activeLoadPathRef.current !== path) {
             return;
           }
@@ -398,24 +371,20 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
           setImageData(imageData);
 
-          // Auto-fit or update dimensions based on saved state
           if (!hasSavedState) {
             fitToWindow(imageData.width, imageData.height);
           } else {
             updateImageDimensions(imageData.width, imageData.height);
           }
 
-          // Add to preload cache
           setPreloadedImage(path, imageData);
         }
       } catch (error) {
-        // Don't log errors if the load was cancelled or navigation changed
         if (!signal.aborted && activeLoadPathRef.current === path) {
           console.error("Failed to load image:", error);
           setImageError(error as Error);
         }
       } finally {
-        // Only clear loading if this request is still active
         if (activeLoadPathRef.current === path) {
           setLoading(false);
         }
@@ -435,7 +404,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   // Load image with debounce to handle rapid navigation
   useEffect(() => {
-    // Cancel any pending image load
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -450,18 +418,15 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
     // Debounce image loading to avoid loading intermediate images during rapid navigation
     const timeoutId = setTimeout(async () => {
-      // Create new AbortController for this load
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
 
       if (signal.aborted) return;
 
-      // Load the image with the specific signal for this request
       await loadImage(currentImage.path, signal);
     }, debounceDelay);
 
     return () => {
-      // Clear the timeout and abort any ongoing load when path changes
       clearTimeout(timeoutId);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -470,8 +435,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   }, [currentImage.path, loadImage]);
 
   // Zoom past the preview's pixel density -> upgrade to the full-resolution
-  // decode (design spec 2026-08-21 §6.4). Debounced so a wheel gesture
-  // schedules one decode after the zoom settles, not one per notch.
+  // decode (§6.5 (I4)). Debounced so a wheel gesture schedules one decode
+  // after the zoom settles, not one per notch.
   useEffect(() => {
     const data = currentImage.data;
     if (!data || data.path !== currentImage.path) return;
@@ -564,9 +529,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     const data = currentImage.data;
     if (!data || !isPerfEnabled()) return;
     const thumbnail = !!useAppStore.getState().ui.thumbnailDisplayed;
-    // Display tier of this paint (design spec 2026-08-21 §7.1). The bench
-    // keeps judging "full paint" by thumbnail === false; tier is the
-    // explicit label that will distinguish preview from full later.
+    // Display tier of this paint (§7.1). The bench keeps judging "full
+    // paint" by thumbnail === false; tier is the explicit label that will
+    // distinguish preview from full later.
     const tier = displayTierOf(data, thumbnail);
     let cancelled = false;
 
@@ -609,7 +574,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     };
   }, [currentImage.data]);
 
-  // Handle window resize to re-fit image
   useEffect(() => {
     const handleResize = () => {
       if (currentImage.data) {
@@ -623,11 +587,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   const handleContainerClick = useCallback(
     (e: React.MouseEvent) => {
-      // Check if click was on the image element
       const isImageClick =
         e.target === imageRef.current || e.target === canvasRef.current;
 
-      // Only handle clicks outside the image
       if (
         !isImageClick &&
         view.isMaximized &&
@@ -653,7 +615,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   );
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only allow dragging on the image itself
     const isDisplayTarget =
       e.target === imageRef.current || e.target === canvasRef.current;
     if (isDisplayTarget) {
@@ -669,13 +630,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (isDragging) {
-        // Calculate pan delta relative to zoom level
         const deltaX = (e.clientX - dragStart.x) / (view.zoom / 100);
         const deltaY = (e.clientY - dragStart.y) / (view.zoom / 100);
 
         setPan(view.panX + deltaX, view.panY + deltaY);
 
-        // Update drag start for next move
         setDragStart({ x: e.clientX, y: e.clientY });
       }
     },
@@ -687,7 +646,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   }, []);
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    // Only reset zoom on image double-click
     const isDisplayTarget =
       e.target === imageRef.current || e.target === canvasRef.current;
     if (isDisplayTarget) {
@@ -701,12 +659,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
       if (!containerRef.current) return;
 
-      // Get cursor position relative to the container center
       const rect = containerRef.current.getBoundingClientRect();
       const containerCenterX = rect.left + rect.width / 2;
       const containerCenterY = rect.top + rect.height / 2;
 
-      // Mouse position relative to container center
       const mouseX = e.clientX - containerCenterX;
       const mouseY = e.clientY - containerCenterY;
 
@@ -753,19 +709,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   );
 
   const imageStyle: React.CSSProperties = useMemo(() => {
-    // Always use original image dimensions for width/height
     const imageWidth = currentImage.data?.width || 0;
     const imageHeight = currentImage.data?.height || 0;
 
-    // Use calculated position from fitToWindow for initial positioning
     const baseLeft = view.imageLeft ?? 0;
     const baseTop = view.imageTop ?? 0;
 
     return {
       left: baseLeft,
       top: baseTop,
-      width: imageWidth, // Original image width
-      height: imageHeight, // Original image height
+      width: imageWidth,
+      height: imageHeight,
       transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
       cursor: isDragging ? "grabbing" : "grab",
       transition:

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-// Mock the store
 const mockOpenFileDialog = vi.fn();
 
 vi.mock("../../store", () => ({
@@ -52,12 +51,10 @@ describe("FileOpenButton", () => {
 
     const button = screen.getByText("Open Image");
 
-    // Rapid clicks
     fireEvent.click(button);
     fireEvent.click(button);
     fireEvent.click(button);
 
-    // Should call openFileDialog for each click
     expect(mockOpenFileDialog).toHaveBeenCalledTimes(3);
   });
 });
