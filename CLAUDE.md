@@ -32,8 +32,8 @@ cd src-tauri && cargo test commands::file::tests  # Run specific test module
 - **KEEP（必ず残す）**: なぜこの実装でないと壊れるか / 数値の根拠 / 外部ライブラリ・OS の落とし穴 / 意図的な非採用 / 不変条件の表明。
 - **孤児ラベルを作らない**: 新しい根拠に `X1` のようなラベルを付けるなら、定義を [docs/code-rationale.md](./docs/code-rationale.md) に置き、コードからは 1 行で参照する。コードのコメントだけが唯一の記録という状態にしない。
 - **スペック参照**: ファイル先頭に 1 回だけ `Spec: docs/superpowers/specs/<file>.md` を書き、以降のインラインは `§6.6` / `(I2)` のみ。日付とパスを繰り返さない。
-- **機能を持つコメントは削除しない**: `biome-ignore` / `@ts-expect-error` / `/// <reference ... />` / `// @vitest-environment` / `/* @__PURE__ */`。
-- コメントのみの変更は `npm run verify:comments -- <base-ref>` で検証する（TS/TSX は esbuild でコード一致を機械確認、Rust は差分の行検査）。exit 2 は行末コメント行の目視確認を求めるもので、確認できれば受理してよい。
+- **機能を持つコメントは削除しない**: `biome-ignore`（`useImagePreloader.ts` で使用中）/ `@ts-expect-error`（`vite.config.ts` で使用中）/ `/// <reference ... />`（`vite-env.d.ts` の唯一の行）。`// @vitest-environment` と `/* @__PURE__ */` は現在このリポジトリでは未使用だが、導入された場合も同様に扱う。
+- コメントのみの変更は `npm run verify:comments -- <base-ref>` で検証する（TS/TSX は esbuild でコード一致を機械確認、Rust は差分の行検査）。exit 1 はコード変更の検出。exit 2 は自動判定できなかった行の目視確認を求めるもので、原因は 2 つある: (a) `//` を含む変更行（行末コメントか、文字列中の `//` かを機械的に区別できない）、(b) 範囲内で新規追加された TS/TSX ファイル（比較対象の版が無く esbuild 検査を行えない）。いずれも目視で確認できれば受理してよい。
 
 ## Project Specs
 
