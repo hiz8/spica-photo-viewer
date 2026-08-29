@@ -46,6 +46,9 @@ corpus 生成と `bench:build` は Task 12 でのみ必要なので、この時�
 - Create: `scripts/verify-comment-only.mjs`
 - Create: `scripts/__tests__/verify-comment-only.test.mjs`
 - Modify: `package.json`（`scripts` に `verify:comments` を追加）
+- Modify: `vitest.config.ts`（`test.exclude` に `scripts/**` を追加）
+
+**`vitest.config.ts` を触る理由:** vitest の既定の include グロブは `*.test.mjs` にマッチするため、新しい `node:test` のテストファイルを vitest が拾い、`node:test` のバンドルに失敗して `npm test` が落ちる。`exclude: [...configDefaults.exclude, 'scripts/**']` として既定値を展開した上で追加すること（既定値を置き換えると `node_modules` などの除外が消える）。
 
 **Interfaces:**
 - Consumes: なし
@@ -215,8 +218,17 @@ export const tsCodeEquivalent = (before, after, loader) =>
 
 export const isCommentOrBlank = (line) => {
   const t = line.trim();
+  // NOT `t.startsWith("*")`: that classifies Rust's dereference operator as a
+  // comment, so a changed `*s.get_mut("x").unwrap() += 1;` line would be
+  // dropped from both hard and manual and the gate would exit 0 on a real
+  // logic change. `cache.rs` and `perf.rs` already contain 5 such lines.
   return (
-    t === "" || t.startsWith("//") || t.startsWith("/*") || t.startsWith("*")
+    t === "" ||
+    t.startsWith("//") ||
+    t.startsWith("/*") ||
+    t === "*" ||
+    t === "*/" ||
+    t.startsWith("* ")
   );
 };
 
@@ -314,10 +326,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 }
 ```
 
+> **この Step 3 のコードは実装後のレビューで 4 件の欠陥が見つかり、修正コミット `d28fe27` で置き換えられている。** 現行の正は `scripts/verify-comment-only.mjs` そのものであり、上のブロックは初版の記録である。修正内容: (1) 上記 `isCommentOrBlank` の間接参照バグ、(2) `git show` の失敗を握り潰さず追加ファイルは manual・その他のエラーは hard に振り分ける（`classifyTsFileChange()` に抽出）、(3) exit 2 の見出しが `//` を含む行を断定的にコメントと呼ばない文言に変更、(4) `--- `/`+++ ` を `a/` `b/` `/dev/null` が続く場合のみヘッダとみなす。
+
 - [ ] **Step 4: テストが通ることを確認する**
 
 Run: `node --test scripts/__tests__/verify-comment-only.test.mjs`
-Expected: PASS — `# tests 12` / `# pass 12` / `# fail 0`
+Expected: PASS — `# fail 0`（初版は 12 件、レビュー修正後は 22 件）
 
 - [ ] **Step 5: package.json に script を追加する**
 
