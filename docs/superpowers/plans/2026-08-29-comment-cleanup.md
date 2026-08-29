@@ -19,7 +19,7 @@
 - **機能を持つコメントは絶対に削除しない**: `biome-ignore`、`@ts-expect-error`、`@ts-ignore`、`/// <reference ... />`（`src/vite-env.d.ts` の 1 行は TypeScript のディレクティブでありコメントではない）、`// @vitest-environment`、`/* @__PURE__ */`。Rust の `#[...]` / `#![...]` は属性でありコメントではない。
 - **参照記法**: ファイル先頭に 1 回だけ `Spec: docs/superpowers/specs/<file>.md`。以降のインラインは `§6.6` / `(I2)` のみ。
 - **コメントは英語で書く**（既存コードの慣習。日本語コメントは現在 1 行のみ）。
-- **各タスクの完了条件**: `npm run verify:comments -- <base>` が exit 0（または exit 2 を目視確認して受理）、`npm test`、`cd src-tauri && cargo test --lib`、`npm run type-check`、`npm run lint` がすべて green。
+- **各タスクの完了条件**: `npm run verify:comments -- <base>` が exit 0（または exit 2 を目視確認して受理）、かつ**そのタスクが触れた側のスイートが green**。TS を触ったら `npm test` / `npm run type-check` / `npm run lint`、Rust を触ったら `cd src-tauri && cargo test --lib`。どちらも触っていないタスク（Task 2 / Task 3）はスイート実行不要。各タスクの Step に書かれたコマンドが正であり、この行はその要約である。
 - **lint/format**: 編集後は hook が Biome を走らせる。hook が走らなかった場合に備え、コミット前に `npm run lint` と `npm run format` で差分が出ないことを確認する。
 - **ベンチ**: Task 12 のみ `npm run bench:build && npm run bench`。Task 1〜11 では不要（生成物に影響しない）。
 
@@ -350,7 +350,7 @@ git commit -m "chore(comments): add comment-only change verification script"
 
 **Interfaces:**
 - Consumes: なし
-- Produces: `docs/code-rationale.md` のアンカー `#x1` `#x2` `#m1` `#build-time-fast_image_resize-の単相化`。Task 7 がこれらを参照する。
+- Produces: `docs/code-rationale.md` のアンカー `#x1` `#x2` `#m1` `#build-time`。Task 7 がこれらを参照する。
 
 **スペック §6.1 MOVE からの修正（意図的な逸脱。理由を含めて記載する）:**
 
@@ -381,10 +381,24 @@ git commit -m "chore(comments): add comment-only change verification script"
 
 続けて以下の 4 節を作る。**本文は現在のコードのコメントから一字一句そのまま移す**（要約しない。KEEP2 / KEEP3 に該当する内容である）。
 
-- `## X1: CMYK/YCCK ソースでは ICC プロファイルを落とす` — 出典 `src-tauri/src/utils/preview.rs:144-155` の doc コメント全文。加えて `preview.rs:91-93`（`original_color` フィールドの説明）、`:109`（`from_decoder` が decoder を消費する前に読む必要）、`:252`、`:346`、`:437`（`image` 0.25 の JPEG decoder が CMYK/YCCK を `Rgb8` と報告する）の各補足も同じ節にまとめる。節末に「参照元: `src-tauri/src/utils/preview.rs`」を書く。
-- `## X2: エンコーダが拒否する ICC プロファイル長` — 出典 `preview.rs:218` と `:456`。
-- `## M1: `into_rgb8()` による無コピー変換` — 出典 `preview.rs:123-127`。24 MP 写真で約 72 MB という数値を必ず残す（KEEP2）。
-- `## BUILD-TIME: fast_image_resize の単相化` — 出典 `preview.rs:177-183`。「動的 `Resizer::resize` は 13 ピクセル型 × 全 SIMD パスを単相化し、このクレートの LLVM パスを約 80 秒延ばした（2026-08-23 計測）。`TypedImageRef<U8x3>` / `resize_typed` は RGB8 パスだけを単相化する」という内容と数値を必ず残す。
+**見出しはラベルだけにする。** `## X1: CMYK でのICC破棄` のように説明を付けると GitHub のアンカーが `#x1-cmyk-でのicc破棄` になり、コードから参照する `#x1` と一致しなくなる。見出しは `## X1` とし、説明は見出しの次の行に書く。
+
+```markdown
+## X1
+
+**CMYK/YCCK ソースでは ICC プロファイルを落とす**
+
+（根拠の本文）
+
+参照元: `src-tauri/src/utils/preview.rs`
+```
+
+この形式で以下の 4 節を作る。
+
+- `## X1` — 出典 `src-tauri/src/utils/preview.rs:144-155` の doc コメント全文。加えて `preview.rs:91-93`（`original_color` フィールドの説明）、`:109`（`from_decoder` が decoder を消費する前に読む必要）、`:252`、`:346`、`:437`（`image` 0.25 の JPEG decoder が CMYK/YCCK を `Rgb8` と報告する）の各補足も同じ節にまとめる。
+- `## X2` — 出典 `preview.rs:218` と `:456`。エンコーダが拒否する ICC プロファイル長について。
+- `## M1` — 出典 `preview.rs:123-127`。`into_rgb8()` による無コピー変換。24 MP 写真で約 72 MB という数値を必ず残す（KEEP2）。
+- `## BUILD-TIME` — 出典 `preview.rs:177-183`。「動的 `Resizer::resize` は 13 ピクセル型 × 全 SIMD パスを単相化し、このクレートの LLVM パスを約 80 秒延ばした（2026-08-23 計測）。`TypedImageRef<U8x3>` / `resize_typed` は RGB8 パスだけを単相化する」という内容と数値を必ず残す。
 
 - [ ] **Step 2: 移設漏れがないことを確認する**
 
