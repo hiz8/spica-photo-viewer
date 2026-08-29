@@ -176,6 +176,70 @@ test("classifyRustDiff does not swallow a removed content line that starts with 
   assert.ok(hard[0].includes("--- keep sorted by mtime"));
 });
 
+test("classifyRustDiff routes a trailing-comment removal pair to manual, not hard", () => {
+  const diff = [
+    "--- a/src-tauri/src/commands/file.rs",
+    "+++ b/src-tauri/src/commands/file.rs",
+    "@@ -1 +1 @@",
+    "-        assert_eq!(images.len(), 2); // Only valid images",
+    "+        assert_eq!(images.len(), 2);",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.equal(manual.length, 2);
+  assert.ok(manual[0].includes("// Only valid images"));
+  assert.ok(manual[1].includes("assert_eq!(images.len(), 2);"));
+});
+
+test("classifyRustDiff still flags a genuinely changed code line even with a trailing comment on both sides", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +1 @@",
+    "-        assert_eq!(x, 1); // note",
+    "+        assert_eq!(x, 2); // note",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // The code portions differ (1 vs 2), so pairing must not match them up —
+  // this is not excused just because both sides carry an identical comment.
+  assert.equal(hard.length, 1);
+  assert.ok(hard[0].includes("assert_eq!(x, 1); // note"));
+  assert.equal(manual.length, 1);
+  assert.ok(manual[0].includes("assert_eq!(x, 2); // note"));
+});
+
+test("classifyRustDiff hard-flags a deleted statement that carried a trailing comment, with no replacement", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1 +0,0 @@",
+    "-        assert_eq!(images.len(), 2); // Only valid images",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  // No added line at all: this must never be classified as "manual" just
+  // because it happens to contain "//" — it is a deleted assertion.
+  assert.equal(hard.length, 1);
+  assert.ok(
+    hard[0].includes("assert_eq!(images.len(), 2); // Only valid images"),
+  );
+  assert.deepEqual(manual, []);
+});
+
+test("classifyRustDiff pairs each duplicate removed statement with its own distinct added counterpart", () => {
+  const diff = [
+    "--- a/src-tauri/src/a.rs",
+    "+++ b/src-tauri/src/a.rs",
+    "@@ -1,2 +1,2 @@",
+    "-        assert!(result.is_ok()); // first",
+    "-        assert!(result.is_ok()); // second",
+    "+        assert!(result.is_ok());",
+    "+        assert!(result.is_ok()); // second, reworded",
+  ].join("\n");
+  const { hard, manual } = classifyRustDiff(diff);
+  assert.deepEqual(hard, []);
+  assert.equal(manual.length, 4);
+});
+
 test("classifyRustDiff does not swallow an added content line that starts with +++ ", () => {
   const diff = [
     "--- a/src-tauri/src/a.rs",

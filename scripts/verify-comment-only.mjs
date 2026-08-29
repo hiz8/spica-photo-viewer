@@ -17,10 +17,17 @@
 // change. Rust has no equivalent tool available here, so it is checked
 // line-wise instead: every added or removed line must be a whole-line comment
 // or blank. A changed line that mixes code with `//` cannot be judged that
-// way — it may be a trailing comment or a `//` inside a string — so it is
-// reported for manual review (exit 2) rather than silently accepted. Added
-// files (no base-ref revision to diff against) land in the same manual-review
-// bucket.
+// way in isolation — it may be a trailing comment or a `//` inside a string —
+// so a removed line is first paired against an added line in the same file
+// whose text is IDENTICAL once a trailing `// ...` is stripped from
+// whichever side has one; a matched pair differs only in its comment (added,
+// removed, or reworded) and is reported for manual review (exit 2) rather
+// than silently accepted. A removed line with no such match — including one
+// that carried a trailing comment — is a real deleted statement and is
+// always hard (exit 1): pairing must never be the thing that excuses a
+// deleted assertion just because it happened to have a `// comment` on the
+// end. Added files (no base-ref revision to diff against) land in the same
+// manual-review bucket.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -57,10 +64,30 @@ const DIFF_HEADER =
 // string) must not be mistaken for one.
 const DIFF_FILE_MARKER = /^(?:--- |\+\+\+ )(?:a\/|b\/|\/dev\/null)/;
 
+// The code portion of a diff line body, with a trailing `// ...` comment (if
+// any) stripped and trailing whitespace trimmed. Two lines with the same
+// code portion differ only in their comment — this is what pairing matches
+// on. Matches on the FIRST `//`, same ambiguity the single-line check always
+// had (a `//` inside a string literal cannot be told apart from a comment
+// marker here); that ambiguity is exactly why a match is still routed to
+// manual rather than accepted outright.
+const codePortion = (body) => {
+  const idx = body.indexOf("//");
+  return (idx === -1 ? body : body.slice(0, idx)).trimEnd();
+};
+
 export const classifyRustDiff = (diff) => {
   const hard = [];
   const manual = [];
   let file = "?";
+  // Collect candidate +/- lines per file first; pairing needs to see both
+  // sides of the diff before it can classify either one.
+  const byFile = new Map();
+  const bucketFor = (f) => {
+    if (!byFile.has(f)) byFile.set(f, { removed: [], added: [] });
+    return byFile.get(f);
+  };
+
   for (const line of diff.split("\n")) {
     if (line.startsWith("+++ b/")) {
       file = line.slice(6);
@@ -76,8 +103,44 @@ export const classifyRustDiff = (diff) => {
     if (!line.startsWith("+") && !line.startsWith("-")) continue;
     const body = line.slice(1);
     if (isCommentOrBlank(body)) continue;
-    (body.includes("//") ? manual : hard).push(`${file}: ${line}`);
+    const entry = { raw: line, body, code: codePortion(body) };
+    (line.startsWith("-")
+      ? bucketFor(file).removed
+      : bucketFor(file).added
+    ).push(entry);
   }
+
+  for (const [f, { removed, added }] of byFile) {
+    // Exact-text pairing, scoped to this file: an added line whose code
+    // portion equals a removed line's code portion is the same statement
+    // with only its comment touched. Each added line pairs at most once, so
+    // duplicate statements (two removed lines with the same code) each need
+    // their own distinct added counterpart, not one shared match.
+    const addedByCode = new Map();
+    for (const a of added) {
+      if (!addedByCode.has(a.code)) addedByCode.set(a.code, []);
+      addedByCode.get(a.code).push(a);
+    }
+    const usedAdded = new Set();
+    for (const r of removed) {
+      const match = addedByCode.get(r.code)?.find((a) => !usedAdded.has(a));
+      if (match) {
+        usedAdded.add(match);
+        manual.push(`${f}: ${r.raw}`);
+        manual.push(`${f}: ${match.raw}`);
+      } else {
+        // No code-identical counterpart was added: a real deleted statement.
+        // It must never read as "manual" just because it carried a trailing
+        // comment — that is precisely the loophole this pairing closes.
+        hard.push(`${f}: ${r.raw}`);
+      }
+    }
+    for (const a of added) {
+      if (usedAdded.has(a)) continue;
+      (a.body.includes("//") ? manual : hard).push(`${f}: ${a.raw}`);
+    }
+  }
+
   return { hard, manual };
 };
 
