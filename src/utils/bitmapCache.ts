@@ -1,4 +1,6 @@
 /**
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ *
  * Module-level cache of decoded bitmaps (hypothesis C), keyed by path and
  * tier. Keeps decoded pixels alive independent of the renderer's own
  * image-cache eviction, so a preload-hit navigation can paint without
@@ -8,11 +10,11 @@
  * does bookkeeping and deterministic release via close().
  *
  * Each path can hold up to two independently-retained bitmaps: a
- * display-resolution "preview" (design spec 2026-08-21 §6.4) and the
- * "full" resolution decode. They coexist so a preview can keep painting
- * while a full-resolution upgrade decodes in the background. Callers that
- * only care about "the best bitmap available" (the pre-Phase-3 API) use
- * `getBitmap`/`getRetained`, which prefer full over preview.
+ * display-resolution "preview" (§6.4) and the "full" resolution decode.
+ * They coexist so a preview can keep painting while a full-resolution
+ * upgrade decodes in the background. Callers that only care about "the best
+ * bitmap available" (the pre-Phase-3 API) use `getBitmap`/`getRetained`,
+ * which prefer full over preview.
  */
 export type BitmapTier = "preview" | "full";
 

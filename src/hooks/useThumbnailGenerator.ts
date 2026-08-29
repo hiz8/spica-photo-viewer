@@ -13,9 +13,11 @@ import { currentPreviewBox } from "../utils/previewBox";
 import type { ThumbnailWithDimensions } from "../types";
 
 /**
- * Hook for centralized thumbnail generation with priority queue
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ *
+ * Hook for centralized thumbnail generation with priority queue.
  * Generates thumbnails in order: current image → +1, -1, +2, -2, ...
- * Pauses generation during navigation to prioritize image display
+ * Pauses generation during navigation to prioritize image display.
  */
 export const useThumbnailGenerator = () => {
   const { folder, currentImage } = useAppStore();
@@ -38,7 +40,6 @@ export const useThumbnailGenerator = () => {
         setThumbnailGeneration,
       } = useAppStore.getState();
 
-      // Check if already cached
       if (currentCache.thumbnails.has(imagePath)) {
         return true;
       }
@@ -61,12 +62,11 @@ export const useThumbnailGenerator = () => {
 
         if (cachedThumbnail) {
           const [base64, width, height] = cachedThumbnail;
-          // Only use cached thumbnail if it has dimensions
           if (width !== null && height !== null) {
             setCachedThumbnail(imagePath, { base64, width, height });
             return true;
           }
-          // If cached entry lacks dimensions, regenerate
+          // If cached entry lacks dimensions, regenerate.
         }
 
         // Generate thumbnail + preview from one decode; the command writes
@@ -119,10 +119,7 @@ export const useThumbnailGenerator = () => {
     [], // No dependencies - always get fresh state from useAppStore.getState()
   );
 
-  /**
-   * Build priority queue: current → +1, -1, +2, -2, ...
-   * @param maxRange - Maximum offset from current image (undefined = all images)
-   */
+  /** @param maxRange - Maximum offset from current image (undefined = all images) */
   const buildPriorityQueue = useCallback((maxRange?: number): string[] => {
     // Get fresh state to avoid stale closure
     const { currentImage, folder, cache } = useAppStore.getState();
@@ -135,57 +132,45 @@ export const useThumbnailGenerator = () => {
     const currentIndex = currentImage.index;
     const images = folder.images;
 
-    // Add current image first (highest priority)
     queue.push(images[currentIndex].path);
 
-    // Determine effective range
     const effectiveRange =
       maxRange !== undefined
         ? Math.min(maxRange, images.length - 1)
         : images.length - 1;
 
-    // Add images in expanding radius: +1, -1, +2, -2, +3, -3...
-    // Stop at effectiveRange instead of images.length
+    // effectiveRange, not images.length, caps this loop.
     for (let offset = 1; offset <= effectiveRange; offset++) {
-      // Add next image (+offset)
       const nextIndex = currentIndex + offset;
       if (nextIndex < images.length) {
         queue.push(images[nextIndex].path);
       }
 
-      // Add previous image (-offset)
       const prevIndex = currentIndex - offset;
       if (prevIndex >= 0) {
         queue.push(images[prevIndex].path);
       }
     }
 
-    // Filter out already cached thumbnails
     return queue.filter((path) => !cache.thumbnails.has(path));
   }, []); // No dependencies - always get fresh state from useAppStore.getState()
 
-  /**
-   * Process thumbnail generation queue
-   */
   const processQueue = useCallback(async () => {
     if (isGeneratingRef.current || generationQueueRef.current.length === 0) {
       return;
     }
 
     isGeneratingRef.current = true;
-    // Get fresh setThumbnailGeneration
     useAppStore
       .getState()
       .setThumbnailGeneration({ isGenerating: true, allGenerated: false });
 
-    // Create new abort controller for this generation session
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
 
     const queue = generationQueueRef.current;
 
     try {
-      // Process queue with concurrent loading limit
       for (let i = 0; i < queue.length; i += MAX_CONCURRENT_LOADS) {
         if (signal.aborted) {
           console.log("Thumbnail generation aborted");
@@ -198,7 +183,6 @@ export const useThumbnailGenerator = () => {
         );
       }
 
-      // Mark all as generated if not aborted
       if (!signal.aborted) {
         useAppStore.getState().setThumbnailGeneration({ allGenerated: true });
         console.log("All thumbnails generated");
@@ -213,10 +197,7 @@ export const useThumbnailGenerator = () => {
     }
   }, [generateThumbnail]); // Only depend on generateThumbnail which is now stable
 
-  /**
-   * Expand queue progressively: initial → expanded range → full range
-   * This avoids processing all 900+ images immediately
-   */
+  /** Progressive expansion (initial → expanded → full) avoids processing all 900+ images immediately. */
   const expandQueueProgressively = useCallback(async () => {
     const { currentImage, folder } = useAppStore.getState();
 
@@ -224,7 +205,7 @@ export const useThumbnailGenerator = () => {
       return;
     }
 
-    // Phase 1: Already completed initial range, now do expanded range
+    // Phase 1: initial range done, now the expanded range.
     if (expansionPhaseRef.current === 0) {
       expansionPhaseRef.current = 1;
       const expandedQueue = buildPriorityQueue(
@@ -239,12 +220,12 @@ export const useThumbnailGenerator = () => {
         await processQueue();
       }
 
-      // Continue to full range after expanded range completes
+      // Continue to full range after the expanded range completes.
       await expandQueueProgressively();
       return;
     }
 
-    // Phase 2: Now process remaining images (full range)
+    // Phase 2: process the remaining (full range) images.
     if (expansionPhaseRef.current === 1) {
       expansionPhaseRef.current = 2;
       const fullQueue = buildPriorityQueue();
@@ -262,36 +243,27 @@ export const useThumbnailGenerator = () => {
     }
   }, [buildPriorityQueue, processQueue]);
 
-  /**
-   * Start thumbnail generation with smart debounce
-   * Skips debounce when all initial thumbnails are cached (optimization for large folders)
-   */
   const startGeneration = useCallback(() => {
-    // Abort any ongoing generation
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
 
-    // Clear existing debounce timeout
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    // Reset expansion phase on new navigation
     expansionPhaseRef.current = 0;
 
-    // Build initial priority queue with limited range
     const initialQueue = buildPriorityQueue(THUMBNAIL_GENERATION_INITIAL_RANGE);
 
-    // Optimization: Skip debounce if all initial thumbnails are already cached
-    // This saves ~500ms on subsequent folder opens for large folders
+    // Skip the debounce when all initial thumbnails are already cached —
+    // saves ~500ms on subsequent large-folder opens.
     if (initialQueue.length === 0) {
       console.log(
         "All initial thumbnails cached, skipping debounce and expanding",
       );
-      // Directly start progressive expansion without debounce
-      // Note: processQueue() in expandQueueProgressively will set isGenerating state
+      // Note: processQueue() in expandQueueProgressively sets isGenerating.
       void expandQueueProgressively();
       return;
     }
@@ -301,20 +273,17 @@ export const useThumbnailGenerator = () => {
       `Initial thumbnail queue: ${initialQueue.length} images (±${THUMBNAIL_GENERATION_INITIAL_RANGE})`,
     );
 
-    // Debounce: wait for navigation to settle before generating
     debounceTimeoutRef.current = setTimeout(() => {
       processQueue().then(() => {
-        // After initial queue completes, expand progressively in background
         expandQueueProgressively();
       });
     }, THUMBNAIL_GENERATION_DEBOUNCE_MS);
   }, [buildPriorityQueue, processQueue, expandQueueProgressively]);
 
   /**
-   * Trigger generation when current image or folder changes
-   * Note: Removed currentImage.data !== null condition to allow thumbnail generation
-   * to start immediately on navigation, independent of image loading.
-   * This ensures thumbnails are available as placeholders for future navigations.
+   * Deliberately NOT gated on currentImage.data !== null: generation starts
+   * immediately on navigation, independent of image loading, so thumbnails
+   * are ready as placeholders for future navigations.
    */
   useEffect(() => {
     if (currentImage.index !== -1 && folder.images.length > 0) {
@@ -322,7 +291,6 @@ export const useThumbnailGenerator = () => {
     }
 
     return () => {
-      // Cleanup: abort generation and clear timeout
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }

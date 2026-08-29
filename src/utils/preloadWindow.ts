@@ -5,12 +5,14 @@ import {
 } from "../constants/memory";
 
 /**
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ *
  * How many thumbnails are actually visible on each side of the current one,
  * derived from the thumbnail bar's own pitch geometry rather than a fixed
- * window size (design spec 2026-08-21 §7.2 — the visible-range window
- * scales with how much of the strip the user can actually see). Clamped so
- * a very narrow window still preloads at least the legacy window's worth,
- * and a very wide window doesn't outrun the byte-budget guard.
+ * window size (§7.2 — the visible-range window scales with how much of the
+ * strip the user can actually see). Clamped so a very narrow window still
+ * preloads at least the legacy window's worth, and a very wide window
+ * doesn't outrun the byte-budget guard.
  */
 export const visibleThumbnailRadius = (innerWidth: number): number => {
   const raw = Math.floor(

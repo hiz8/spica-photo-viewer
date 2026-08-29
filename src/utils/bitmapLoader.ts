@@ -1,4 +1,6 @@
 /**
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ *
  * Loads an image over the spica-img protocol and decodes it to an
  * ImageBitmap off the main thread. Deliberately does NOT go through an
  * HTMLImageElement and emits no `src:set` perf mark: the scheduler's loads
@@ -36,8 +38,8 @@ export const loadBitmapViaProtocol = async (
 };
 
 /**
- * Loads a display-resolution preview from the Phase 2 `/preview/<box>/`
- * route and decodes it off the main thread (same non-`src:set` contract as
+ * Loads a display-resolution preview from the `/preview/<box>/` route
+ * (§6.3) and decodes it off the main thread (same non-`src:set` contract as
  * loadBitmapViaProtocol). The natural (orientation-applied, full-resolution)
  * size comes back in the X-Spica-Natural-Width/Height response headers; a
  * missing or non-positive header falls back to the decoded bitmap's own
@@ -80,10 +82,9 @@ export const loadPreviewBitmap = async (
       width,
       height,
       format: imageFormat(path),
-      // A missing/invalid natural-size header must err toward "preview"
-      // (upgradeable), not "full": without both headers confirmed present,
-      // bitmap dims trivially equal the fallback natural dims and would
-      // otherwise silently cap display quality by skipping the zoom upgrade.
+      // Errs toward "preview" without confirmed headers — see the JSDoc
+      // above for why (silently capping quality by skipping the zoom
+      // upgrade otherwise).
       tier:
         hasNaturalHeaders && bitmap.width === width && bitmap.height === height
           ? "full"
