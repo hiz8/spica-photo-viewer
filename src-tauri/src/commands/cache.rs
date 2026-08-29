@@ -203,7 +203,7 @@ pub fn store_thumbnail_entry(
 /// stamp at all (couldn't stat the source when the error was recorded);
 /// once a stamp is on record it is honored like any other entry, so
 /// replacing a corrupt file with a valid one clears "error" immediately
-/// instead of waiting out the 24h TTL (F3).
+/// instead of waiting out the 24h TTL.
 pub fn lookup_thumbnail(
     cache_dir: &Path,
     path: &str,

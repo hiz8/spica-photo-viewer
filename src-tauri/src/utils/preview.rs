@@ -90,8 +90,8 @@ pub fn fit_within(w: u32, h: u32, bbox: PreviewBox) -> Option<(u32, u32)> {
 struct Decoded {
     image: DynamicImage,
     icc: Option<Vec<u8>>,
-    /// The source's colour type before decoding (X1) — differs from the
-    /// decoded image's for CMYK/YCCK. docs/code-rationale.md#x1
+    /// The source's colour type before decoding (X1); differs from the
+    /// decoded image's for CMYK/YCCK — docs/code-rationale.md#x1
     original_color: ExtendedColorType,
 }
 
@@ -164,7 +164,7 @@ fn icc_describes_rgb(icc: &[u8]) -> bool {
 /// Lanczos3 downscale through `fast_image_resize`'s *typed* API.
 ///
 /// Build-time: `TypedImageRef<U8x3>` avoids the ~80s LLVM build-time cost of
-/// the dynamic, generic `Resizer::resize` entry point. docs/code-rationale.md#build-time
+/// the dynamic, generic `Resizer::resize` entry point — docs/code-rationale.md#build-time
 fn resize_rgb8(src: RgbImage, tw: u32, th: u32) -> Result<RgbImage, String> {
     let (sw, sh) = (src.width(), src.height());
     let src_buf = src.into_raw();
@@ -199,7 +199,7 @@ fn encode_jpeg(rgb: &RgbImage, quality: u8, icc: Option<&[u8]>) -> Result<Vec<u8
     let mut encoder = JpegEncoderFast::new(&mut out, quality);
     encoder.set_sampling_factor(SamplingFactor::F_2_2); // 4:2:0
     if let Some(icc) = icc {
-        // X2: a rejected ICC profile must not fail the whole preview.
+        // X2: a rejected ICC profile must not fail the whole preview —
         // docs/code-rationale.md#x2
         if let Err(e) = encoder.add_icc_profile(icc) {
             eprintln!("preview: dropping ICC profile ({e})");
@@ -232,8 +232,7 @@ pub fn generate(path: &Path, bbox: PreviewBox, thumb_size: u32) -> Result<Genera
         decode_oriented(path)?
     };
     let (natural_width, natural_height) = (image.width(), image.height());
-    // Both the original colour type AND the profile's own header are
-    // checked (X1) — docs/code-rationale.md#x1
+    // X1 — docs/code-rationale.md#x1
     let icc = icc.filter(|p| icc_applies(original_color) && icc_describes_rgb(p));
     let rgb = flatten_to_rgb8(image);
     let (preview, resized) = match fit_within(natural_width, natural_height, bbox) {

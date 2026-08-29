@@ -1,5 +1,9 @@
-//! Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
-//! Spec: docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+//! Spec (preview): docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+//! Spec (sort):    docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+//!
+//! This file spans both specs; every inline reference below is qualified
+//! `(preview ...)` or `(sort ...)` since both specs define their own §6.2,
+//! §6.5, I1, D4, D5.
 
 use crate::commands::cache::{self, CacheEntry, PreviewSidecar};
 use crate::utils::image::is_supported_image;
@@ -21,10 +25,10 @@ pub struct ImageInfo {
     pub size: u64,
     pub modified: u64,
     /// UNIX seconds; falls back to `modified` where the platform/filesystem
-    /// has no creation time (e.g. Linux) (§6.5).
+    /// has no creation time (e.g. Linux) (sort §6.5).
     pub created: u64,
     pub format: String,
-    /// Sort-only full-precision timestamps (D5). Never serialized:
+    /// Sort-only full-precision timestamps (sort D5). Never serialized:
     /// ns since epoch exceeds JavaScript's safe-integer range (2^53).
     #[serde(skip)]
     pub modified_ns: u64,
@@ -57,9 +61,9 @@ impl Default for SortSpec {
 }
 
 /// Sorts images the way Explorer displays them for the given sort setting.
-/// Pure function: no COM, unit-testable (§6.2). Ties on the primary key
+/// Pure function: no COM, unit-testable (sort §6.2). Ties on the primary key
 /// always break by natural name order ASCENDING regardless of `descending`,
-/// so the order is deterministic (I1).
+/// so the order is deterministic (sort I1).
 pub fn sort_images(images: &mut [ImageInfo], spec: SortSpec) {
     images.sort_by(|a, b| {
         let primary = match spec.key {
@@ -86,7 +90,7 @@ pub struct ThumbnailWithDimensions {
     pub thumbnail_base64: String,
     pub original_width: u32,
     pub original_height: u32,
-    /// true when a display-resolution preview for the requested box is now on disk (I1).
+    /// true when a display-resolution preview for the requested box is now on disk (preview I1).
     pub preview_available: bool,
 }
 
@@ -99,7 +103,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
     }
 
     // Ask Explorer for this folder's sort setting concurrently with the scan
-    // (§5); the answer is picked up after the scan with whatever remains
+    // (sort §5); the answer is picked up after the scan with whatever remains
     // of the 300ms budget.
     let probe = crate::commands::explorer_sort::spawn_detect(folder_path.to_path_buf());
 
@@ -123,8 +127,8 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
 
     let (detected, probe_ms) = probe.join();
     if crate::utils::perf::enabled() {
-        // Sort provenance (§6.5): explorer = a window's setting was adopted,
-        // fallback = Name ascending. Log-only; never surfaced in UI (D4).
+        // Sort provenance (sort §6.5): explorer = a window's setting was adopted,
+        // fallback = Name ascending. Log-only; never surfaced in UI (sort D4).
         let (source, key, descending) = match detected {
             Some(s) => ("explorer", format!("{:?}", s.key), s.descending),
             None => ("fallback", "Name".to_string(), false),

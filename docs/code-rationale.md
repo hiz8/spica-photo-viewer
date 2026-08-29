@@ -5,7 +5,8 @@
 コードのコメントから 1 行で参照される。
 
 各節はコードから `— docs/code-rationale.md#<anchor>` の形で参照される。
-節を削除・改名するときは参照元も同時に直すこと。
+節を削除・改名するときは参照元も同時に直すこと。行番号は編集のたびにずれるため、
+コードへの逆参照は行番号ではなくシンボル名（関数名・フィールド名・テスト名）で行う。
 
 ## X1
 
@@ -22,34 +23,44 @@
 > collapses to RGB at the same point it configures pixel decoding), so
 > `icc_describes_rgb` below double-checks the profile's own declared data color space.
 
-（`preview.rs:144-155`、`icc_applies` の doc コメント全文）
+（`icc_applies`（`src-tauri/src/utils/preview.rs`）の doc コメントが**移行前に**持っていた
+全文。現在の `icc_applies` はこの節への 1 行参照のみを持つ）
 
 同じ判断が参照されている補足箇所:
 
-- `preview.rs:91-93`（`Decoded::original_color` フィールドの説明）:
+- `Decoded::original_color` フィールドの doc コメント（移行前）:
 
   > The source file's color type *before* decoding converted it (X1) — a CMYK/YCCK
   > JPEG is already RGB pixels in `image` by the time it's a `DynamicImage`, but
   > `original_color` still says `Cmyk8`.
 
-- `preview.rs:109`（`decode_oriented` 内。`from_decoder` が decoder を消費する前に読む必要があるという注記）:
+  現在は 1 行の要約 + この節への参照に置き換え済み。
+
+- `decode_oriented` 内、`original_color_type()` を読む行の直前（**現在も変更なし** —
+  移行対象ではない。`from_decoder` が decoder を消費する前に読まなければならない
+  という、その場で守るべき順序制約そのものであり、要約や参照に置き換えると制約の
+  実効性が失われるため）:
 
   > X1: must be read before `from_decoder` consumes the decoder.
 
-- `preview.rs:252-255`（`generate` 内。coordinator follow-up の注記）:
+- `generate` 内、`icc_applies` / `icc_describes_rgb` で ICC をフィルタする行の直前
+  （移行前。coordinator follow-up の注記）:
 
   > X1 + coordinator follow-up: the decoder's original color type is checked (correct
   > for formats whose decoders do report CMYK, e.g. TIFF), AND the profile's own
   > header is checked, because `image` 0.25's JPEG decoder reports CMYK/YCCK sources
   > as RGB regardless.
 
-- `preview.rs:346-348`（テスト `icc_applies_only_to_rgb_like_color_types` 内）:
+  現在はこの節への 1 行参照のみ。
+
+- テスト `icc_applies_only_to_rgb_like_color_types` 内（`#[cfg(test)]` 配下。
+  この根拠移行タスクは非テスト領域のみを対象としたため**現在も変更なし**）:
 
   > X1: this is the case that motivated switching from the decoded `DynamicImage`'s
   > color (always RGB8 post-decode) to the source's original color type — a
   > CMYK/YCCK JPEG must not carry its profile.
 
-- `preview.rs:437-439`（テスト `generate_drops_cmyk_icc_profiles` 内）:
+- テスト `generate_drops_cmyk_icc_profiles` 内（同上、**現在も変更なし**）:
 
   > The decoded pixels are RGB either way (X1's caveat: `image` 0.25's JPEG decoder
   > reports CMYK/YCCK sources as RGB too), so this profile header is the only signal
@@ -61,13 +72,16 @@
 
 **エンコーダが拒否する ICC プロファイル長は、失敗させず無視して続行する**
 
-- `preview.rs:218-220`（`encode_jpeg` 内）:
+- `encode_jpeg` 内、ICC プロファイルを追加する行の直前（移行前）:
 
   > X2: a profile the encoder refuses (e.g. > 254 APP2 chunks, so over ~15.9 MB) must
   > not fail the whole preview — degrade to no ICC rather than lose the bar thumbnail
   > generated alongside it.
 
-- `preview.rs:456-462`（テスト `generate_degrades_gracefully_when_the_icc_profile_is_too_large_to_attach` 内）:
+  現在はこの節への 1 行参照のみ。
+
+- テスト `generate_degrades_gracefully_when_the_icc_profile_is_too_large_to_attach` 内
+  （`#[cfg(test)]` 配下。**現在も変更なし**）:
 
   > X2: the smallest profile length `jpeg_encoder::Encoder::add_icc_profile` rejects —
   > it splits into 65519-byte APP2 chunks and errors once the count reaches 255
@@ -86,7 +100,8 @@
 > no-alpha case `into_rgb8()` returns the decoder's own buffer with no copy at all
 > (vs. `to_rgb8()`'s always-copy), which matters at ~72 MB for a 24 MP photo.
 
-（`preview.rs:123-126`、`flatten_to_rgb8` の doc コメントより）
+（`flatten_to_rgb8`（`src-tauri/src/utils/preview.rs`）の doc コメントが**移行前に**
+持っていた全文。現在の `flatten_to_rgb8` はこの節への 1 行参照のみを持つ）
 
 参照元: `src-tauri/src/utils/preview.rs`
 
@@ -102,6 +117,7 @@
 > instantiates only the RGB8 path; the filter, SIMD dispatch and rayon row splitting
 > are identical.
 
-（`preview.rs:177-183`、`resize_rgb8` の doc コメントより）
+（`resize_rgb8`（`src-tauri/src/utils/preview.rs`）の doc コメントが**移行前に**
+持っていた全文。現在の `resize_rgb8` はこの節への 1 行参照のみを持つ）
 
 参照元: `src-tauri/src/utils/preview.rs`

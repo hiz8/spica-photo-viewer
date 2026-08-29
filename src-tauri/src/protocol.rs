@@ -76,7 +76,7 @@ pub fn resolve_preview_request(rest: &str) -> Result<(PreviewBox, PathBuf), Stri
         .ok_or_else(|| "missing path".to_string())?;
     let bbox = PreviewBox::parse(box_part).ok_or_else(|| "unsupported preview box".to_string())?;
     let path = resolve_image_path(path_part)?;
-    // F2: GIF has no preview (design spec) — reject here rather than caching a
+    // GIF has no preview (design spec) — reject here rather than caching a
     // static JPEG of frame 1 under a box key.
     if is_gif_path(&path) {
         return Err("no preview for gif".to_string());
