@@ -43,7 +43,16 @@ fast_image_resize = { version = "6.1", features = ["rayon"] }
 jpeg-encoder = { version = "0.7", features = ["simd"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_UI_Shell"] }
+windows = { version = "0.62", features = [
+  "Win32_Storage_FileSystem",       # existing
+  "Win32_Foundation",               # existing (PROPERTYKEY)
+  "Win32_UI_Shell",                 # Phase 1: StrCmpLogicalW / Phase 2: IShellWindows, IFolderView2, SORTCOLUMN, SID_STopLevelBrowser, IUnknown_QueryService
+  "Win32_UI_Shell_Common",          # ITEMIDLIST (GetCurFolder / SHGetPathFromIDListW)
+  "Win32_System_Com",               # CoCreateInstance / CoInitializeEx / IDispatch / IShellWindows gate
+  "Win32_System_Ole",               # IShellBrowser / IShellView / VARIANT gate (D-P2-1; spec §6.4 lacked it)
+  "Win32_System_Variant",           # VARIANT / VT_I4 (IShellWindows::Item)
+  "Win32_UI_WindowsAndMessaging",   # GetForegroundWindow / GetAncestor (D-P2-2)
+] }
 
 [dev-dependencies]
 tempfile = "3.27"

@@ -18,6 +18,10 @@ use commands::window::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Stash the launcher's foreground window before Tauri creates ours and
+    // takes focus (spec §6.3: picks among multiple Explorer windows).
+    commands::explorer_sort::stash_foreground_window();
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init());
@@ -98,4 +102,13 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Probe-only surface for scripts/explorer-sort-probe. Not a public API.
+#[doc(hidden)]
+pub mod probe_api {
+    pub use crate::commands::explorer_sort::normalize_path;
+    #[cfg(windows)]
+    pub use crate::commands::explorer_sort::detect_sort_spec;
+    pub use crate::commands::file::get_folder_images;
 }
