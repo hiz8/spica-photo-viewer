@@ -10,7 +10,7 @@ import {
  * How many thumbnails are actually visible on each side of the current one,
  * derived from the thumbnail bar's own pitch geometry (§6.4 —
  * THUMBNAIL_ITEM_PITCH_PX, visibleThumbnailCount) rather than a fixed window
- * size. One-sided radius = floor((innerWidth − 40) / 80) (付録: 数値の根拠 —
+ * size. One-sided radius = floor((innerWidth − 40) / 80) (appendix —
  * ±23 @1920px, ±31 @2560px). Clamped so a very narrow window still preloads
  * at least the legacy window's worth, and a very wide window doesn't outrun
  * the byte-budget guard.

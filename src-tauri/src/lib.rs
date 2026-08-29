@@ -21,7 +21,7 @@ use commands::window::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Stash the launcher's foreground window before Tauri creates ours and
-    // takes focus (spec §6.3: picks among multiple Explorer windows).
+    // takes focus (§6.3: picks among multiple Explorer windows).
     commands::explorer_sort::stash_foreground_window();
 
     let builder = tauri::Builder::default()

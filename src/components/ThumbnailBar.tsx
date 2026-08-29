@@ -158,7 +158,10 @@ const ThumbnailBar: React.FC = () => {
       return `${image.filename} (${currentImage.data.width} × ${currentImage.data.height})`;
     }
 
-    // Show filename only while loading or preview
+    // currentImage.data is null only in the brief window right after
+    // navigation, before any tier has painted; the thumbnail placeholder and
+    // preview tiers both already carry width/height, so this branch is not
+    // reached once either one has loaded.
     return image.filename;
   }, [currentImage.path, currentImage.index, currentImage.data, folder.images]);
 

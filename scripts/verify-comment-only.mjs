@@ -184,12 +184,27 @@ const git = (args) =>
     maxBuffer: 256 * 1024 * 1024,
   });
 
+// A bad base ref makes `git()` throw; left uncaught that exits 1 with a raw
+// Node stack trace and no banner — indistinguishable from the exit 1 that
+// means "code change detected". This wrapper turns it into a labeled failure
+// instead.
+const diffAgainstBase = (baseRef, args) => {
+  try {
+    return git(args);
+  } catch (err) {
+    console.error(
+      `BASE REF ERROR — could not diff against '${baseRef}': ${err.message.trim()}`,
+    );
+    process.exit(1);
+  }
+};
+
 const main = () => {
   const baseRef = process.argv[2] ?? "HEAD";
   const hard = [];
   const manual = [];
 
-  const statuses = git([
+  const statuses = diffAgainstBase(baseRef, [
     "diff",
     "--name-status",
     baseRef,
@@ -230,7 +245,7 @@ const main = () => {
   }
 
   const rust = classifyRustDiff(
-    git(["diff", "-U0", baseRef, "--", "src-tauri/src"]),
+    diffAgainstBase(baseRef, ["diff", "-U0", baseRef, "--", "src-tauri/src"]),
   );
   hard.push(...rust.hard);
   manual.push(...rust.manual);
@@ -247,9 +262,23 @@ const main = () => {
     for (const l of manual) console.error(`  ${l}`);
     process.exit(2);
   }
-  console.log(
-    `verify-comment-only: OK — ${statuses.length} file(s) vs ${baseRef}, comments only`,
+  const tsChecked = statuses.filter(({ path }) => /\.tsx?$/.test(path));
+  const rustChecked = statuses.filter(({ path }) => /\.rs$/.test(path));
+  const uncovered = statuses.filter(
+    ({ path }) => !/\.tsx?$/.test(path) && !/\.rs$/.test(path),
   );
+
+  console.log(
+    `verify-comment-only: OK — ${tsChecked.length} TS/TSX file(s) checked via esbuild, ` +
+      `${rustChecked.length} Rust file(s) checked via line diff, vs ${baseRef}`,
+  );
+  if (uncovered.length > 0) {
+    console.log(
+      `verify-comment-only: NOT CHECKED by either path (review by eye): ${uncovered
+        .map(({ path }) => path)
+        .join(", ")}`,
+    );
+  }
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

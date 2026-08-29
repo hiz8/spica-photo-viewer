@@ -258,7 +258,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         setLoading(true);
         setImageError(null);
 
-        // folder.imagesByPath is a Map, so format lookup is O(1).
         const imageInfo = folder.imagesByPath.get(path);
 
         // GIFs skip two-phase loading to preserve their animation.

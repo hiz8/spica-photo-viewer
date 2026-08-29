@@ -526,7 +526,7 @@ mod tests {
             .unwrap();
         let info = &images[0];
 
-        // seconds fields are the ns fields truncated (D5)
+        // seconds fields are the ns fields truncated (sort D5)
         assert_eq!(info.modified, info.modified_ns / 1_000_000_000);
         assert_eq!(info.created, info.created_ns / 1_000_000_000);
         assert!(info.modified_ns > 0);
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(names(&v), ["a.jpg", "c.jpg", "b.jpg"]);
 
         // Descending flips the primary key only; the tie between a/c stays
-        // name-ASCENDING (I1).
+        // name-ASCENDING (sort I1).
         sort_images(
             &mut v,
             SortSpec {
@@ -641,7 +641,7 @@ mod tests {
     #[test]
     fn test_sort_images_modified_tie_breaks_by_name() {
         // Identical modified_ns: even with descending set, the tiebreak
-        // stays name-ASCENDING (I1) — descending only flips the primary key.
+        // stays name-ASCENDING (sort I1) — descending only flips the primary key.
         let same = 1_700_000_000_000_000_000u64;
         let mut v = vec![
             sort_info("b.jpg", 1, same, 1, "jpeg"),

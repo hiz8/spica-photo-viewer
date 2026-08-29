@@ -24,7 +24,7 @@
 > `icc_describes_rgb` below double-checks the profile's own declared data color space.
 
 （`icc_applies`（`src-tauri/src/utils/preview.rs`）の doc コメントが**移行前に**持っていた
-全文。現在の `icc_applies` はこの節への 1 行参照のみを持つ）
+全文。現在の `icc_applies` は 1 行の要約 + この節への参照を持つ）
 
 同じ判断が参照されている補足箇所:
 
@@ -80,7 +80,7 @@
   > not fail the whole preview — degrade to no ICC rather than lose the bar thumbnail
   > generated alongside it.
 
-  現在はこの節への 1 行参照のみ。
+  現在は 1 行の要約 + この節への参照。
 
 - テスト `generate_degrades_gracefully_when_the_icc_profile_is_too_large_to_attach` 内
   （`#[cfg(test)]` 配下。**現在も変更なし**）:
@@ -103,7 +103,7 @@
 > (vs. `to_rgb8()`'s always-copy), which matters at ~72 MB for a 24 MP photo.
 
 （`flatten_to_rgb8`（`src-tauri/src/utils/preview.rs`）の doc コメントが**移行前に**
-持っていた全文。現在の `flatten_to_rgb8` はこの節への 1 行参照のみを持つ）
+持っていた全文。現在の `flatten_to_rgb8` は 1 行の要約 + この節への参照を持つ）
 
 参照元: `src-tauri/src/utils/preview.rs`
 
@@ -120,6 +120,6 @@
 > are identical.
 
 （`resize_rgb8`（`src-tauri/src/utils/preview.rs`）の doc コメントが**移行前に**
-持っていた全文。現在の `resize_rgb8` はこの節への 1 行参照のみを持つ）
+持っていた全文。現在の `resize_rgb8` は 1 行の要約 + この節への参照を持つ）
 
 参照元: `src-tauri/src/utils/preview.rs`

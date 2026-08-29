@@ -1,7 +1,7 @@
 /**
  * Values are milliseconds, except PRELOAD_RANGE, THUMBNAIL_GENERATION_INITIAL_RANGE
- * and THUMBNAIL_GENERATION_EXPANDED_RANGE (counts), and PREVIEW_THUMBNAIL_SIZE and
- * THUMBNAIL_SIZE (pixel sizes).
+ * and THUMBNAIL_GENERATION_EXPANDED_RANGE (counts), MAX_CONCURRENT_LOADS
+ * (a concurrency count), and PREVIEW_THUMBNAIL_SIZE and THUMBNAIL_SIZE (pixel sizes).
  */
 
 /** Prevents loading intermediate images during rapid navigation. */

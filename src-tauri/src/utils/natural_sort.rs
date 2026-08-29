@@ -16,7 +16,7 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
 }
 
 /// Compares filenames in the same order as Explorer's "Name" column.
-/// Non-Windows builds use the pure-Rust approximation (spec §6.1).
+/// Non-Windows builds use the pure-Rust approximation (§6.1).
 #[cfg(not(windows))]
 pub fn natural_cmp(a: &str, b: &str) -> Ordering {
     natural_cmp_fallback(a, b)
@@ -24,7 +24,7 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
 
 /// Non-Windows natural-order comparator. Exists so CI (ubuntu-latest) can
 /// compile and run tests; it does NOT guarantee Explorer-identical order
-/// (spec §6.1). Digit runs compare numerically, everything else
+/// (§6.1). Digit runs compare numerically, everything else
 /// case-insensitively; equal strings fall back to a case-sensitive compare
 /// so the result is deterministic.
 ///
@@ -76,7 +76,7 @@ mod tests {
     use super::*;
 
     // Shared contract: must hold for BOTH the fallback and (from Task 2)
-    // the platform comparator. Spec §7.1.
+    // the platform comparator. §7.1.
     fn assert_natural_contract(cmp: fn(&str, &str) -> Ordering) {
         // digit runs compare as numbers
         assert_eq!(cmp("img2.jpg", "img10.jpg"), Ordering::Less);
