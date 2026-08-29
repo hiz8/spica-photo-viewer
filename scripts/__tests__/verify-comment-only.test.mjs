@@ -41,6 +41,24 @@ test("tsx is handled", () => {
   );
 });
 
+test("deleting an object-literal property comment is equivalent (esbuild retains these otherwise)", () => {
+  const before = "const o = {\n  // Initial state\n  gamma: 3,\n};\n";
+  const after = "const o = {\n  gamma: 3,\n};\n";
+  assert.equal(tsCodeEquivalent(before, after, "ts"), true);
+});
+
+test("an object-literal property VALUE change is not equivalent, even with the same comment removed", () => {
+  const before = "const o = {\n  // Initial state\n  gamma: 3,\n};\n";
+  const after = "const o = {\n  gamma: 4,\n};\n";
+  assert.equal(tsCodeEquivalent(before, after, "ts"), false);
+});
+
+test("a changed string literal containing // is not equivalent (not mistaken for a comment)", () => {
+  const before = 'const url = "http://a//b";\n';
+  const after = 'const url = "http://a//c";\n';
+  assert.equal(tsCodeEquivalent(before, after, "ts"), false);
+});
+
 test("a renamed identifier is not equivalent", () => {
   assert.equal(
     tsCodeEquivalent("const a = 1;\nexport { a };\n", "const b = 1;\nexport { b as a };\n", "ts"),

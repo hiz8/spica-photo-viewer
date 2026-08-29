@@ -1,8 +1,20 @@
 // Verifies that the working tree differs from a base ref by comments only.
 //
 // TS/TSX is checked semantically: esbuild strips the comments out of both
-// revisions and the results must match byte for byte, so any code change at
-// all is caught. Rust has no equivalent tool available here, so it is checked
+// revisions and the results must match, whitespace differences aside, so any
+// code change at all is caught. The comparison is whitespace-insensitive
+// (`minifyWhitespace: true`) because plain `legalComments: "none"` does not
+// actually strip every comment: esbuild's printer retains comments attached
+// to object-literal properties (leading or trailing) even when asked to drop
+// them, so deleting a legitimate what-comment on a `{ foo: 1 /* note */ }`
+// style property would otherwise make an equivalent revision compare
+// unequal. `minifyWhitespace` collapses that away while still doing full
+// semantic parsing/printing (no regex post-processing of the output), so a
+// real code change — a changed value, a changed string literal, including
+// one containing `//` — still fails the comparison. One side effect: a pure
+// reindentation would now also pass this check; that's acceptable because
+// `npm run format` is checked separately and reindentation is not a logic
+// change. Rust has no equivalent tool available here, so it is checked
 // line-wise instead: every added or removed line must be a whole-line comment
 // or blank. A changed line that mixes code with `//` cannot be judged that
 // way — it may be a trailing comment or a `//` inside a string — so it is
@@ -15,7 +27,11 @@ import { pathToFileURL } from "node:url";
 import { transformSync } from "esbuild";
 
 const strip = (source, loader) =>
-  transformSync(source, { loader, legalComments: "none" }).code;
+  transformSync(source, {
+    loader,
+    legalComments: "none",
+    minifyWhitespace: true,
+  }).code;
 
 export const tsCodeEquivalent = (before, after, loader) =>
   strip(before, loader) === strip(after, loader);
