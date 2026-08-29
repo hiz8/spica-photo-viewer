@@ -1,3 +1,6 @@
+//! Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+//! Spec: docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+
 use crate::commands::cache::{self, CacheEntry, PreviewSidecar};
 use crate::utils::image::is_supported_image;
 use crate::utils::natural_sort::natural_cmp;
@@ -8,7 +11,6 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-// Windows API constants
 #[cfg(target_os = "windows")]
 const MAX_PATH_EXTENDED: usize = 32768;
 
@@ -19,10 +21,10 @@ pub struct ImageInfo {
     pub size: u64,
     pub modified: u64,
     /// UNIX seconds; falls back to `modified` where the platform/filesystem
-    /// has no creation time (e.g. Linux). Spec §6.5.
+    /// has no creation time (e.g. Linux) (§6.5).
     pub created: u64,
     pub format: String,
-    /// Sort-only full-precision timestamps (spec D5). Never serialized:
+    /// Sort-only full-precision timestamps (D5). Never serialized:
     /// ns since epoch exceeds JavaScript's safe-integer range (2^53).
     #[serde(skip)]
     pub modified_ns: u64,
@@ -55,7 +57,7 @@ impl Default for SortSpec {
 }
 
 /// Sorts images the way Explorer displays them for the given sort setting.
-/// Pure function: no COM, unit-testable (spec §5). Ties on the primary key
+/// Pure function: no COM, unit-testable (§6.2). Ties on the primary key
 /// always break by natural name order ASCENDING regardless of `descending`,
 /// so the order is deterministic (I1).
 pub fn sort_images(images: &mut [ImageInfo], spec: SortSpec) {
@@ -97,7 +99,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
     }
 
     // Ask Explorer for this folder's sort setting concurrently with the scan
-    // (spec §5); the answer is picked up after the scan with whatever remains
+    // (§5); the answer is picked up after the scan with whatever remains
     // of the 300ms budget.
     let probe = crate::commands::explorer_sort::spawn_detect(folder_path.to_path_buf());
 
@@ -113,8 +115,7 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         .map(|entry| entry.path().to_path_buf())
         .collect();
 
-    // Process metadata in parallel using rayon
-    // This dramatically speeds up folder scanning for large folders (900+ images)
+    // Parallel: 900+ image folders are dominated by per-file metadata reads.
     let mut images: Vec<ImageInfo> = image_paths
         .par_iter()
         .filter_map(|path| get_image_info(path).ok())
@@ -265,7 +266,7 @@ pub async fn generate_thumbnail_with_dimensions(
 ) -> Result<ThumbnailWithDimensions, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let _t = crate::utils::perf::PerfTimer::start("thumb_preview", &path);
-        // M5: validate before touching the cache dir, so a bad path fails
+        // Validate before touching the cache dir, so a bad path fails
         // without creating the real cache directory as a side effect.
         validate_image_path(Path::new(&path))?;
         let cache_dir = cache::get_cache_dir()?;
@@ -275,13 +276,9 @@ pub async fn generate_thumbnail_with_dimensions(
     .map_err(|e| format!("thumbnail task failed: {e}"))?
 }
 
-/// Validates the file path and converts it to a short path name (8.3 format) for Windows.
-///
-/// This function handles special characters (parentheses, spaces, Japanese characters, etc.)
-/// by converting the path to Windows short path name format, which avoids command-line
-/// escaping issues when passing to rundll32.exe.
-///
-/// Returns the prepared path as a String, or an error if validation fails.
+/// Short-path (8.3) conversion avoids rundll32.exe command-line escaping
+/// issues with special characters (parentheses, spaces, Japanese characters,
+/// etc.) in file names.
 #[cfg(target_os = "windows")]
 fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
     use windows::core::PCWSTR;
@@ -289,7 +286,6 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
 
     let file_path = Path::new(path);
 
-    // Validate file exists
     if !file_path.exists() {
         return Err("File not found".to_string());
     }
@@ -298,19 +294,15 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         return Err("Path is not a file".to_string());
     }
 
-    // Convert path to absolute path
     let absolute_path = file_path
         .canonicalize()
         .map_err(|e| format!("Failed to get absolute path: {}", e))?;
 
-    // Convert to string and remove the UNC prefix (\\?\) if present
     let mut path_str = absolute_path.to_string_lossy().to_string();
     if path_str.starts_with(r"\\?\") {
         path_str = path_str[4..].to_string();
     }
 
-    // Convert to short path name (8.3 format) to avoid issues with special characters
-    // like parentheses, spaces, etc. in file names
     let path_wide: Vec<u16> = path_str.encode_utf16().chain(Some(0)).collect();
     let mut short_path_buf: Vec<u16> = vec![0; MAX_PATH_EXTENDED];
 
@@ -320,18 +312,16 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         let result = GetShortPathNameW(PCWSTR(path_wide.as_ptr()), Some(&mut short_path_buf));
 
         if result == 0 {
-            // GetShortPathNameW failed - check the error code
+            // Known failure codes: ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED
+            // (5), ERROR_INVALID_NAME (123). Fall back to the original path so
+            // Open With still works when short-path conversion isn't available.
             let error = GetLastError();
-            // ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED (5), ERROR_INVALID_NAME (123)
-            // Log the error but fall back to original path for compatibility
-            // This allows the function to work even if short path conversion is not available
             eprintln!(
                 "GetShortPathNameW failed with error code {:?}, falling back to original path",
                 error
             );
             Ok(path_str)
         } else {
-            // Use the short path name
             let short_path = String::from_utf16_lossy(&short_path_buf[..result as usize]);
             Ok(short_path)
         }
@@ -340,10 +330,8 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub fn open_with_dialog(path: String) -> Result<(), String> {
-    // Windows-specific implementation
     #[cfg(target_os = "windows")]
     {
-        // Validate and prepare the path
         let _prepared_path = prepare_path_for_open_with(&path)?;
 
         // Skip actual dialog spawn during tests to avoid UI interaction
@@ -361,7 +349,6 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
         Ok(())
     }
 
-    // Non-Windows platforms
     #[cfg(not(target_os = "windows"))]
     {
         Err("Open With dialog is only supported on Windows".to_string())

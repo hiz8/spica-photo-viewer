@@ -1,3 +1,5 @@
+//! Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -41,19 +43,16 @@ const STALE_TMP_AGE_SECS: u64 = 60 * 60;
 
 pub(crate) fn get_cache_dir() -> Result<PathBuf, String> {
     let cache_dir = if cfg!(target_os = "windows") {
-        // Windows: %APPDATA%\SpicaPhotoViewer\cache
         let app_data =
             std::env::var("APPDATA").map_err(|_| "Failed to get APPDATA directory".to_string())?;
         Path::new(&app_data).join("SpicaPhotoViewer").join("cache")
     } else if cfg!(target_os = "macos") {
-        // macOS: ~/Library/Caches/SpicaPhotoViewer
         let home = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
         Path::new(&home)
             .join("Library")
             .join("Caches")
             .join("SpicaPhotoViewer")
     } else {
-        // Linux: $XDG_CACHE_HOME/SpicaPhotoViewer or ~/.cache/SpicaPhotoViewer
         let cache_base = std::env::var("XDG_CACHE_HOME").unwrap_or_else(|_| {
             match std::env::var("HOME") {
                 Ok(home) => format!("{}/.cache", home),
@@ -129,7 +128,7 @@ pub fn source_stamp(path: &Path) -> Option<(u64, u64)> {
 /// Write to a sibling temp file, then rename over the target (atomic on NTFS;
 /// `std::fs::rename` replaces an existing destination on Windows).
 pub fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    // M3: pid+nanos alone can collide when the command path and the protocol
+    // pid+nanos alone can collide when the command path and the protocol
     // path race to write the same preview within one tick; a process-wide
     // counter makes every temp name unique regardless of timer resolution.
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -293,7 +292,7 @@ pub fn sweep(cache_dir: &Path, now_secs: u64, max_age_secs: u64, cap_bytes: u64)
             .unwrap_or("")
             .to_string();
         if name.contains(".tmp-") {
-            // M4: orphaned `write_atomic` temp file from a crash mid-write —
+            // Orphaned `write_atomic` temp file from a crash mid-write —
             // normally live for milliseconds, so anything this old is dead
             // and otherwise invisible to `stats`.
             let mtime = fs::metadata(&p)
@@ -460,7 +459,7 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u64>, String> {
     let Ok(cache_dir) = get_cache_dir() else {
         return Ok(HashMap::new());
     };
-    // M6: reads and parses every JSON file in the cache directory — off the
+    // Reads and parses every JSON file in the cache directory — off the
     // async runtime's core threads, like `clear_old_cache`.
     tauri::async_runtime::spawn_blocking(move || {
         stats(&cache_dir, current_unix_time(), CACHE_DURATION)
