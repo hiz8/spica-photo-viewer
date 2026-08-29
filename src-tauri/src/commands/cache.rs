@@ -220,7 +220,7 @@ pub fn lookup_thumbnail(
             if entry.preview_box.as_deref() != Some(bk) {
                 return None;
             }
-            // F1: metadata-only — do not read the (0.3-1.5 MB) preview jpg just
+            // metadata-only — do not read the (0.3-1.5 MB) preview jpg just
             // to confirm it exists on this hot thumbnail-bar path.
             preview_is_fresh(cache_dir, path, bk)?;
         }
@@ -248,7 +248,7 @@ pub fn store_preview(
 
 /// Metadata-only freshness check for the preview named `box_key`: parses the
 /// sidecar, confirms its stamp still matches the source file, and confirms
-/// the jpg is on disk — without reading the jpg's bytes (F1). Use this on
+/// the jpg is on disk — without reading the jpg's bytes. Use this on
 /// hot paths that only need a yes/no answer; use `load_preview` when the
 /// bytes are actually needed.
 pub fn preview_is_fresh(cache_dir: &Path, path: &str, box_key: &str) -> Option<PreviewSidecar> {
