@@ -28,7 +28,9 @@
     "lint": "biome lint src/",
     "lint:fix": "biome lint src/ --write",
     "format": "biome format src/",
-    "format:fix": "biome format src/ --write"
+    "format:fix": "biome format src/ --write",
+    "verify:comments": "node scripts/verify-comment-only.mjs",
+    "verify:comments:test": "node --test scripts/__tests__/verify-comment-only.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
