@@ -323,9 +323,7 @@ mod tests {
         assert!(!icc_applies(ExtendedColorType::La8));
         assert!(!icc_applies(ExtendedColorType::L16));
         assert!(!icc_applies(ExtendedColorType::La16));
-        // X1: this is the case that motivated switching from the decoded
-        // `DynamicImage`'s color (always RGB8 post-decode) to the source's
-        // original color type — a CMYK/YCCK JPEG must not carry its profile.
+        // X1: CMYK/YCCK must not carry its profile — docs/code-rationale.md#x1
         assert!(!icc_applies(ExtendedColorType::Cmyk8));
     }
 
@@ -414,9 +412,9 @@ mod tests {
     #[test]
     fn generate_drops_cmyk_icc_profiles() {
         let dir = create_temp_dir();
-        // The decoded pixels are RGB either way (X1's caveat: `image` 0.25's
-        // JPEG decoder reports CMYK/YCCK sources as RGB too), so this profile
-        // header is the only signal that stops it being carried through.
+        // The decoded pixels are RGB either way (X1's `image` 0.25 caveat —
+        // docs/code-rationale.md#x1), so this profile header is the only
+        // signal that stops it being carried through.
         let mut icc: Vec<u8> = (0..600u32).map(|i| (i % 251) as u8).collect();
         icc[16..20].copy_from_slice(b"CMYK");
         let src =

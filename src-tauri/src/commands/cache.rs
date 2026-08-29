@@ -567,7 +567,7 @@ mod tests {
         assert!(lookup_thumbnail(dir.path(), &p, 20, Some("2560x1440")).is_none());
         // Without a box request the thumbnail alone is enough.
         assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_some());
-        // F1: the metadata-only check must catch a deleted jpg (sidecar still
+        // The metadata-only check must catch a deleted jpg (sidecar still
         // present) without ever reading the jpg's bytes.
         fs::remove_file(preview_file(dir.path(), &p, "1920x1080")).unwrap();
         assert!(lookup_thumbnail(dir.path(), &p, 20, Some("1920x1080")).is_none());
@@ -586,7 +586,7 @@ mod tests {
         store_thumbnail_entry(dir.path(), &p, 20, &err_entry).unwrap();
         assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_some());
         // Corrupt source replaced with a fixed one → stamp no longer matches →
-        // "error" clears immediately instead of sticking around for 24h (F3).
+        // "error" clears immediately instead of sticking around for 24h.
         fs::write(&img, b"replaced with a different, valid-looking payload").unwrap();
         assert!(lookup_thumbnail(dir.path(), &p, 20, None).is_none());
     }
@@ -661,7 +661,6 @@ mod tests {
         };
         let old_path = touch("old.jpg");
         let now = 1_000_000u64;
-        // Expired thumbnail entry.
         let old = CacheEntry {
             created: now - 100_000,
             ..entry(Some((1, 1)), None)

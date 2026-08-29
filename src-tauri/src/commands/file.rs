@@ -483,7 +483,6 @@ mod tests {
     async fn test_get_folder_images_with_valid_folder() {
         let temp_dir = create_temp_dir();
 
-        // Create test images
         create_test_jpeg(temp_dir.path(), "image1.jpg");
         create_test_png(temp_dir.path(), "image2.png");
         create_test_gif(temp_dir.path(), "image3.gif");
@@ -530,7 +529,6 @@ mod tests {
         // seconds fields are the ns fields truncated (D5)
         assert_eq!(info.modified, info.modified_ns / 1_000_000_000);
         assert_eq!(info.created, info.created_ns / 1_000_000_000);
-        // a freshly created file has non-zero timestamps
         assert!(info.modified_ns > 0);
         assert!(info.created_ns > 0);
     }
@@ -630,7 +628,6 @@ mod tests {
         );
         assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
 
-        // Descending flips the primary (ns) order.
         sort_images(
             &mut v,
             SortSpec {
@@ -676,7 +673,6 @@ mod tests {
         );
         assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
 
-        // Descending flips the primary (ns) order.
         sort_images(
             &mut v,
             SortSpec {
@@ -703,7 +699,6 @@ mod tests {
         );
         assert_eq!(names(&v), ["c.gif", "a.jpg", "b.png"]);
 
-        // Descending flips the primary (format) order.
         sort_images(
             &mut v,
             SortSpec {
@@ -779,7 +774,6 @@ mod tests {
     async fn test_get_folder_images_with_mixed_files() {
         let temp_dir = create_temp_dir();
 
-        // Create test images and non-image files
         create_test_jpeg(temp_dir.path(), "image1.jpg");
         create_invalid_image(temp_dir.path(), "textfile.txt");
         create_test_png(temp_dir.path(), "image2.png");
@@ -788,7 +782,7 @@ mod tests {
         assert!(result.is_ok());
 
         let images = result.unwrap();
-        assert_eq!(images.len(), 2); // Only valid images
+        assert_eq!(images.len(), 2);
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
     }
@@ -797,7 +791,6 @@ mod tests {
     async fn test_get_folder_images_defers_validation_to_load_time() {
         let temp_dir = create_temp_dir();
 
-        // Create valid and corrupted images with valid extensions
         create_test_jpeg(temp_dir.path(), "valid.jpg");
         create_fake_image(temp_dir.path(), "corrupted.jpg");
 
@@ -805,7 +798,6 @@ mod tests {
         assert!(result.is_ok());
 
         let images = result.unwrap();
-        // Both files are included (validation deferred to load time for performance)
         assert_eq!(images.len(), 2);
         assert_eq!(images[0].filename, "corrupted.jpg");
         assert_eq!(images[1].filename, "valid.jpg");
@@ -815,10 +807,8 @@ mod tests {
     async fn test_get_folder_images_with_subdirectories() {
         let temp_dir = create_temp_dir();
 
-        // Create image in root
         create_test_jpeg(temp_dir.path(), "root.jpg");
 
-        // Create subdirectory with image
         let sub_dir = temp_dir.path().join("subdir");
         fs::create_dir(&sub_dir).unwrap();
         create_test_png(&sub_dir, "sub.png");
@@ -836,7 +826,6 @@ mod tests {
     async fn test_get_folder_images_case_insensitive_extensions() {
         let temp_dir = create_temp_dir();
 
-        // Create images with different case extensions
         create_test_jpeg(temp_dir.path(), "lower.jpg");
         create_test_jpeg(temp_dir.path(), "upper.JPG");
         create_test_jpeg(temp_dir.path(), "mixed.Jpeg");
@@ -925,7 +914,7 @@ mod tests {
 
         let result = validate_image_file(temp_dir.path().to_string_lossy().to_string());
         assert!(result.is_ok());
-        assert!(!result.unwrap()); // Directory should not be valid
+        assert!(!result.unwrap());
     }
 
     #[test]
@@ -995,7 +984,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for special characters (parentheses) in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
@@ -1016,7 +1004,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for spaces in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
@@ -1037,7 +1024,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for non-ASCII characters (Japanese) in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {

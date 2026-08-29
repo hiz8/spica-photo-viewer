@@ -91,7 +91,6 @@ mod tests {
         assert_eq!(cmp("IMG3.jpg", "img10.jpg"), Ordering::Less);
         // digits after non-ASCII text still compare numerically
         assert_eq!(cmp("写真2.jpg", "写真10.jpg"), Ordering::Less);
-        // identical strings
         assert_eq!(cmp("image.jpg", "image.jpg"), Ordering::Equal);
         // prefix orders before longer string
         assert_eq!(cmp("img.jpg", "img1.jpg"), Ordering::Less);
@@ -113,8 +112,7 @@ mod tests {
 
     #[test]
     fn fallback_breaks_case_tie_deterministically() {
-        // Case-insensitively equal names must still order deterministically
-        // (I1: stable navigation / preload window).
+        // I1: stable navigation / preload window need this tie-break to be deterministic.
         let ab = natural_cmp_fallback("IMG_1.jpg", "img_1.jpg");
         let ba = natural_cmp_fallback("img_1.jpg", "IMG_1.jpg");
         assert_ne!(ab, Ordering::Equal);

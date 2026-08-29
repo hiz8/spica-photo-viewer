@@ -4,42 +4,36 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-/// Creates a temporary directory for testing
 pub fn create_temp_dir() -> TempDir {
     tempfile::tempdir().expect("Failed to create temp directory")
 }
 
-/// Creates a test image using the image crate for reliability
 pub fn create_test_jpeg(dir: &Path, filename: &str) -> PathBuf {
     use image::{ImageBuffer, Rgb};
 
     let file_path = dir.join(filename);
 
-    // Create a simple 1x1 red pixel image
     let img = ImageBuffer::from_fn(1, 1, |_x, _y| Rgb([255u8, 0u8, 0u8]));
     img.save(&file_path).expect("Failed to create test JPEG");
 
     file_path
 }
 
-/// Creates a test PNG image using the image crate
 pub fn create_test_png(dir: &Path, filename: &str) -> PathBuf {
     use image::{ImageBuffer, Rgb};
 
     let file_path = dir.join(filename);
 
-    // Create a simple 1x1 green pixel image
     let img = ImageBuffer::from_fn(1, 1, |_x, _y| Rgb([0u8, 255u8, 0u8]));
     img.save(&file_path).expect("Failed to create test PNG");
 
     file_path
 }
 
-/// Creates a test WebP image by creating JPEG first then converting name
-/// (WebP creation through image crate requires specific features)
+/// Real WebP encoding needs `image` crate features this build doesn't enable,
+/// so this creates a JPEG and renames it — exercises extension-based
+/// dispatch only, not WebP decoding itself.
 pub fn create_test_webp(dir: &Path, filename: &str) -> PathBuf {
-    // For simplicity, we'll create a JPEG and rename to .webp for extension testing
-    // This tests the extension logic, not actual WebP processing
     let temp_jpeg = dir.join("temp.jpg");
     let webp_path = dir.join(filename);
 
@@ -47,7 +41,6 @@ pub fn create_test_webp(dir: &Path, filename: &str) -> PathBuf {
     let img = ImageBuffer::from_fn(1, 1, |_x, _y| Rgb([0u8, 0u8, 255u8]));
     img.save(&temp_jpeg).expect("Failed to create temp JPEG");
 
-    // Copy the JPEG data but with WebP extension for testing
     let data = fs::read(&temp_jpeg).expect("Failed to read temp JPEG");
     fs::write(&webp_path, &data).expect("Failed to create test WebP");
     fs::remove_file(&temp_jpeg).ok();
@@ -55,7 +48,6 @@ pub fn create_test_webp(dir: &Path, filename: &str) -> PathBuf {
     webp_path
 }
 
-/// Creates a minimal valid GIF file for testing
 pub fn create_test_gif(dir: &Path, filename: &str) -> PathBuf {
     let file_path = dir.join(filename);
 
@@ -70,14 +62,12 @@ pub fn create_test_gif(dir: &Path, filename: &str) -> PathBuf {
     file_path
 }
 
-/// Creates an invalid image file for testing
 pub fn create_invalid_image(dir: &Path, filename: &str) -> PathBuf {
     let file_path = dir.join(filename);
     fs::write(&file_path, b"invalid image data").expect("Failed to create invalid image");
     file_path
 }
 
-/// Creates a text file with image extension for testing
 pub fn create_fake_image(dir: &Path, filename: &str) -> PathBuf {
     let file_path = dir.join(filename);
     fs::write(&file_path, b"This is not an image").expect("Failed to create fake image");
