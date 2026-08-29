@@ -39,7 +39,6 @@ export const currentPreviewBox = (): string => {
   return sessionPreviewBox;
 };
 
-/** Test-only: forget the memoized box. */
 export const _resetPreviewBoxForTests = (): void => {
   sessionPreviewBox = null;
 };

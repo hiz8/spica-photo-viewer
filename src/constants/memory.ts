@@ -1,5 +1,4 @@
 /**
- * Memory constants for the decoded-bitmap cache.
  * A 20MP RGBA bitmap is ~80MB and a screen-box preview ~8MB; the retained
  * set (the current image's full decode plus a preview for every visible
  * thumbnail) must stay inside the budget.

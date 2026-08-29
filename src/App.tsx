@@ -7,7 +7,6 @@ import FileOpenButton from "./components/FileOpenButton";
 import ThumbnailBar from "./components/ThumbnailBar";
 import AboutDialog from "./components/AboutDialog";
 import { useKeyboard } from "./hooks/useKeyboard";
-// import { useFileDrop } from './hooks/useFileDrop';
 import { useCacheManager } from "./hooks/useCacheManager";
 import { useWindowState } from "./hooks/useWindowState";
 import { useAppStore } from "./store";
@@ -18,7 +17,6 @@ const App: React.FC = () => {
     useAppStore();
 
   useKeyboard();
-  // useFileDrop(); // Temporarily disabled to test thumbnails
   useCacheManager();
   useWindowState();
 

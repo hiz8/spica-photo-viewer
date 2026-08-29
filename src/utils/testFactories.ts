@@ -1,7 +1,6 @@
 import { vi } from "vitest";
 import type { ImageData, ImageInfo } from "../types";
 
-// Image data factories
 export const createImageData = (
   overrides: Partial<ImageData> = {},
 ): ImageData => ({
@@ -53,7 +52,6 @@ export const createErrorImageData = (
   format: "error",
 });
 
-// Mock factories
 export const createMockTauriApi = () => ({
   invoke: vi.fn(),
   open: vi.fn(),
@@ -65,7 +63,6 @@ export const createMockTauriApi = () => ({
   })),
 });
 
-// Store state factories
 export const createImageViewerState = (
   overrides: Record<string, unknown> = {},
 ) => ({
@@ -157,7 +154,6 @@ export const createLoadingViewerState = () => ({
   },
 });
 
-// Common test scenarios
 export const createTestScenario = {
   withImage: () => createImageViewerState(),
   empty: () => createEmptyViewerState(),

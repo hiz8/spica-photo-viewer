@@ -1,5 +1,4 @@
 /**
- * Performance instrumentation utility.
  * Marks are pushed to window.__PERF__ so the E2E bench harness can read them
  * via browser.execute(). Interval pairing (ttfi = open:request -> paint:done)
  * is done offline by the harness, keyed by detail.path — the app never pairs
