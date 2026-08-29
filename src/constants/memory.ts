@@ -1,4 +1,8 @@
 /**
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ */
+
+/**
  * A 20MP RGBA bitmap is ~80MB and a screen-box preview ~8MB; the retained
  * set (the current image's full decode plus a preview for every visible
  * thumbnail) must stay inside the budget.
@@ -6,7 +10,7 @@
 export const BITMAP_CACHE_BUDGET_BYTES = 500 * 1024 * 1024;
 
 /**
- * Screen-box buckets for display-resolution previews (design spec D2).
+ * Screen-box buckets for display-resolution previews (D2).
  * Mirrors ALLOWED_PREVIEW_BOXES in src-tauri/src/utils/preview.rs.
  */
 export const PREVIEW_BOXES: ReadonlyArray<readonly [number, number]> = [

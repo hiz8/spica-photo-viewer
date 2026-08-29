@@ -1,3 +1,6 @@
+/**
+ * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+ */
 import type React from "react";
 import {
   useCallback,
@@ -39,9 +42,6 @@ interface ImageViewerProps {
   className?: string;
 }
 
-/**
- * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
- */
 const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const {
     currentImage,
@@ -77,11 +77,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const suppressTransition = ui.suppressTransition;
 
   /**
-   * Display-resolution preview path (§6.4): fetches the preview instead of
-   * the 20MP original and paints it from the decoded bitmap. Returns
-   * "failed" when the preview could not be fetched/decoded (404 for a GIF
-   * or a missing preview) so the caller falls back to the full-resolution
-   * load, and "stale" when the navigation moved on.
+   * Display-resolution preview path (§6.5 route (2)): fetches the preview
+   * instead of the 20MP original and paints it from the decoded bitmap.
+   * Returns "failed" when the preview could not be fetched/decoded (404 for
+   * a GIF or a missing preview) so the caller falls back to the
+   * full-resolution load, and "stale" when the navigation moved on.
    */
   const displayPreview = useCallback(
     async (
@@ -405,7 +405,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
   // Load image with debounce to handle rapid navigation
   useEffect(() => {
-    // Cancel any pending image load
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -420,18 +419,15 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
     // Debounce image loading to avoid loading intermediate images during rapid navigation
     const timeoutId = setTimeout(async () => {
-      // Create new AbortController for this load
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
 
       if (signal.aborted) return;
 
-      // Load the image with the specific signal for this request
       await loadImage(currentImage.path, signal);
     }, debounceDelay);
 
     return () => {
-      // Clear the timeout and abort any ongoing load when path changes
       clearTimeout(timeoutId);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -440,8 +436,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   }, [currentImage.path, loadImage]);
 
   // Zoom past the preview's pixel density -> upgrade to the full-resolution
-  // decode (§6.4). Debounced so a wheel gesture schedules one decode after
-  // the zoom settles, not one per notch.
+  // decode (§6.5 (I4)). Debounced so a wheel gesture schedules one decode
+  // after the zoom settles, not one per notch.
   useEffect(() => {
     const data = currentImage.data;
     if (!data || data.path !== currentImage.path) return;

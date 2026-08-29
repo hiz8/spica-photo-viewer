@@ -139,7 +139,6 @@ export const useThumbnailGenerator = () => {
         ? Math.min(maxRange, images.length - 1)
         : images.length - 1;
 
-    // effectiveRange, not images.length, caps this loop.
     for (let offset = 1; offset <= effectiveRange; offset++) {
       const nextIndex = currentIndex + offset;
       if (nextIndex < images.length) {
