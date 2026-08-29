@@ -150,6 +150,78 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     ],
   );
 
+  // New images: fitToWindow(); returning to a viewed image: updateImageDimensions()
+  // to preserve its saved pan/zoom (.claude/rules/zustand-store.md).
+  const applyFitOrUpdate = useCallback(
+    (hasSavedState: boolean, width: number, height: number) => {
+      if (!hasSavedState) {
+        fitToWindow(width, height);
+      } else {
+        updateImageDimensions(width, height);
+      }
+    },
+    [fitToWindow, updateImageDimensions],
+  );
+
+  const loadFullResolution = useCallback(
+    async (
+      path: string,
+      signal: AbortSignal,
+    ): Promise<
+      | { status: "aborted" }
+      | {
+          status: "loaded";
+          fullImageData: ImageData;
+          element: HTMLImageElement;
+        }
+    > => {
+      const { data: loadedData, element } = await loadImageViaProtocol(path);
+      if (signal.aborted || activeLoadPathRef.current !== path) {
+        return { status: "aborted" };
+      }
+      return {
+        status: "loaded",
+        fullImageData: { ...loadedData, tier: "full" },
+        element,
+      };
+    },
+    [],
+  );
+
+  // clearThumbnailFlagAt captures the two orderings the call sites need:
+  // "before-fit" when a phase-1 thumbnail placeholder is being replaced (the
+  // flag must drop before fitToWindow/updateImageDimensions run against the
+  // new geometry), "after-commit" when there was no placeholder to race.
+  const commitFullResolution = useCallback(
+    (
+      path: string,
+      fullImageData: ImageData,
+      element: HTMLImageElement,
+      hasSavedState: boolean,
+      clearThumbnailFlagAt: "before-fit" | "after-commit",
+    ) => {
+      setImageData(fullImageData);
+
+      if (clearThumbnailFlagAt === "before-fit") {
+        setThumbnailDisplayed(false);
+      }
+
+      applyFitOrUpdate(
+        hasSavedState,
+        fullImageData.width,
+        fullImageData.height,
+      );
+
+      setPreloadedImage(path, fullImageData);
+      retainElementAsBitmap(path, element);
+
+      if (clearThumbnailFlagAt === "after-commit") {
+        setThumbnailDisplayed(false);
+      }
+    },
+    [setImageData, setThumbnailDisplayed, applyFitOrUpdate, setPreloadedImage],
+  );
+
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
       activeLoadPathRef.current = path;
@@ -208,27 +280,17 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             // Preview missing/undecodable: fall through to the full load.
           }
 
-          const { data: loadedData, element } =
-            await loadImageViaProtocol(path);
-
-          if (signal.aborted || activeLoadPathRef.current !== path) {
+          const loadResult = await loadFullResolution(path, signal);
+          if (loadResult.status === "aborted") {
             return;
           }
-
-          const fullImageData: ImageData = { ...loadedData, tier: "full" };
-
-          setImageData(fullImageData);
-
-          if (!hasSavedState) {
-            fitToWindow(fullImageData.width, fullImageData.height);
-          } else {
-            updateImageDimensions(fullImageData.width, fullImageData.height);
-          }
-
-          setPreloadedImage(path, fullImageData);
-          retainElementAsBitmap(path, element);
-
-          setThumbnailDisplayed(false);
+          commitFullResolution(
+            path,
+            loadResult.fullImageData,
+            loadResult.element,
+            hasSavedState,
+            "after-commit",
+          );
 
           return;
         }
@@ -246,12 +308,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           }
 
           setImageData(preloadedImage);
-
-          if (!hasSavedState) {
-            fitToWindow(preloadedImage.width, preloadedImage.height);
-          } else {
-            updateImageDimensions(preloadedImage.width, preloadedImage.height);
-          }
+          applyFitOrUpdate(
+            hasSavedState,
+            preloadedImage.width,
+            preloadedImage.height,
+          );
           return;
         }
 
@@ -278,15 +339,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               // would call it "full" (both the element's data-tier and the
               // paint:done mark).
               setThumbnailDisplayed(true);
-
-              if (!hasSavedState) {
-                fitToWindow(cachedThumbnail.width, cachedThumbnail.height);
-              } else {
-                updateImageDimensions(
-                  cachedThumbnail.width,
-                  cachedThumbnail.height,
-                );
-              }
+              applyFitOrUpdate(
+                hasSavedState,
+                cachedThumbnail.width,
+                cachedThumbnail.height,
+              );
 
               // Phase 2: preview in the background; falls through to full
               // resolution only if the preview failed.
@@ -301,30 +358,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
                 }
               }
 
-              const { data: loadedData, element } =
-                await loadImageViaProtocol(path);
-
-              if (signal.aborted || activeLoadPathRef.current !== path) {
+              const loadResult = await loadFullResolution(path, signal);
+              if (loadResult.status === "aborted") {
                 return;
               }
-
-              const fullImageData: ImageData = { ...loadedData, tier: "full" };
-
-              setImageData(fullImageData);
               // The phase-1 placeholder is gone.
-              setThumbnailDisplayed(false);
-
-              if (!hasSavedState) {
-                fitToWindow(fullImageData.width, fullImageData.height);
-              } else {
-                updateImageDimensions(
-                  fullImageData.width,
-                  fullImageData.height,
-                );
-              }
-
-              setPreloadedImage(path, fullImageData);
-              retainElementAsBitmap(path, element);
+              commitFullResolution(
+                path,
+                loadResult.fullImageData,
+                loadResult.element,
+                hasSavedState,
+                "before-fit",
+              );
               return;
             } catch (error) {
               console.warn(
@@ -335,28 +380,19 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
             }
           }
 
-          const { data: loadedData, element } =
-            await loadImageViaProtocol(path);
-
-          if (signal.aborted || activeLoadPathRef.current !== path) {
+          const loadResult = await loadFullResolution(path, signal);
+          if (loadResult.status === "aborted") {
             return;
           }
-
-          const fullImageData: ImageData = { ...loadedData, tier: "full" };
-
-          setImageData(fullImageData);
           // No-op on the cold path; clears the phase-1 placeholder when the
           // two-phase branch fell through to here after an error.
-          setThumbnailDisplayed(false);
-
-          if (!hasSavedState) {
-            fitToWindow(fullImageData.width, fullImageData.height);
-          } else {
-            updateImageDimensions(fullImageData.width, fullImageData.height);
-          }
-
-          setPreloadedImage(path, fullImageData);
-          retainElementAsBitmap(path, element);
+          commitFullResolution(
+            path,
+            loadResult.fullImageData,
+            loadResult.element,
+            hasSavedState,
+            "before-fit",
+          );
         } else {
           // GIFs: direct load preserves animation.
           const imageData = (await loadImageViaProtocol(path)).data;
@@ -370,12 +406,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           }
 
           setImageData(imageData);
-
-          if (!hasSavedState) {
-            fitToWindow(imageData.width, imageData.height);
-          } else {
-            updateImageDimensions(imageData.width, imageData.height);
-          }
+          applyFitOrUpdate(hasSavedState, imageData.width, imageData.height);
 
           setPreloadedImage(path, imageData);
         }
@@ -395,10 +426,11 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       setImageError,
       setImageData,
       setPreloadedImage,
-      fitToWindow,
-      updateImageDimensions,
       setThumbnailDisplayed,
       displayPreview,
+      applyFitOrUpdate,
+      loadFullResolution,
+      commitFullResolution,
     ],
   );
 
