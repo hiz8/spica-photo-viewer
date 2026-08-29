@@ -502,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_folder_images_unopened_folder_uses_name_order() {
         // No Explorer window shows a fresh temp dir, so detection resolves to
-        // None and the order must be natural-name ascending (G2/I2). Also
+        // None and the order must be natural-name ascending (sort G2/I2). Also
         // guards the probe wiring: the command must not error or hang.
         let temp_dir = create_temp_dir();
         create_test_jpeg(temp_dir.path(), "img10.jpg");
@@ -613,7 +613,7 @@ mod tests {
     fn test_sort_images_modified_uses_ns_precision() {
         // Same second, different ns. Name order is the REVERSE of ns order,
         // so a seconds-truncated compare would fall to the name tiebreak and
-        // produce the wrong result (D5 regression test).
+        // produce the wrong result (sort D5 regression test).
         let base = 1_700_000_000_000_000_000u64;
         let mut v = vec![
             sort_info("a.jpg", 1, base + 500_000_000, 1, "jpeg"),
