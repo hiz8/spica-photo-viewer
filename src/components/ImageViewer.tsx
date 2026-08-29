@@ -188,40 +188,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     [],
   );
 
-  // clearThumbnailFlagAt captures the two orderings the call sites need:
-  // "before-fit" when a phase-1 thumbnail placeholder is being replaced (the
-  // flag must drop before fitToWindow/updateImageDimensions run against the
-  // new geometry), "after-commit" when there was no placeholder to race.
-  const commitFullResolution = useCallback(
-    (
-      path: string,
-      fullImageData: ImageData,
-      element: HTMLImageElement,
-      hasSavedState: boolean,
-      clearThumbnailFlagAt: "before-fit" | "after-commit",
-    ) => {
-      setImageData(fullImageData);
-
-      if (clearThumbnailFlagAt === "before-fit") {
-        setThumbnailDisplayed(false);
-      }
-
-      applyFitOrUpdate(
-        hasSavedState,
-        fullImageData.width,
-        fullImageData.height,
-      );
-
-      setPreloadedImage(path, fullImageData);
-      retainElementAsBitmap(path, element);
-
-      if (clearThumbnailFlagAt === "after-commit") {
-        setThumbnailDisplayed(false);
-      }
-    },
-    [setImageData, setThumbnailDisplayed, applyFitOrUpdate, setPreloadedImage],
-  );
-
   const loadImage = useCallback(
     async (path: string, signal: AbortSignal) => {
       activeLoadPathRef.current = path;
@@ -284,13 +250,21 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           if (loadResult.status === "aborted") {
             return;
           }
-          commitFullResolution(
-            path,
-            loadResult.fullImageData,
-            loadResult.element,
+
+          const { fullImageData, element } = loadResult;
+
+          setImageData(fullImageData);
+
+          applyFitOrUpdate(
             hasSavedState,
-            "after-commit",
+            fullImageData.width,
+            fullImageData.height,
           );
+
+          setPreloadedImage(path, fullImageData);
+          retainElementAsBitmap(path, element);
+
+          setThumbnailDisplayed(false);
 
           return;
         }
@@ -362,14 +336,21 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
               if (loadResult.status === "aborted") {
                 return;
               }
+
+              const { fullImageData, element } = loadResult;
+
+              setImageData(fullImageData);
               // The phase-1 placeholder is gone.
-              commitFullResolution(
-                path,
-                loadResult.fullImageData,
-                loadResult.element,
+              setThumbnailDisplayed(false);
+
+              applyFitOrUpdate(
                 hasSavedState,
-                "before-fit",
+                fullImageData.width,
+                fullImageData.height,
               );
+
+              setPreloadedImage(path, fullImageData);
+              retainElementAsBitmap(path, element);
               return;
             } catch (error) {
               console.warn(
@@ -384,15 +365,22 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
           if (loadResult.status === "aborted") {
             return;
           }
+
+          const { fullImageData, element } = loadResult;
+
+          setImageData(fullImageData);
           // No-op on the cold path; clears the phase-1 placeholder when the
           // two-phase branch fell through to here after an error.
-          commitFullResolution(
-            path,
-            loadResult.fullImageData,
-            loadResult.element,
+          setThumbnailDisplayed(false);
+
+          applyFitOrUpdate(
             hasSavedState,
-            "before-fit",
+            fullImageData.width,
+            fullImageData.height,
           );
+
+          setPreloadedImage(path, fullImageData);
+          retainElementAsBitmap(path, element);
         } else {
           // GIFs: direct load preserves animation.
           const imageData = (await loadImageViaProtocol(path)).data;
@@ -430,7 +418,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       displayPreview,
       applyFitOrUpdate,
       loadFullResolution,
-      commitFullResolution,
     ],
   );
 
