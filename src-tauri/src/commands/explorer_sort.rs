@@ -14,8 +14,22 @@ const DETECT_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(300
 
 /// Foreground window at process launch, kept as isize because HWND is not
 /// Send. Used to pick among multiple Explorer windows showing the folder.
+/// Deliberately frozen for the process lifetime (OnceLock): once our own
+/// window exists it IS the foreground window, so re-querying later could
+/// never yield the Explorer window the user came from. Folders opened later
+/// in the session resolve multi-window ties by enumeration order alone (R2).
 #[cfg(windows)]
 static FOREGROUND_AT_LAUNCH: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+
+/// Detection threads spawned but not yet finished. RPC into a hung Explorer
+/// can block far past the 300ms budget (default COM call timeouts are tens
+/// of seconds), and the worker cannot be cancelled (§6.3) — so instead of
+/// accumulating one blocked thread per folder open, `spawn_detect` skips COM
+/// entirely while a previous probe is still running: a hung shell costs at
+/// most one detached thread process-wide, and later opens fall back to
+/// natural name order immediately (I2).
+#[cfg(windows)]
+static PROBES_IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Call as early as possible in `run()`: the Explorer window the user
 /// launched the app from is still foreground until Tauri creates our window.
@@ -41,11 +55,36 @@ pub struct SortProbe {
 /// caller's folder scan (spec §5).
 #[cfg(windows)]
 pub fn spawn_detect(folder: PathBuf) -> SortProbe {
+    use std::sync::atomic::Ordering;
+
     let started = Instant::now();
     let (tx, rx) = std::sync::mpsc::channel();
+    // A healthy probe always finishes before the next folder open (join()
+    // caps it at 300ms and opens are user-paced), so a probe still in flight
+    // means the previous one is stuck in a hung Explorer. Don't stack
+    // another blocked thread on it: dropping tx makes join() resolve to
+    // None (fallback) immediately.
+    if PROBES_IN_FLIGHT.load(Ordering::Acquire) > 0 {
+        drop(tx);
+        return SortProbe { rx, started };
+    }
     let foreground = FOREGROUND_AT_LAUNCH.get().copied();
+    PROBES_IN_FLIGHT.fetch_add(1, Ordering::AcqRel);
     std::thread::spawn(move || {
-        let _ = tx.send(detect_sort_spec(&folder, foreground));
+        // Decrements even if detect_sort_spec panics (unwind drops the
+        // guard), so detection can never get permanently disabled.
+        struct InFlight;
+        impl Drop for InFlight {
+            fn drop(&mut self) {
+                PROBES_IN_FLIGHT.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            }
+        }
+        let guard = InFlight;
+        let result = detect_sort_spec(&folder, foreground);
+        // Decrement before send so a folder opened right after this result
+        // lands is not mistaken for running against a stuck probe.
+        drop(guard);
+        let _ = tx.send(result);
     });
     SortProbe { rx, started }
 }
@@ -63,7 +102,8 @@ impl SortProbe {
     /// Returns (detected spec, elapsed ms). Waits only for the remainder of
     /// the 300ms budget measured from spawn; timeout or any COM failure is
     /// None. The COM call cannot be cancelled, so on timeout the worker
-    /// thread stays detached (§6.3).
+    /// thread stays detached (§6.3) — bounded to one such thread process-wide
+    /// by `PROBES_IN_FLIGHT` (spawn_detect skips COM while one is stuck).
     pub fn join(self) -> (Option<SortSpec>, f64) {
         #[cfg(windows)]
         let spec = {
@@ -158,6 +198,13 @@ mod imp {
             unsafe { CoCreateInstance(&ShellWindows, None::<&windows::core::IUnknown>, CLSCTX_ALL) }
                 .ok()?;
         let count = unsafe { shell_windows.Count() }.ok()?;
+        // Outer Option: "some window showing the folder was seen"; inner:
+        // that window's mapped spec. The FIRST matching window is locked in
+        // deliberately — even when its sort key is unmapped — and only an
+        // explicit foreground-HWND match overrides it. Letting a later
+        // window with a mapped key win instead would contradict §6.3's
+        // resolution order (known limitation R2; do not "fix" without
+        // checking the spec).
         let mut first_match: Option<Option<SortSpec>> = None;
         for i in 0..count {
             let Some((view, top_hwnd)) = entry_at(&shell_windows, i) else {
@@ -294,6 +341,25 @@ mod tests {
         // join() must never wait past the 300ms budget by more than scheduling
         // slack (generous bound to avoid flakes on loaded machines).
         assert!(started.elapsed().as_millis() < 2000);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn spawn_detect_skips_while_previous_probe_is_stuck() {
+        use std::sync::atomic::Ordering;
+        // Simulate a probe blocked in a hung Explorer RPC: with one in
+        // flight, spawn_detect must not start another COM thread and must
+        // resolve to fallback. (Other tests running concurrently just take
+        // the same fallback they already expect for unopened folders.)
+        super::PROBES_IN_FLIGHT.fetch_add(1, Ordering::AcqRel);
+        let dir = tempfile::tempdir().unwrap();
+        let started = Instant::now();
+        let (spec, _ms) = spawn_detect(dir.path().to_path_buf()).join();
+        super::PROBES_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+        assert!(spec.is_none());
+        // Hang guard only: the skip path is a channel drop + one atomic load,
+        // nowhere near the 300ms COM budget.
+        assert!(started.elapsed().as_millis() < 1000);
     }
 
     #[test]
