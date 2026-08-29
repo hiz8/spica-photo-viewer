@@ -105,7 +105,6 @@ interface AppActions {
 type AppStore = AppState & AppActions;
 
 export const useAppStore = create<AppStore>((set, get) => ({
-  // Initial state
   currentImage: {
     path: "",
     index: -1,
@@ -147,7 +146,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     isCheckingStartupFile: true,
   },
 
-  // Actions
   setCurrentImage: (path, index) =>
     set((state) => ({
       currentImage: {
@@ -394,7 +392,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ui: {
             ...state.ui,
             suppressTransition: true,
-            thumbnailDisplayed, // Set thumbnail display flag
+            thumbnailDisplayed,
             // Atomically create new timeout and store ID to prevent race conditions
             suppressTransitionTimeoutId: (() => {
               if (state.ui.suppressTransitionTimeoutId !== null) {
@@ -558,11 +556,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         zoom: preserveZoom ? state.view.zoom : fitZoom,
         panX: preserveZoom ? state.view.panX : 0,
         panY: preserveZoom ? state.view.panY : 0,
-        // Store original image dimensions and calculated position
         imageLeft: centerX,
         imageTop: centerY,
-        imageWidth, // Original image width
-        imageHeight, // Original image height
+        imageWidth,
+        imageHeight,
       },
     }));
   },
@@ -646,7 +643,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           ui: {
             ...state.ui,
-            isLoading: false, // Reset loading state after folder scan
+            isLoading: false,
           },
         }));
       } else {
@@ -661,17 +658,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           currentImage: {
             ...state.currentImage,
-            index: 0, // Default to first if not found
+            index: 0,
           },
           view: {
             ...state.view,
-            zoom: 100, // Reset zoom to default
+            zoom: 100,
             panX: 0,
             panY: 0,
           },
           ui: {
             ...state.ui,
-            isLoading: false, // Reset loading state
+            isLoading: false,
           },
         }));
       }
