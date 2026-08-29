@@ -1,3 +1,5 @@
+//! Spec: docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+
 use std::cmp::Ordering;
 
 /// Compares filenames in the same order as Explorer's "Name" column.
