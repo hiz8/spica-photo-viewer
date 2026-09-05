@@ -2,8 +2,13 @@ import type React from "react";
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useAppStore } from "../store";
 import type { ImageInfo } from "../types";
+import {
+  THUMBNAIL_ITEM_PITCH_PX,
+  THUMBNAIL_RENDER_MARGIN,
+} from "../constants/memory";
 import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
 import { isPerfEnabled, perfMark } from "../utils/perf";
+import { visibleThumbnailRadius } from "../utils/preloadWindow";
 
 interface ThumbnailItemProps {
   image: ImageInfo;
@@ -48,6 +53,7 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
         className={className}
         onClick={() => onClick(index)}
         title={image.filename}
+        data-index={index}
       >
         {content}
       </button>
@@ -187,6 +193,18 @@ const ThumbnailBar: React.FC = () => {
     return null;
   }
 
+  // Only the thumbnails that can be on screen (plus a margin) are in the
+  // DOM: a 2000-image folder otherwise costs ~90ms to mount and ~10ms of
+  // re-render per arriving thumbnail. The omitted items on each side are
+  // replaced by one spacer of exactly their total pitch, so offsetLeft,
+  // centering and scrolling behave as if every item were rendered.
+  const count = folder.images.length;
+  const radius =
+    visibleThumbnailRadius(window.innerWidth) + THUMBNAIL_RENDER_MARGIN;
+  const center = Math.max(0, currentImage.index);
+  const start = Math.max(0, center - radius);
+  const end = Math.min(count - 1, center + radius);
+
   return (
     <nav
       ref={thumbnailBarRef}
@@ -197,16 +215,33 @@ const ThumbnailBar: React.FC = () => {
       onWheel={handleWheel}
     >
       <div className="thumbnail-container" ref={containerRef}>
-        {folder.images.map((image, index) => (
-          <ThumbnailItem
-            key={image.path}
-            image={image}
-            index={index}
-            isActive={index === currentImage.index}
-            onClick={handleThumbnailClick}
-            thumbnailData={getThumbnailData(image.path)}
+        {start > 0 && (
+          <div
+            className="thumbnail-spacer"
+            aria-hidden="true"
+            style={{ width: start * THUMBNAIL_ITEM_PITCH_PX }}
           />
-        ))}
+        )}
+        {folder.images.slice(start, end + 1).map((image, offset) => {
+          const index = start + offset;
+          return (
+            <ThumbnailItem
+              key={image.path}
+              image={image}
+              index={index}
+              isActive={index === currentImage.index}
+              onClick={handleThumbnailClick}
+              thumbnailData={getThumbnailData(image.path)}
+            />
+          );
+        })}
+        {end < count - 1 && (
+          <div
+            className="thumbnail-spacer"
+            aria-hidden="true"
+            style={{ width: (count - 1 - end) * THUMBNAIL_ITEM_PITCH_PX }}
+          />
+        )}
       </div>
 
       {imageInfo && <div className="image-info">{imageInfo}</div>}

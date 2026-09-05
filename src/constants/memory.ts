@@ -27,6 +27,12 @@ export const PREVIEW_BOXES: ReadonlyArray<readonly [number, number]> = [
  */
 export const THUMBNAIL_ITEM_PITCH_PX = 40;
 
+/**
+ * Thumbnails kept in the DOM beyond the visible radius on each side, so a
+ * few navigations in a row re-use mounted items instead of re-mounting.
+ */
+export const THUMBNAIL_RENDER_MARGIN = 16;
+
 /** Floor on the visible-range preload radius, even for very narrow windows. */
 export const PREVIEW_WINDOW_MIN_RADIUS = 4;
 
