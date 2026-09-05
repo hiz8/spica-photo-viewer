@@ -78,6 +78,7 @@ interface AppActions {
   resetZoom: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** `point*`: pointer offset from the image's transform origin, in screen px. */
   zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
   fitToWindow: (
     imageWidth: number,
@@ -518,22 +519,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
 
     if (newZoom !== currentZoom) {
-      // Convert screen coordinates to image coordinates before zoom
-      const currentScale = currentZoom / 100;
-      const imageX = pointX / currentScale - state.view.panX;
-      const imageY = pointY / currentScale - state.view.panY;
-
-      // Calculate new pan so that the same image point stays under the mouse
-      const newScale = newZoom / 100;
-      const newPanX = pointX / newScale - imageX;
-      const newPanY = pointY / newScale - imageY;
+      // pan is a post-scale screen offset, so the pan that pins the image
+      // point at `point` is a plain interpolation towards the pointer
+      // (docs/code-rationale.md#Z1). `ratio` is derived from the CLAMPED
+      // newZoom, so the anchor holds at the 10%/2000% limits too.
+      const ratio = newZoom / currentZoom;
 
       set((state) => ({
         view: {
           ...state.view,
           zoom: newZoom,
-          panX: newPanX,
-          panY: newPanY,
+          panX: state.view.panX * ratio + pointX * (1 - ratio),
+          panY: state.view.panY * ratio + pointY * (1 - ratio),
         },
       }));
     }
