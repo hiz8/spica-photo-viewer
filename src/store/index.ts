@@ -829,6 +829,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       panY: view.panY,
     });
 
+    // The window's resize event usually arrives before the IPC resolves, and
+    // its re-layout must already use the windowed rule, or the image is first
+    // centered above the bar and then moved (W1).
+    set((state) => ({ view: { ...state.view, windowed: true } }));
     try {
       await invoke("resize_window_to_image", {
         clientLeft: box.left,
@@ -838,18 +842,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to resize window to image size:", error);
+      set((state) => ({ view: { ...state.view, windowed: false } }));
       return;
     }
 
-    // The window's resize event may fire before or after this point; either
-    // way the final layout must be the whole-client-area one, so re-center
-    // here as well (the event's fitToWindow sees `windowed` once it is set).
+    // Re-center here as well in case the resize event fired before the flag.
     const { left, top } = centeredPosition(layoutArea(true), width, height);
     set((state) => ({
       view: {
         ...state.view,
         isMaximized: false,
-        windowed: true,
         panX: 0,
         panY: 0,
         imageLeft: left,

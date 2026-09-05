@@ -45,10 +45,30 @@ pub(crate) struct ClientBox {
     pub height: f64,
 }
 
-/// Well above any monitor so the OS max tracking size never trims a
-/// zoomed-in image's window, yet inside the 16-bit coordinate range some
-/// GDI paths still use (docs/code-rationale.md#W1).
-const MAX_TRACK_PX: u32 = 32_000;
+/// Physical screen-space rectangle (left/top inclusive, right/bottom exclusive).
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub(crate) struct Rect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// Thickness of the restored window's frame on each side of the client area.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FrameInsets {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// Max inner size given to the window builder: well above any monitor so the
+/// OS max tracking size never trims a zoomed-in image's window, yet with room
+/// under the 16-bit width/height packing of WM_SIZE at 200% DPI. It must be a
+/// builder attribute: tao's `set_max_size` re-applies the current size through
+/// `set_inner_size`, which un-maximizes the window (docs/code-rationale.md#W1).
+pub const MAX_TRACK_LOGICAL_PX: f64 = 32_000.0;
 
 /// Screen-space physical position and size of the client box. CSS px are
 /// scaled by the window's DPI factor and offset from the current client
@@ -77,6 +97,177 @@ pub(crate) fn outer_position_for(
         inner_target.x - (inner.x - outer.x),
         inner_target.y - (inner.y - outer.y),
     )
+}
+
+/// Outer rectangle whose client area is exactly `size` at `inner_target`.
+pub(crate) fn restored_outer_rect(
+    inner_target: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+    frame: FrameInsets,
+) -> Rect {
+    Rect {
+        left: inner_target.x - frame.left,
+        top: inner_target.y - frame.top,
+        right: inner_target.x + size.width as i32 + frame.right,
+        bottom: inner_target.y + size.height as i32 + frame.bottom,
+    }
+}
+
+/// `WINDOWPLACEMENT.rcNormalPosition` is in workspace coordinates, which
+/// differ from screen coordinates by the primary work area's origin (a
+/// taskbar docked at the top or left shifts them).
+pub(crate) fn to_workspace(rect: Rect, work_area_origin: PhysicalPosition<i32>) -> Rect {
+    Rect {
+        left: rect.left - work_area_origin.x,
+        top: rect.top - work_area_origin.y,
+        right: rect.right - work_area_origin.x,
+        bottom: rect.bottom - work_area_origin.y,
+    }
+}
+
+#[cfg(windows)]
+mod native {
+    use super::{FrameInsets, Rect};
+    use std::ffi::c_void;
+    use tauri::PhysicalPosition;
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
+    use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, GetWindowPlacement, SetWindowPlacement, SystemParametersInfoW,
+        GWL_EXSTYLE, GWL_STYLE, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE, WS_MAXIMIZE,
+    };
+
+    pub(super) fn hwnd_of(window: &tauri::WebviewWindow) -> Result<HWND, String> {
+        // tauri hands out the HWND of its own `windows` crate version; both
+        // versions wrap the same raw pointer.
+        let raw = window
+            .hwnd()
+            .map_err(|e| format!("Failed to get window handle: {}", e))?;
+        Ok(HWND(raw.0))
+    }
+
+    /// The DWM restore animation scales the last composited frame from the
+    /// maximized rect to the restored one, which visibly shrinks and moves the
+    /// image; disabling it makes the restore land in one frame.
+    pub(super) fn set_transitions_disabled(hwnd: HWND, disabled: bool) -> Result<(), String> {
+        let value = BOOL(i32::from(disabled));
+        unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_TRANSITIONS_FORCEDISABLED,
+                &value as *const BOOL as *const c_void,
+                std::mem::size_of::<BOOL>() as u32,
+            )
+        }
+        .map_err(|e| format!("Failed to set DWM transitions: {}", e))
+    }
+
+    /// Frame of the *restored* window: WS_MAXIMIZE is cleared from the current
+    /// style because the maximized frame is laid out differently.
+    pub(super) fn frame_insets(hwnd: HWND, dpi: u32) -> Result<FrameInsets, String> {
+        let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32 & !WS_MAXIMIZE.0;
+        let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+        let mut rect = RECT::default();
+        unsafe {
+            AdjustWindowRectExForDpi(
+                &mut rect,
+                WINDOW_STYLE(style),
+                false,
+                WINDOW_EX_STYLE(ex_style),
+                dpi,
+            )
+        }
+        .map_err(|e| format!("Failed to compute the window frame: {}", e))?;
+        Ok(FrameInsets {
+            left: -rect.left,
+            top: -rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+        })
+    }
+
+    pub(super) fn work_area_origin() -> Result<PhysicalPosition<i32>, String> {
+        let mut rect = RECT::default();
+        unsafe {
+            SystemParametersInfoW(
+                SPI_GETWORKAREA,
+                0,
+                Some(&mut rect as *mut RECT as *mut c_void),
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            )
+        }
+        .map_err(|e| format!("Failed to read the work area: {}", e))?;
+        Ok(PhysicalPosition::new(rect.left, rect.top))
+    }
+
+    /// Rewrites only the rect the next SW_RESTORE lands on; the show state is
+    /// left as read, so the window stays maximized until tao restores it.
+    pub(super) fn set_restore_rect(hwnd: HWND, workspace: Rect) -> Result<(), String> {
+        let mut placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        unsafe { GetWindowPlacement(hwnd, &mut placement) }
+            .map_err(|e| format!("Failed to read the window placement: {}", e))?;
+        placement.rcNormalPosition = RECT {
+            left: workspace.left,
+            top: workspace.top,
+            right: workspace.right,
+            bottom: workspace.bottom,
+        };
+        unsafe { SetWindowPlacement(hwnd, &placement) }
+            .map_err(|e| format!("Failed to set the window placement: {}", e))
+    }
+}
+
+/// Restores the window straight onto the target client rect: the restore rect
+/// is written first so tao's `unmaximize` (SW_RESTORE) is the only geometry
+/// change. The result is verified and corrected once if the OS applied a
+/// different frame or work-area offset.
+#[cfg_attr(not(windows), allow(unused_variables))]
+fn restore_onto(
+    window: &tauri::WebviewWindow,
+    target_inner: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+    scale: f64,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let hwnd = native::hwnd_of(window)?;
+        let frame = native::frame_insets(hwnd, (scale * 96.0).round() as u32)?;
+        let outer = restored_outer_rect(target_inner, size, frame);
+        native::set_restore_rect(hwnd, to_workspace(outer, native::work_area_origin()?))?;
+    }
+
+    window
+        .unmaximize()
+        .map_err(|e| format!("Failed to unmaximize window: {}", e))?;
+
+    let inner_size = window
+        .inner_size()
+        .map_err(|e| format!("Failed to get window size: {}", e))?;
+    if inner_size != size {
+        window
+            .set_size(size)
+            .map_err(|e| format!("Failed to resize window: {}", e))?;
+    }
+
+    let inner = window
+        .inner_position()
+        .map_err(|e| format!("Failed to get window inner position: {}", e))?;
+    if inner != target_inner {
+        let outer = window
+            .outer_position()
+            .map_err(|e| format!("Failed to get window position: {}", e))?;
+        window
+            .set_position(outer_position_for(target_inner, outer, inner))
+            .map_err(|e| format!("Failed to set window position: {}", e))?;
+    }
+
+    Ok(())
 }
 
 /// Leaves maximized mode with the client area exactly on the given box, so the
@@ -117,29 +308,16 @@ pub async fn resize_window_to_image(
         inner_origin,
     );
 
-    window
-        .unmaximize()
-        .map_err(|e| format!("Failed to unmaximize window: {}", e))?;
-    window
-        .set_max_size(Some(PhysicalSize::new(MAX_TRACK_PX, MAX_TRACK_PX)))
-        .map_err(|e| format!("Failed to lift window max size: {}", e))?;
-    window
-        .set_size(size)
-        .map_err(|e| format!("Failed to resize window: {}", e))?;
-
-    // The maximized frame offset differs from the restored one (Windows pushes
-    // a maximized window's borders off screen), so measure after restoring.
-    let outer = window
-        .outer_position()
-        .map_err(|e| format!("Failed to get window position: {}", e))?;
-    let inner = window
-        .inner_position()
-        .map_err(|e| format!("Failed to get window inner position: {}", e))?;
-    window
-        .set_position(outer_position_for(target_inner, outer, inner))
-        .map_err(|e| format!("Failed to set window position: {}", e))?;
-
-    Ok(())
+    #[cfg(windows)]
+    let hwnd = native::hwnd_of(&window)?;
+    #[cfg(windows)]
+    native::set_transitions_disabled(hwnd, true)?;
+    let placed = restore_onto(&window, target_inner, size, scale);
+    // Re-enable before reporting so a failed restore never leaves the window
+    // without its minimize/maximize animations.
+    #[cfg(windows)]
+    native::set_transitions_disabled(hwnd, false)?;
+    placed
 }
 
 #[derive(serde::Serialize)]
@@ -232,5 +410,51 @@ mod tests {
             PhysicalPosition::new(108, 131),
         );
         assert_eq!(outer, PhysicalPosition::new(782, 364));
+    }
+
+    #[test]
+    fn restored_outer_rect_wraps_the_client_target_in_the_frame() {
+        let rect = restored_outer_rect(
+            PhysicalPosition::new(790, 395),
+            PhysicalSize::new(1000, 500),
+            FrameInsets {
+                left: 8,
+                top: 31,
+                right: 8,
+                bottom: 8,
+            },
+        );
+        assert_eq!(
+            rect,
+            Rect {
+                left: 782,
+                top: 364,
+                right: 1798,
+                bottom: 903
+            }
+        );
+    }
+
+    #[test]
+    fn to_workspace_subtracts_the_work_area_origin() {
+        // Taskbar docked at the top: the work area starts 40px down.
+        let rect = to_workspace(
+            Rect {
+                left: 782,
+                top: 364,
+                right: 1798,
+                bottom: 903,
+            },
+            PhysicalPosition::new(0, 40),
+        );
+        assert_eq!(
+            rect,
+            Rect {
+                left: 782,
+                top: 324,
+                right: 1798,
+                bottom: 863
+            }
+        );
     }
 }

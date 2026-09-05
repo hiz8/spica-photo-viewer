@@ -51,7 +51,9 @@ windows = { version = "0.62", features = [
   "Win32_System_Com",               # CoCreateInstance / CoInitializeEx / IDispatch / IShellWindows gate
   "Win32_System_Ole",               # IShellBrowser / IShellView / VARIANT gate (D-P2-1; spec §6.4 lacked it)
   "Win32_System_Variant",           # VARIANT / VT_I4 (IShellWindows::Item)
-  "Win32_UI_WindowsAndMessaging",   # GetForegroundWindow / GetAncestor (D-P2-2)
+  "Win32_UI_WindowsAndMessaging",   # GetForegroundWindow / GetAncestor (D-P2-2) / SetWindowPlacement, AdjustWindowRectExForDpi (W1)
+  "Win32_Graphics_Dwm",             # DwmSetWindowAttribute: no restore animation while sizing the window to the image (W1)
+  "Win32_UI_HiDpi",                 # AdjustWindowRectExForDpi: restored frame size for the placement rect (W1)
 ] }
 
 [dev-dependencies]

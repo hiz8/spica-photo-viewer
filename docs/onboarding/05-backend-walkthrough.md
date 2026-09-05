@@ -315,8 +315,11 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 1. 最大化されていなければ早期 return
 2. `scale_factor()` と `inner_position()` で、CSS px の箱を画面上の物理 px に変換（`physical_client_target`）
-3. `unmaximize()` → `set_max_size()` → `set_size()`。`set_max_size` は画面より大きいウィンドウを OS の `WM_GETMINMAXINFO` 既定値が切り詰めるのを防ぐため
-4. 復元後の枠オフセット（`inner_position() - outer_position()`）を実測し、`set_position()` に渡す外枠位置を求める（`outer_position_for`）。`set_size` はクライアント寸法、`set_position` は外枠位置という非対称があるため、タイトルバー分を差し引かないと画像がその分ずれる
+3. `DwmSetWindowAttribute(DWMWA_TRANSITIONS_FORCEDISABLED)` で復元アニメーションを処理中だけ止める
+4. `restore_onto`: 目標クライアント矩形を `AdjustWindowRectExForDpi` の枠で外枠矩形にし、`SetWindowPlacement` で復元先（`rcNormalPosition`、ワークスペース座標）に書き込んでから `unmaximize()`。これで最大化→最終位置が 1 回のジオメトリ変更になる。復元後に `inner_size()` / `inner_position()` を検証し、ずれていれば `set_size()` / `set_position()`（`outer_position_for`）で 1 回だけ補正
+5. アニメーション設定を戻してから結果を返す
+
+画面より大きいウィンドウを OS の `WM_GETMINMAXINFO` 既定値が切り詰めないよう、上限サイズは `lib.rs` のウィンドウ生成時に builder の `max_inner_size` で与えています（コマンド内の `set_max_size` は tao の実装上ウィンドウを復元してしまうので使えません）。
 
 画面内へのクランプは行いません。根拠は `docs/code-rationale.md#W1`。
 

@@ -2103,6 +2103,25 @@ describe("AppStore", () => {
       expect([view.imageLeft, view.imageTop]).toEqual([-500, -250]);
     });
 
+    it("switches the layout mode before the backend responds", async () => {
+      showMaximized();
+      let settle: () => void = () => {};
+      mockInvoke.mockReturnValue(
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      );
+
+      const pending = useAppStore.getState().resizeToImage();
+
+      // The window's resize event can arrive before the IPC resolves; its
+      // re-layout must already use the windowed rule.
+      expect(useAppStore.getState().view.windowed).toBe(true);
+      settle();
+      await pending;
+      expect(useAppStore.getState().view.windowed).toBe(true);
+    });
+
     it("does nothing unless the window is maximized", async () => {
       showMaximized();
       useAppStore.setState((state) => ({

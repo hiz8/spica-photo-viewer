@@ -105,6 +105,31 @@ const clickOutsideImage = (): Promise<void> =>
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 
+/**
+ * Every layout the WebView passes through on the way to the final size fires
+ * a resize event; a resize-to-image must not visit any other geometry (W1).
+ */
+const recordResizes = (): Promise<void> =>
+  browser.execute(() => {
+    const w = window as Window & { __RESIZES__?: [number, number][] };
+    w.__RESIZES__ = [];
+    window.addEventListener("resize", () => {
+      w.__RESIZES__?.push([window.innerWidth, window.innerHeight]);
+    });
+  });
+
+// Serialized in the page: wdio widens returned tuple types with Element
+// members, which does not type-check against [number, number][].
+const recordedResizes = async (): Promise<[number, number][]> =>
+  JSON.parse(
+    await browser.execute(() =>
+      JSON.stringify(
+        (window as Window & { __RESIZES__?: [number, number][] }).__RESIZES__ ??
+          [],
+      ),
+    ),
+  );
+
 const waitForClientWidth = async (expected: number): Promise<void> => {
   await browser.waitUntil(
     async () =>
@@ -186,11 +211,18 @@ describe("windowed mode gate", () => {
     await openImage(join(CORPUS, "small", "img-000.jpg"));
     await waitForMaximizedPaint();
     const before = await snapshot();
+    await recordResizes();
 
     await clickOutsideImage();
     await waitForClientWidth(before.rect.width);
     const after = await snapshot();
 
+    const intermediate = (await recordedResizes()).filter(
+      ([w, h]) =>
+        Math.abs(w - after.innerWidth) > SIZE_TOLERANCE_PX ||
+        Math.abs(h - after.innerHeight) > SIZE_TOLERANCE_PX,
+    );
+    expect(intermediate).toEqual([]);
     expect(after.isMaximized).toBe(false);
     expect(after.zoom).toBe(before.zoom);
     expect(Math.abs(after.innerWidth - before.rect.width)).toBeLessThanOrEqual(
