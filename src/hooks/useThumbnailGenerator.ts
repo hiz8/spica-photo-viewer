@@ -28,6 +28,7 @@ export const useThumbnailGenerator = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expansionPhaseRef = useRef<0 | 1 | 2>(0); // 0: initial, 1: expanded range, 2: full range
+  const lastStartRef = useRef(0);
 
   /**
    * Generate thumbnail for a single image
@@ -258,6 +259,13 @@ export const useThumbnailGenerator = () => {
 
     expansionPhaseRef.current = 0;
 
+    // The debounce only exists to sit out rapid navigation; a folder open or
+    // a navigation after a pause starts generating immediately.
+    const now = Date.now();
+    const isRapid =
+      now - lastStartRef.current < THUMBNAIL_GENERATION_DEBOUNCE_MS;
+    lastStartRef.current = now;
+
     const initialQueue = buildPriorityQueue(THUMBNAIL_GENERATION_INITIAL_RANGE);
 
     // Skip the debounce when all initial thumbnails are already cached —
@@ -276,11 +284,14 @@ export const useThumbnailGenerator = () => {
       `Initial thumbnail queue: ${initialQueue.length} images (±${THUMBNAIL_GENERATION_INITIAL_RANGE})`,
     );
 
-    debounceTimeoutRef.current = setTimeout(() => {
-      processQueue().then(() => {
-        expandQueueProgressively();
-      });
-    }, THUMBNAIL_GENERATION_DEBOUNCE_MS);
+    debounceTimeoutRef.current = setTimeout(
+      () => {
+        processQueue().then(() => {
+          expandQueueProgressively();
+        });
+      },
+      isRapid ? THUMBNAIL_GENERATION_DEBOUNCE_MS : 0,
+    );
   }, [buildPriorityQueue, processQueue, expandQueueProgressively]);
 
   /**

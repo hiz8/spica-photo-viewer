@@ -108,7 +108,7 @@ describe("useThumbnailGenerator", () => {
   });
 
   describe("thumbnail generation with debounce", () => {
-    it("should debounce thumbnail generation by 500ms", async () => {
+    it("starts generating immediately on a fresh open (no debounce)", async () => {
       const images = Array.from({ length: 5 }, (_, i) =>
         createMockImageInfo(i),
       );
@@ -130,20 +130,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      expect(mockInvoke).not.toHaveBeenCalled();
-
-      // Fast-forward just before debounce - still should not have called
+      // Well inside the debounce window the backend has already been asked:
+      // only the (zero-delay) scheduling tick stands between mount and the
+      // first call.
       await act(async () => {
-        vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS - 1);
-        await Promise.resolve();
-      });
-      expect(mockInvoke).not.toHaveBeenCalled();
-
-      // Fast-forward remaining 1ms - now should start
-      await act(async () => {
-        vi.advanceTimersByTime(1);
-        await Promise.resolve();
-        await vi.runAllTimersAsync();
+        await vi.advanceTimersByTimeAsync(THUMBNAIL_GENERATION_DEBOUNCE_MS - 1);
       });
 
       expect(mockInvoke).toHaveBeenCalled();
@@ -161,7 +152,7 @@ describe("useThumbnailGenerator", () => {
       );
     });
 
-    it("should reset debounce on new navigation", async () => {
+    it("debounces a navigation that follows within the debounce window", async () => {
       const images = Array.from({ length: 5 }, (_, i) =>
         createMockImageInfo(i),
       );
@@ -183,28 +174,33 @@ describe("useThumbnailGenerator", () => {
 
       const { rerender } = renderHook(() => useThumbnailGenerator());
 
-      // Advance 250ms (half of debounce)
+      // Fresh open: runs to completion without a debounce.
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      const callsAfterOpen = mockInvoke.mock.calls.length;
+      expect(callsAfterOpen).toBeGreaterThan(0);
+
+      // A navigation 250ms after the last start is "rapid": its generation
+      // waits out the full debounce window.
       await act(async () => {
         vi.advanceTimersByTime(250);
         await Promise.resolve();
       });
-      expect(mockInvoke).not.toHaveBeenCalled();
-
       mockStore.currentImage.index = 3;
       rerender();
 
-      // Advance another 250ms (not enough for new debounce)
       await act(async () => {
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS - 1);
         await Promise.resolve();
       });
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockInvoke.mock.calls.length).toBe(callsAfterOpen);
 
       await act(async () => {
-        vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
-        await Promise.resolve();
+        vi.advanceTimersByTime(1);
+        await vi.runAllTimersAsync();
       });
-      expect(mockInvoke).toHaveBeenCalled();
+      expect(mockInvoke.mock.calls.length).toBeGreaterThan(callsAfterOpen);
     });
   });
 
