@@ -87,6 +87,51 @@ Picasa と比べて次の 2 点が遅い。
 
 各対策の寄与は計測点で分離できる（W1: `innerWidth`・`maximize` 消滅、W2: `prefetch_*` と paint tier、S2: `open:request → src:set`、T1: `folder:scanned → thumbgen:start`、T2: `cache_sweep` ms と発生時刻、T3: `scan_walk_ms` / `scan_meta_ms`）。採用時は 1 コミット 1 対策に分けて個別に bench を通す（§6）。
 
+### 4.1 フェーズ別の実測（実装時、各フェーズの exe を直前フェーズの exe と交互比較）
+
+計測機はユーザー使用中（VS Code / Explorer / メディア再生）で WebView2 生成が 1.1〜1.8s と揺れたため、各フェーズの対象区間は **`open:request` 基準**（WebView2 生成の揺れを除いた区間）でも併記する。
+
+| フェーズ | シナリオ | 対象指標 | 前フェーズ → 本フェーズ（中央値 ms） |
+|---|---|---|---|
+| 1 キャッシュ掃除 | 2000 枚 warm・キャッシュ 4000 ファイル | `cache_sweep_ms` / `cache_stats_ms` | 718 / 526 → 起動経路から消滅（5s 後に実行） |
+| | | `open:request` → 最初の paint | 802 → 499 |
+| | | `open:request` → サムネイル 21 枚目 | 1199 → 1029 |
+| | | spawn → 最初の paint | 2103 → 2154（WebView2 生成 1162 vs 1513 の揺れに埋もれる） |
+| 2 ウィンドウ | 16 枚 20MP cold | `app:script_start` 時の `innerWidth` | 800 → **2560**（最初のフレームから最大化。`maximize_window` は no-op に） |
+| | | spawn → 最初の paint | 1665 → 1587（悪化なし。負荷下で 20MP デコードが ~860ms） |
+| 3 プリフェッチ | 16 枚 20MP cold | 最初の paint の tier | full → **preview**（3/3 run で `get_startup_file` がサムネイルを返した。プリフェッチ完了 264ms、要求は ~1100ms） |
+| | | `open:request` → 最初の paint | 831 → **331** |
+| | | spawn → 最初の paint | 1713 → 1452（WebView2 生成 743 vs 1046 の揺れ込み） |
+| | 16 枚 warm | `open:request` → 最初の paint | 444 → **121** |
+| | | spawn → 最初の paint | 1396 → 1163 |
+| 4a 画像ロードのデバウンス | 16 枚 20MP cold | `open:request` → `decode:done` | 67 → **12** |
+| 4b サムネイル生成のデバウンス | 同 | `folder:scanned` → `thumbgen:start` | 512 → **9** |
+| | | spawn → サムネイル 1 枚目 / 5 枚目 | 1378 / 1743 → **956 / 1312** |
+| | | spawn → 最初の paint | 755 → 692 |
+| 5 走査 | 2000 枚 cold | `scan_walk_ms` / `scan_meta_ms` | 102 / 15 → **2.8 / 1.5**（プローブ待ちは 0 → 168 に増えるがプリフェッチ側で完了、経路外） |
+| | | spawn → 最初の paint | 1049 → 881（揺れ込み） |
+| 6a バー仮想化 | 2000 枚 warm・キャッシュ満杯 | `thumbgen:start` → サムネイル 21 枚目（1 枚ごとの再レンダー） | 117 → **71** |
+| | | `open:request` → 最初の paint | 106 → 84 |
+| | | spawn → 最初の paint | 1118 → 653（base の 2 run が WebView2 生成 920ms 超で揺れ） |
+| 6b 一括照会（n=5） | 2000 枚 warm・キャッシュ満杯 | `thumbgen:start` → サムネイル 21 枚目 | 65 → **31** |
+| | | 起動後 ~3.5 秒で埋まったサムネイル数 | 564 → **1760**（3.1 倍。全件 2000 の充填が 1 起動内に収まる） |
+| | | `open:request` → 最初の paint | 66 → 66（悪化なし。n=3 の初回計測では 1 run の外れ値で 379 に見えたが n=5 で解消） |
+
+### 4.2 累積（Phase 0 exe vs 全フェーズ適用の最終 exe、同条件交互実行、中央値 ms）
+
+| 指標 | A: 16 枚 20MP cold | B: 16 枚 warm | D2: 2000 枚 warm・キャッシュ満杯 |
+|---|---|---|---|
+| ウィンドウ生成時の innerWidth | 800 → 2560 | 800 → 2560 | 800 → 2560 |
+| spawn → 最初の画像 paint（tier） | 1425 (full) → **1031 (preview)** | 1417 (full) → **851 (preview)** | 1218 (full) → **591 (preview)** |
+| `open:request` → 最初の paint | 493 → **53** | 407 → **61** | 433 → **66** |
+| spawn → サムネイルバー paint | 1124 → 1023 | 1078 → 816 | 1104 → **581** |
+| spawn → サムネイル 1 枚目 / 5 枚目 | 1916 / 2215 → **1220 / 1497** | 1581 / 1599 → **812 / 812** | 1586 / 1606 → **554 / 554** |
+| 起動後 ~3.5 秒で埋まったサムネイル数 | – | – | 172 → **1660** |
+| 走査 walk / meta (ms) | – | – | 84 / 18 → 2.6 / 1.4 |
+| 起動時の `clear_old_cache` / `get_cache_stats` (ms) | – | – | 311 / 179 → 経路外（5 秒後） |
+
+計測機はユーザー使用中で WebView2 生成が 450〜1200ms と揺れた（Phase 0 側 `rust_setup`、最終側 `rust_window_created`）。その揺れを含まない `open:request` 基準では、最初の paint までが 3 シナリオとも **400〜490ms → 50〜70ms**。spawn 基準の最終値は静穏時なら A で ~650ms、D2 で ~590ms（§4 の試作値・6a/6b の静穏 run 参照）。
+
 ## 5. 設計上の判断
 
 - **D1 最初の paint は preview 層でよい**: fit 表示ではプレビューとフルは画素等価（プレビュー層スペック §6.5）。既存の D1 定義（最初の非プレースホルダー paint）と整合。ズーム時は既存の full アップグレード（I4）が働く。
@@ -103,6 +148,7 @@ CLAUDE.md の性能変更ルールに従う。
 1. `npm test` / `cd src-tauri && cargo test --lib` 全件 green（試作時点: 368 / 104 件 green。`useThumbnailGenerator` のデバウンス 2 テストは新仕様に書き換え、`sweep` のテストは JSON の mtime を `created` に合わせて back-date）。
 2. `npm run test:e2e`（視覚ゲート含む）green。`create: false` でも wdio embedded provider が main ウィンドウを掴めることは profile-startup で確認済み。**試作時点では未実行**（マシン使用中のためタイミング assertion が信用できない）。
 3. `npm run bench:build && npm run bench` を対策ごとに回し、`baseline.json` と比較。TTFI_cold（テストフック経由のオープン）は W2 の恩恵を受けない設計なので、S2 の −50ms 以外は不変を期待。NAV 系・ZOOM_full が p95 の揺れを超えて悪化しないこと。
+   **結果（2026-09-05、最終 exe `8cf1c07`）**: baseline.json（2026-08-22）比では TTFI_cold 465 → 519、NAV_rapid 11.4 → 19.8、NAV_visible 10.0 → 19.7 と見えるが、`fetch_decode_cold`（デコードそのもの）が 381 → 481ms と機械側が遅く、2026-08-29 の記録（base コミット素通しで NAV_rapid 21.9）と同じ環境ドリフト。**同日対照**として Phase 0 exe を bench の exe 位置に差し替えて実行した結果（中央値 ms、対照 → 最終）: TTFI_cold 515.5 → 518.7、NAV_warm 19.5 → 19.3、NAV_cold 73.1 → 55.1、NAV_rapid 20.0 → 19.8、NAV_visible 20.2 → 19.7、ZOOM_full 431 → 418、hit_rate 1.0 → 1.0。NAV_rapid / NAV_visible の p95 外れ値（~230ms）は対照側にも同じ大きさで出る（環境由来）。**ブランチ起因の悪化なし**。baseline.json は機械が遅い日の値で上書きすると回帰検出が甘くなるため未更新（採用時に静穏条件で `npm run bench:baseline` を取り直す判断をユーザーに委ねる）。
 4. 新指標 **STARTUP_paint**（spawn → 最初の非プレースホルダー paint）と **STARTUP_thumb1**（spawn → サムネイル 1 枚目）を `profile-startup.mjs` で A（16 枚 cold）と D2（2000 枚・キャッシュ 4000）について記録し、目標: A の STARTUP_paint 中央値 < 700ms、D2 < 1500ms、STARTUP_thumb1 が paint + 300ms 以内。bench への統合は Phase 0 の follow-up。
 
 ## 7. 実装フェーズ（1 コミット 1 仮説）
@@ -115,6 +161,20 @@ CLAUDE.md の性能変更ルールに従う。
 6. **Phase 5 T3 走査**: 2000 枚で walk+meta −100ms（cold ディスクや AV 有効環境ではもっと大きい）。
 7. **Phase 6 T5 バー仮想化 + サムネイル一括取得**: N=2000 の commit と 1 枚ごとの再レンダーを定数化。D2 の残り ~300ms と全件生成時のメインスレッド占有を解消。
 8. 将来: EXIF サムネイル、DCT スケール縮小デコード。
+
+## 7.1 実装状況（2026-09-05、ブランチ `worktree-feat+improve-performance-startup`）
+
+| フェーズ | コミット |
+|---|---|
+| 0 計測 | `e695fe3` |
+| 1 キャッシュ掃除 | `ee927d5` |
+| 2 ウィンドウ | `ea6fc51` |
+| 3 プリフェッチ | `52b153b` |
+| 4a 画像ロードのデバウンス | `336a51e` |
+| 4b サムネイル生成のデバウンス | `1d152b4` |
+| 5 走査 | `65a2d54` |
+| 6a バー仮想化 | `a8cc976` |
+| 6b 一括照会 | `8cf1c07` |
 
 ## 8. リスク
 
