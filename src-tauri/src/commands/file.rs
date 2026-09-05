@@ -96,19 +96,23 @@ pub struct ThumbnailWithDimensions {
 
 #[tauri::command]
 pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
-    let folder_path = Path::new(&path);
-
-    if !folder_path.exists() || !folder_path.is_dir() {
+    if !Path::new(&path).is_dir() {
         return Err("Invalid folder path".to_string());
     }
 
-    // The startup prefetch may have scanned (and sort-probed) this folder already.
-    if let Some(prefetched) = crate::commands::startup::take_folder(folder_path) {
-        crate::utils::perf::phase("folder_scan_prefetched", "");
-        return prefetched;
-    }
-
-    scan_folder(folder_path, &path)
+    // Both branches block — waiting for the prefetch or walking the folder —
+    // so they run off the async runtime's core threads.
+    tauri::async_runtime::spawn_blocking(move || {
+        let folder_path = Path::new(&path);
+        // The startup prefetch may have scanned (and sort-probed) this folder already.
+        if let Some(prefetched) = crate::commands::startup::take_folder(folder_path) {
+            crate::utils::perf::phase("folder_scan_prefetched", "");
+            return prefetched;
+        }
+        scan_folder(folder_path, &path)
+    })
+    .await
+    .map_err(|e| format!("folder scan task failed: {e}"))?
 }
 
 /// Enumerates `folder_path`'s images in Explorer's display order. `path` is

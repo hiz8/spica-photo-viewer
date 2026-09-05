@@ -31,6 +31,10 @@ const THUMB_WAIT: Duration = Duration::from_millis(150);
 type ThumbSlot = Option<(String, Receiver<Option<PrefetchedThumbnail>>)>;
 type FolderSlot = Option<(String, Receiver<Result<Vec<ImageInfo>, String>>)>;
 
+// One-shot slots, consumed by the first take. A dev-build React StrictMode
+// double invocation of the startup effect therefore sees None on its second
+// `get_startup_file` and takes the ordinary (non-prefetched) path — not a
+// bug, just the second run paying the normal cost.
 static THUMB: Mutex<ThumbSlot> = Mutex::new(None);
 static FOLDER: Mutex<FolderSlot> = Mutex::new(None);
 
