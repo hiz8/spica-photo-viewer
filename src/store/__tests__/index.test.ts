@@ -592,6 +592,76 @@ describe("AppStore", () => {
   });
 
   describe("zoomAtPoint", () => {
+    /**
+     * Screen-space offset (from the transform origin) of an image point that
+     * sits `local` unscaled px from the image centre. Mirrors the rendered
+     * `translate(pan) scale(zoom)` - see docs/code-rationale.md#Z1.
+     */
+    const offsetOf = (
+      view: { panX: number; zoom: number },
+      local: number,
+    ): number => view.panX + (view.zoom / 100) * local;
+
+    /** Inverse of offsetOf(): which image point sits at `offset`. */
+    const localAt = (
+      view: { panX: number; zoom: number },
+      offset: number,
+    ): number => (offset - view.panX) / (view.zoom / 100);
+
+    it("leaves the image point under the pointer where it was", () => {
+      useAppStore.setState((s) => ({
+        view: { ...s.view, zoom: 80, panX: 37, panY: -12 },
+      }));
+      const pointer = -640;
+      const before = useAppStore.getState().view;
+      const anchored = localAt(before, pointer);
+
+      useAppStore.getState().zoomAtPoint(1.2, pointer, pointer);
+
+      const after = useAppStore.getState().view;
+      expect(offsetOf(after, anchored)).toBeCloseTo(pointer, 9);
+    });
+
+    it("leaves the anchor fixed when zooming out", () => {
+      useAppStore.setState((s) => ({
+        view: { ...s.view, zoom: 80, panX: 37, panY: -12 },
+      }));
+      const pointer = -640;
+      const before = useAppStore.getState().view;
+      const anchored = localAt(before, pointer);
+
+      useAppStore.getState().zoomAtPoint(1 / 1.2, pointer, pointer);
+
+      const after = useAppStore.getState().view;
+      expect(offsetOf(after, anchored)).toBeCloseTo(pointer, 9);
+    });
+
+    it("does not accumulate drift over repeated notches", () => {
+      const pointer = 500;
+      const before = useAppStore.getState().view;
+      const anchored = localAt(before, pointer);
+
+      for (let i = 0; i < 8; i++) {
+        useAppStore.getState().zoomAtPoint(1.2, pointer, pointer);
+      }
+
+      const after = useAppStore.getState().view;
+      expect(offsetOf(after, anchored)).toBeCloseTo(pointer, 6);
+    });
+
+    it("keeps the anchor fixed when the zoom clamps at the limit", () => {
+      useAppStore.getState().setZoom(1800);
+      const pointer = 500;
+      const before = useAppStore.getState().view;
+      const anchored = localAt(before, pointer);
+
+      useAppStore.getState().zoomAtPoint(2.0, pointer, pointer);
+
+      const after = useAppStore.getState().view;
+      expect(after.zoom).toBe(2000);
+      expect(offsetOf(after, anchored)).toBeCloseTo(pointer, 9);
+    });
+
     it("should zoom at specific point correctly", () => {
       const { zoomAtPoint } = useAppStore.getState();
 

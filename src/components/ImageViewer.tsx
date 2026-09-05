@@ -649,15 +649,15 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (isDragging) {
-        const deltaX = (e.clientX - dragStart.x) / (view.zoom / 100);
-        const deltaY = (e.clientY - dragStart.y) / (view.zoom / 100);
-
-        setPan(view.panX + deltaX, view.panY + deltaY);
+        setPan(
+          view.panX + (e.clientX - dragStart.x),
+          view.panY + (e.clientY - dragStart.y),
+        );
 
         setDragStart({ x: e.clientX, y: e.clientY });
       }
     },
-    [isDragging, dragStart, view.zoom, view.panX, view.panY, setPan],
+    [isDragging, dragStart, view.panX, view.panY, setPan],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -676,19 +676,24 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
     (e: React.WheelEvent) => {
       e.preventDefault();
 
-      if (!containerRef.current) return;
+      const data = currentImage.data;
+      if (!containerRef.current || !data) return;
 
+      // The pointer offset must be measured from the displayed element's own
+      // centre - its transform-origin - and NOT from the viewer's centre: the
+      // image is centred in the area above the position:fixed thumbnail bar,
+      // so the two are half a bar-height apart and the difference walks the
+      // image off the pointer on every notch (docs/code-rationale.md#Z1).
+      // Taken from the same view fields the inline style uses, not from the
+      // rendered rect, which is mid-transition during a wheel gesture.
       const rect = containerRef.current.getBoundingClientRect();
-      const containerCenterX = rect.left + rect.width / 2;
-      const containerCenterY = rect.top + rect.height / 2;
-
-      const mouseX = e.clientX - containerCenterX;
-      const mouseY = e.clientY - containerCenterY;
+      const originX = rect.left + (view.imageLeft ?? 0) + data.width / 2;
+      const originY = rect.top + (view.imageTop ?? 0) + data.height / 2;
 
       const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
-      zoomAtPoint(zoomFactor, mouseX, mouseY);
+      zoomAtPoint(zoomFactor, e.clientX - originX, e.clientY - originY);
     },
-    [zoomAtPoint],
+    [zoomAtPoint, currentImage.data, view.imageLeft, view.imageTop],
   );
 
   // Decide img-vs-canvas once per displayed data. A bitmap that arrives later
@@ -739,7 +744,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       top: baseTop,
       width: imageWidth,
       height: imageHeight,
-      transform: `scale(${view.zoom / 100}) translate(${view.panX}px, ${view.panY}px)`,
+      // translate BEFORE scale in the list = applied after it, so pan is in
+      // screen px and the 0.1s transition below interpolates both terms while
+      // holding the zoom anchor exactly still (docs/code-rationale.md#Z1).
+      transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom / 100})`,
       cursor: isDragging ? "grabbing" : "grab",
       transition:
         isDragging || suppressTransition ? "none" : "transform 0.1s ease-out",

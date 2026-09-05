@@ -269,7 +269,7 @@ describe("ImageViewer", () => {
 
       const image = screen.getByRole("img");
       expect(image).toHaveStyle({
-        transform: "scale(1.5) translate(50px, 25px)",
+        transform: "translate(50px, 25px) scale(1.5)",
       });
     });
 
@@ -454,6 +454,22 @@ describe("ImageViewer", () => {
       expect(mockStore.setPan).toHaveBeenCalled();
     });
 
+    it("pans by the raw pointer delta, unscaled by the zoom", () => {
+      mockStore.view.zoom = 400;
+      mockStore.view.panX = 5;
+      mockStore.view.panY = 7;
+
+      render(<ImageViewer />);
+
+      const image = screen.getByRole("img");
+      const container = image.parentElement as HTMLElement;
+
+      fireEvent.mouseDown(image, { clientX: 100, clientY: 50 });
+      fireEvent.mouseMove(container, { clientX: 120, clientY: 70 });
+
+      expect(mockStore.setPan).toHaveBeenCalledWith(25, 27);
+    });
+
     it("should stop dragging on mouse up", () => {
       render(<ImageViewer />);
 
@@ -490,33 +506,54 @@ describe("ImageViewer", () => {
       expect(container).toHaveClass("image-viewer");
     });
 
-    it("should handle wheel event for zooming", () => {
-      const mockGetBoundingClientRect = vi.fn(() => ({
+    /**
+     * The viewer fills the window, but the image is centred in the area ABOVE
+     * the fixed thumbnail bar, so the two centres differ - hence a viewer rect
+     * that is taller than the area imageTop was derived from.
+     */
+    const stubViewerRect = (container: HTMLElement) => {
+      container.getBoundingClientRect = vi.fn(() => ({
         left: 0,
         top: 0,
-        width: 800,
-        height: 600,
-        right: 800,
-        bottom: 600,
+        width: 1000,
+        height: 800,
+        right: 1000,
+        bottom: 800,
         x: 0,
         y: 0,
         toJSON: () => ({}),
-      }));
+      })) as unknown as HTMLElement["getBoundingClientRect"];
+    };
+
+    it("zooms about the image's transform origin, not the viewer's centre", () => {
+      // 800x600 image (mockImageData) laid out at left 100 / top 60, so its
+      // centre - the transform origin - is at (500, 360); the viewer's own
+      // centre is (500, 400).
+      mockStore.view.imageLeft = 100;
+      mockStore.view.imageTop = 60;
 
       render(<ImageViewer />);
 
-      const container = screen.getByRole("img").parentElement;
-      expect(container).not.toBeNull();
-      (container as HTMLElement).getBoundingClientRect =
-        mockGetBoundingClientRect;
+      const container = screen.getByRole("img").parentElement as HTMLElement;
+      stubViewerRect(container);
 
-      fireEvent.wheel(container as HTMLElement, {
-        deltaY: -120,
-        clientX: 400,
-        clientY: 300,
-      });
+      fireEvent.wheel(container, { deltaY: -120, clientX: 700, clientY: 500 });
 
-      expect(mockStore.zoomAtPoint).toHaveBeenCalled();
+      expect(mockStore.zoomAtPoint).toHaveBeenCalledWith(1.2, 200, 140);
+    });
+
+    it("passes a zoom-out factor for a downward wheel", () => {
+      mockStore.view.imageLeft = 100;
+      mockStore.view.imageTop = 60;
+
+      render(<ImageViewer />);
+
+      const container = screen.getByRole("img").parentElement as HTMLElement;
+      stubViewerRect(container);
+
+      fireEvent.wheel(container, { deltaY: 120, clientX: 500, clientY: 360 });
+
+      expect(mockStore.zoomAtPoint).toHaveBeenCalledWith(1 / 1.2, 0, 0);
     });
   });
 
@@ -717,7 +754,7 @@ describe("ImageViewer", () => {
         top: "50px",
         width: "1200px",
         height: "800px",
-        transform: "scale(1.5) translate(20px, 10px)",
+        transform: "translate(20px, 10px) scale(1.5)",
       });
     });
 

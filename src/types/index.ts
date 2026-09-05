@@ -93,6 +93,10 @@ export interface AppState {
 
 export interface ViewState {
   zoom: number;
+  /**
+   * Pan offset in SCREEN px (applied after the scale), measured from the
+   * displayed element's own centre — docs/code-rationale.md#Z1.
+   */
   panX: number;
   panY: number;
   isFullscreen: boolean;
