@@ -228,6 +228,20 @@ pub fn lookup_thumbnail(
     Some((entry.thumbnail, entry.width, entry.height))
 }
 
+/// `lookup_thumbnail` for many paths at once; results keep the request order
+/// so the caller can pair them back up.
+pub fn lookup_thumbnails(
+    cache_dir: &Path,
+    paths: &[String],
+    size: u32,
+    preview_box: Option<&str>,
+) -> Vec<Option<(String, Option<u32>, Option<u32>)>> {
+    paths
+        .iter()
+        .map(|path| lookup_thumbnail(cache_dir, path, size, preview_box))
+        .collect()
+}
+
 pub fn store_preview(
     cache_dir: &Path,
     path: &str,
@@ -410,6 +424,29 @@ pub async fn get_cached_thumbnail(
         size.unwrap_or(30),
         preview_box.as_deref(),
     ))
+}
+
+/// Batch form of `get_cached_thumbnail`: one IPC round trip for a whole
+/// queue instead of one per thumbnail.
+#[tauri::command]
+pub async fn get_cached_thumbnails(
+    paths: Vec<String>,
+    size: Option<u32>,
+    preview_box: Option<String>,
+) -> Result<Vec<Option<(String, Option<u32>, Option<u32>)>>, String> {
+    let cache_dir = get_cache_dir()?;
+    // A few small file reads per path, off the async runtime's core threads.
+    tauri::async_runtime::spawn_blocking(move || {
+        let _t = crate::utils::perf::PerfTimer::start("thumb_lookup_batch", "");
+        lookup_thumbnails(
+            &cache_dir,
+            &paths,
+            size.unwrap_or(30),
+            preview_box.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -717,6 +754,30 @@ mod tests {
         assert!(load_preview(dir.path(), &preview_paths[2], "1920x1080").is_some());
         assert!(!json_file(dir.path(), &old_path, 20).exists());
         assert!(!json_file(dir.path(), &mtime_old_path, 20).exists());
+    }
+
+    #[test]
+    fn lookup_thumbnails_keeps_request_order_with_none_for_misses() {
+        let dir = create_temp_dir();
+        let sources = create_temp_dir();
+        let touch = |name: &str| -> String {
+            let p = sources.path().join(name);
+            fs::write(&p, b"x").unwrap();
+            filetime::set_file_mtime(&p, filetime_for_test(1)).unwrap();
+            p.to_string_lossy().to_string()
+        };
+        let a = touch("a.jpg");
+        let missing = touch("missing.jpg");
+        let c = touch("c.jpg");
+        store_thumbnail_entry(dir.path(), &a, 20, &entry(Some((1, 1)), None)).unwrap();
+        store_thumbnail_entry(dir.path(), &c, 20, &entry(Some((1, 1)), None)).unwrap();
+
+        let results = lookup_thumbnails(dir.path(), &[a, missing, c], 20, None);
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].as_ref().map(|r| r.0.as_str()), Some("AAAA"));
+        assert!(results[1].is_none());
+        assert_eq!(results[2].as_ref().map(|r| (r.1, r.2)), Some((Some(800), Some(600))));
     }
 
     #[test]

@@ -369,7 +369,9 @@ describe("ThumbnailBar", () => {
       const spacers = document.querySelectorAll(".thumbnail-spacer");
       expect(spacers).toHaveLength(2);
       const first = Number(buttons[0].getAttribute("data-index"));
-      const last = Number(buttons[buttons.length - 1].getAttribute("data-index"));
+      const last = Number(
+        buttons[buttons.length - 1].getAttribute("data-index"),
+      );
       expect((spacers[0] as HTMLElement).style.width).toBe(`${first * 40}px`);
       expect((spacers[1] as HTMLElement).style.width).toBe(
         `${(499 - last) * 40}px`,

@@ -8,7 +8,8 @@ mod utils;
 mod test_utils;
 
 use commands::cache::{
-    clear_old_cache, get_cache_stats, get_cached_thumbnail, set_cached_thumbnail,
+    clear_old_cache, get_cache_stats, get_cached_thumbnail, get_cached_thumbnails,
+    set_cached_thumbnail,
 };
 use commands::file::{
     generate_thumbnail_with_dimensions, get_folder_images, get_startup_file, handle_dropped_file,
@@ -135,6 +136,7 @@ pub fn run() {
             get_startup_file,
             open_with_dialog,
             get_cached_thumbnail,
+            get_cached_thumbnails,
             set_cached_thumbnail,
             clear_old_cache,
             get_cache_stats,

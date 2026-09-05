@@ -5,6 +5,7 @@ import {
   THUMBNAIL_GENERATION_DEBOUNCE_MS,
   THUMBNAIL_GENERATION_INITIAL_RANGE,
   THUMBNAIL_GENERATION_EXPANDED_RANGE,
+  THUMBNAIL_LOOKUP_BATCH,
   THUMBNAIL_SIZE,
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
@@ -49,34 +50,17 @@ export const useThumbnailGenerator = () => {
       try {
         setThumbnailGeneration({ currentGeneratingPath: imagePath });
 
-        const previewBox = currentPreviewBox();
-
-        // First, try to get from backend cache (thumbnail + matching preview)
-        const cachedThumbnail = await invoke<
-          [string, number | null, number | null] | null
-        >("get_cached_thumbnail", {
-          path: imagePath,
-          size: THUMBNAIL_SIZE,
-          previewBox,
-        });
-
-        if (signal.aborted) return false;
-
-        if (cachedThumbnail) {
-          const [base64, width, height] = cachedThumbnail;
-          if (width !== null && height !== null) {
-            setCachedThumbnail(imagePath, { base64, width, height });
-            perfMark("thumb:done", { path: imagePath, source: "cache" });
-            return true;
-          }
-          // If cached entry lacks dimensions, regenerate.
-        }
-
         // Generate thumbnail + preview from one decode; the command writes
         // both to the disk cache before returning (I1), so no write-back here.
+        // (Cache hits were already taken out of the queue by
+        // lookupCachedThumbnails.)
         const result = await invoke<ThumbnailWithDimensions>(
           "generate_thumbnail_with_dimensions",
-          { path: imagePath, size: THUMBNAIL_SIZE, previewBox },
+          {
+            path: imagePath,
+            size: THUMBNAIL_SIZE,
+            previewBox: currentPreviewBox(),
+          },
         );
 
         if (signal.aborted) return false;
@@ -121,6 +105,53 @@ export const useThumbnailGenerator = () => {
       }
     },
     [], // No dependencies - always get fresh state from useAppStore.getState()
+  );
+
+  /**
+   * One IPC for a batch of paths; the hits land in the store in one update
+   * (one thumbnail-bar render instead of one per thumbnail). Returns the
+   * paths still to generate: misses, entries without dimensions, and — if
+   * the lookup itself failed — every path, so nothing is silently skipped.
+   */
+  const lookupCachedThumbnails = useCallback(
+    async (paths: string[], signal: AbortSignal): Promise<string[]> => {
+      let results: ReadonlyArray<
+        [string, number | null, number | null] | null
+      > | null = null;
+      try {
+        results = await invoke<
+          ReadonlyArray<[string, number | null, number | null] | null>
+        >("get_cached_thumbnails", {
+          paths,
+          size: THUMBNAIL_SIZE,
+          previewBox: currentPreviewBox(),
+        });
+      } catch (error) {
+        console.warn("Failed to look up cached thumbnails:", error);
+      }
+      if (signal.aborted) return [];
+      if (!Array.isArray(results)) return paths;
+
+      const hits: Array<
+        [string, { base64: string; width: number; height: number }]
+      > = [];
+      const misses: string[] = [];
+      paths.forEach((path, i) => {
+        const entry = results[i];
+        if (entry && entry[1] !== null && entry[2] !== null) {
+          hits.push([
+            path,
+            { base64: entry[0], width: entry[1], height: entry[2] },
+          ]);
+          perfMark("thumb:done", { path, source: "cache" });
+        } else {
+          misses.push(path);
+        }
+      });
+      useAppStore.getState().setCachedThumbnails(hits);
+      return misses;
+    },
+    [],
   );
 
   /** @param maxRange - Maximum offset from current image (undefined = all images) */
@@ -175,13 +206,26 @@ export const useThumbnailGenerator = () => {
     perfMark("thumbgen:start", { queue: queue.length });
 
     try {
-      for (let i = 0; i < queue.length; i += MAX_CONCURRENT_LOADS) {
+      // Cached hits first, in batches: a warm folder fills the bar with a
+      // handful of IPCs and store updates before any decode starts.
+      const misses: string[] = [];
+      for (let i = 0; i < queue.length; i += THUMBNAIL_LOOKUP_BATCH) {
+        if (signal.aborted) break;
+        misses.push(
+          ...(await lookupCachedThumbnails(
+            queue.slice(i, i + THUMBNAIL_LOOKUP_BATCH),
+            signal,
+          )),
+        );
+      }
+
+      for (let i = 0; i < misses.length; i += MAX_CONCURRENT_LOADS) {
         if (signal.aborted) {
           console.log("Thumbnail generation aborted");
           break;
         }
 
-        const chunk = queue.slice(i, i + MAX_CONCURRENT_LOADS);
+        const chunk = misses.slice(i, i + MAX_CONCURRENT_LOADS);
         await Promise.allSettled(
           chunk.map((path) => generateThumbnail(path, signal)),
         );
@@ -199,7 +243,7 @@ export const useThumbnailGenerator = () => {
       });
       generationQueueRef.current = [];
     }
-  }, [generateThumbnail]); // Only depend on generateThumbnail which is now stable
+  }, [generateThumbnail, lookupCachedThumbnails]); // Both stable (no deps)
 
   /** Progressive expansion (initial → expanded → full) avoids processing all 900+ images immediately. */
   const expandQueueProgressively = useCallback(async () => {

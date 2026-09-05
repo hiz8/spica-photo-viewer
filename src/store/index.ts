@@ -93,6 +93,15 @@ interface AppActions {
     path: string,
     thumbnail: { base64: string; width: number; height: number } | "error",
   ) => void;
+  /** Batch form of setCachedThumbnail: one Map copy and one render for all entries. */
+  setCachedThumbnails: (
+    entries: ReadonlyArray<
+      readonly [
+        string,
+        { base64: string; width: number; height: number } | "error",
+      ]
+    >,
+  ) => void;
   removeCachedThumbnail: (path: string) => void;
   removeCachedThumbnails: (paths: readonly string[]) => void;
   updateImageDimensions: (width: number, height: number) => void;
@@ -725,6 +734,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => {
       const newThumbnails = new Map(state.cache.thumbnails);
       newThumbnails.set(path, thumbnail);
+      return {
+        cache: {
+          ...state.cache,
+          thumbnails: newThumbnails,
+        },
+      };
+    }),
+
+  setCachedThumbnails: (entries) =>
+    set((state) => {
+      if (entries.length === 0) {
+        return state;
+      }
+      const newThumbnails = new Map(state.cache.thumbnails);
+      for (const [path, thumbnail] of entries) {
+        newThumbnails.set(path, thumbnail);
+      }
       return {
         cache: {
           ...state.cache,
