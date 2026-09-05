@@ -429,11 +429,14 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
     if (!currentImage.path) return;
 
-    // Skip debounce if thumbnail is already displayed - upgrade immediately
-    const { ui: currentUi } = useAppStore.getState();
-    const debounceDelay = currentUi.thumbnailDisplayed
-      ? 0
-      : IMAGE_LOAD_DEBOUNCE_MS;
+    // Skip debounce if thumbnail is already displayed - upgrade immediately.
+    // A fresh open (index is -1 until the folder scan lands) is never a
+    // rapid navigation either, so it must not pay the debounce.
+    const { ui: currentUi, currentImage: current } = useAppStore.getState();
+    const debounceDelay =
+      currentUi.thumbnailDisplayed || current.index === -1
+        ? 0
+        : IMAGE_LOAD_DEBOUNCE_MS;
 
     // Debounce image loading to avoid loading intermediate images during rapid navigation
     const timeoutId = setTimeout(async () => {
