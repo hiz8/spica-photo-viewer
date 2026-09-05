@@ -122,24 +122,32 @@ pub fn scan_folder(folder_path: &Path, path: &str) -> Result<Vec<ImageInfo>, Str
     // of the 300ms budget.
     let probe = crate::commands::explorer_sort::spawn_detect(folder_path.to_path_buf());
 
-    // First, collect all valid image paths (fast, no metadata reads)
-    let image_paths: Vec<_> = WalkDir::new(folder_path)
+    // Directory enumeration already carries type, size and timestamps
+    // (FindNextFile on Windows; walkdir keeps them on the entry), so neither
+    // `path.is_file()` nor a second `fs::metadata` is needed per file. Each
+    // of those opens a handle on Windows, which is also where real-time AV
+    // scanning hooks in — two avoidable opens per image, linear in folder size.
+    let entries: Vec<(std::path::PathBuf, Option<fs::Metadata>)> = WalkDir::new(folder_path)
         .max_depth(1)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|entry| {
-            let path = entry.path();
-            path.is_file() && is_supported_image(path)
+            let ft = entry.file_type();
+            // Symlinked images still count, matching the old is_file() walk.
+            (ft.is_file() || (ft.is_symlink() && entry.path().is_file()))
+                && is_supported_image(entry.path())
         })
-        .map(|entry| entry.path().to_path_buf())
+        .map(|entry| {
+            let meta = entry.metadata().ok();
+            (entry.into_path(), meta)
+        })
         .collect();
     let walk_ms = t_scan.elapsed().as_secs_f64() * 1000.0;
 
-    // Parallel: 900+ image folders are dominated by per-file metadata reads.
     let t_meta = std::time::Instant::now();
-    let mut images: Vec<ImageInfo> = image_paths
+    let mut images: Vec<ImageInfo> = entries
         .par_iter()
-        .filter_map(|path| get_image_info(path).ok())
+        .filter_map(|(path, meta)| image_info_from(path, meta.as_ref()).ok())
         .collect();
     let meta_ms = t_meta.elapsed().as_secs_f64() * 1000.0;
 
@@ -410,8 +418,21 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
 }
 
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
-    let metadata =
-        fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    image_info_from(path, None)
+}
+
+/// `metadata` is the directory-entry metadata when the caller already has it
+/// (folder scan); None stats the file.
+fn image_info_from(path: &Path, metadata: Option<&fs::Metadata>) -> Result<ImageInfo, String> {
+    let owned;
+    let metadata = match metadata {
+        Some(m) => m,
+        None => {
+            owned =
+                fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+            &owned
+        }
+    };
 
     let filename = path
         .file_name()
@@ -983,6 +1004,25 @@ mod tests {
         // by testing the function doesn't panic and returns Ok
         let result = get_startup_file();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn image_info_from_dir_entry_metadata_matches_a_fresh_stat() {
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        let entry = WalkDir::new(dir.path())
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .find(|e| e.path() == img)
+            .unwrap();
+        let from_entry = image_info_from(&img, entry.metadata().ok().as_ref()).unwrap();
+        let from_stat = get_image_info(&img).unwrap();
+        assert_eq!(from_entry.size, from_stat.size);
+        assert_eq!(from_entry.modified_ns, from_stat.modified_ns);
+        assert_eq!(from_entry.created_ns, from_stat.created_ns);
+        assert_eq!(from_entry.filename, "a.jpg");
+        assert_eq!(from_entry.format, "jpg");
     }
 
     #[test]
