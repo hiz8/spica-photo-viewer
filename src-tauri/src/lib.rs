@@ -28,8 +28,26 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|_app| {
+        .setup(|app| {
             crate::utils::perf::phase("setup", "");
+            // The main window is created here (config `create: false`) so it
+            // can be born maximized when launched with a file. A config
+            // window would first show at 800x600 and jump only when the
+            // frontend calls maximize_window ~500ms later (after WebView2
+            // init + page load + React mount).
+            let maximized = commands::file::startup_file_from_args().is_some();
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("missing main window config")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .maximized(maximized)
+                .build()?;
+            crate::utils::perf::phase("window_created", "");
             Ok(())
         })
         .on_page_load(|_webview, payload| {

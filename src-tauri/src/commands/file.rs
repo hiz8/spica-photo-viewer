@@ -190,17 +190,20 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 #[tauri::command]
 pub fn get_startup_file() -> Result<Option<String>, String> {
     crate::utils::perf::phase("get_startup_file", "");
-    let args: Vec<String> = std::env::args().collect();
+    Ok(startup_file_from_args())
+}
 
-    // Look for image file in command line arguments (usually args[1])
-    for arg in &args[1..] {
+/// The image passed on the command line (file association), if any.
+pub fn startup_file_from_args() -> Option<String> {
+    startup_file_in(std::env::args().skip(1))
+}
+
+pub fn startup_file_in(args: impl Iterator<Item = String>) -> Option<String> {
+    let mut args = args;
+    args.find(|arg| {
         let path = Path::new(arg);
-        if path.exists() && path.is_file() && is_supported_image(path) {
-            return Ok(Some(arg.clone()));
-        }
-    }
-
-    Ok(None)
+        path.exists() && path.is_file() && is_supported_image(path)
+    })
 }
 
 fn is_gif_path(path: &Path) -> bool {
@@ -952,6 +955,21 @@ mod tests {
         // by testing the function doesn't panic and returns Ok
         let result = get_startup_file();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn startup_file_in_picks_the_first_existing_supported_image() {
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        let img_str = img.to_string_lossy().to_string();
+        let args = vec![
+            "--flag".to_string(),
+            dir.path().join("missing.jpg").to_string_lossy().to_string(),
+            dir.path().join("notes.txt").to_string_lossy().to_string(),
+            img_str.clone(),
+        ];
+        assert_eq!(startup_file_in(args.into_iter()), Some(img_str));
+        assert_eq!(startup_file_in(std::iter::empty()), None);
     }
 
     #[test]
