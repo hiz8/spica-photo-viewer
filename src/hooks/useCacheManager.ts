@@ -5,24 +5,26 @@ import { useAppStore } from "../store";
 const MAX_PRELOADED_IMAGES = 20;
 const MAX_THUMBNAIL_CACHE = 100;
 const CLEANUP_INTERVAL_MS = 30000;
+/**
+ * The disk sweep walks every cache entry (thousands of files after a few
+ * large folders); run at mount it competes with the startup image and the
+ * folder scan for disk and blocking threads, so it waits until they are done.
+ */
+const DISK_SWEEP_DELAY_MS = 5000;
 
 export const useCacheManager = () => {
   useEffect(() => {
-    const initializeCache = async () => {
+    const sweepDiskCache = async () => {
       try {
         await invoke("clear_old_cache");
         console.log("Cache cleanup completed");
-
-        const stats = await invoke<{ [key: string]: number }>(
-          "get_cache_stats",
-        );
-        console.log("Cache stats:", stats);
       } catch (error) {
-        console.warn("Failed to initialize cache:", error);
+        console.warn("Failed to sweep cache:", error);
       }
     };
 
-    initializeCache();
+    const timeoutId = setTimeout(sweepDiskCache, DISK_SWEEP_DELAY_MS);
+    return () => clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {

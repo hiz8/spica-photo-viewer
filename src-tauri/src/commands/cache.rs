@@ -284,6 +284,12 @@ pub fn sweep(cache_dir: &Path, now_secs: u64, max_age_secs: u64, cap_bytes: u64)
     };
     let mut removed = 0usize;
     let mut previews: Vec<(PathBuf, u64, u64)> = Vec::new(); // (jpg, mtime, len)
+
+    // Everything below is answered from the directory entry itself (size,
+    // mtime — free on Windows, no handle opened): with thousands of entries
+    // an open per file made this a multi-second startup cost.
+    let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut listed: Vec<(PathBuf, String, u64, u64)> = Vec::new(); // (path, name, mtime, len)
     for entry in entries.flatten() {
         let p = entry.path();
         let name = p
@@ -291,53 +297,45 @@ pub fn sweep(cache_dir: &Path, now_secs: u64, max_age_secs: u64, cap_bytes: u64)
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        names.insert(name.clone());
+        listed.push((p, name, mtime, meta.len()));
+    }
+    for (p, name, mtime, len) in listed {
         if name.contains(".tmp-") {
             // Orphaned `write_atomic` temp file from a crash mid-write —
             // normally live for milliseconds, so anything this old is dead
             // and otherwise invisible to `stats`.
-            let mtime = fs::metadata(&p)
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
             if now_secs.saturating_sub(mtime) > STALE_TMP_AGE_SECS && fs::remove_file(&p).is_ok() {
                 removed += 1;
             }
         } else if name.ends_with("_p.jpg") {
-            let meta = match fs::metadata(&p) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
             if now_secs.saturating_sub(mtime) > max_age_secs {
                 remove_preview_pair(&p);
                 removed += 1;
             } else {
-                previews.push((p, mtime, meta.len()));
+                previews.push((p, mtime, len));
             }
         } else if name.ends_with("_p.json") {
             // Orphan sidecar (jpg gone) → drop it.
-            let jpg = p.with_file_name(name.replace("_p.json", "_p.jpg"));
-            if !jpg.exists() {
+            if !names.contains(&name.replace("_p.json", "_p.jpg")) {
                 let _ = fs::remove_file(&p);
             }
         } else if name.ends_with(".json") {
-            match fs::read_to_string(&p)
-                .ok()
-                .and_then(|c| serde_json::from_str::<CacheEntry>(&c).ok())
-            {
-                Some(e) if now_secs.saturating_sub(e.created) <= max_age_secs => {}
-                _ => {
-                    if fs::remove_file(&p).is_ok() {
-                        removed += 1;
-                    }
-                }
+            // Entry age by file mtime: `write_atomic` writes the entry at the
+            // same instant `created` records, so this is the same TTL without
+            // reading and parsing every entry. (Corrupt entries are dropped by
+            // `read_entry` on lookup.)
+            if now_secs.saturating_sub(mtime) > max_age_secs && fs::remove_file(&p).is_ok() {
+                removed += 1;
             }
         }
     }
@@ -669,6 +667,29 @@ mod tests {
             ..entry(Some((1, 1)), None)
         };
         store_thumbnail_entry(dir.path(), &old_path, 20, &old).unwrap();
+        // The sweep ages entries by file mtime (== `created` for a real
+        // write, since write_atomic writes the entry at that instant); the
+        // fixture has to back-date the file the same way.
+        filetime::set_file_mtime(
+            json_file(dir.path(), &old_path, 20),
+            filetime_for_test(now - 100_000),
+        )
+        .unwrap();
+        // An entry whose file is old but whose `created` claims fresh goes
+        // too: the sweep never opens entries, it trusts the mtime.
+        let mtime_old_path = touch("mtime-old.jpg");
+        store_thumbnail_entry(
+            dir.path(),
+            &mtime_old_path,
+            20,
+            &entry(Some((1, 1)), None),
+        )
+        .unwrap();
+        filetime::set_file_mtime(
+            json_file(dir.path(), &mtime_old_path, 20),
+            filetime_for_test(now - 100_000),
+        )
+        .unwrap();
         // Three fresh previews of 1000 bytes each, cap 2500 → oldest one must go.
         let preview_paths: Vec<String> = ["p1.jpg", "p2.jpg", "p3.jpg"]
             .iter()
@@ -689,12 +710,13 @@ mod tests {
         }
         let removed = sweep(dir.path(), now, 24 * 60 * 60, 2500);
         assert_eq!(
-            removed, 2,
-            "expired json + one preview (jpg+sidecar count as one)"
+            removed, 3,
+            "two expired json + one preview (jpg+sidecar count as one)"
         );
         assert!(load_preview(dir.path(), &preview_paths[0], "1920x1080").is_none());
         assert!(load_preview(dir.path(), &preview_paths[2], "1920x1080").is_some());
         assert!(!json_file(dir.path(), &old_path, 20).exists());
+        assert!(!json_file(dir.path(), &mtime_old_path, 20).exists());
     }
 
     #[test]
