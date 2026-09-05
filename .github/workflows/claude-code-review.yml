@@ -24,10 +24,72 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          # The gate below needs the merge base of both the pre- and the
+          # post-push head, so a shallow clone will not do.
+          fetch-depth: 0
+
+      - name: Detect whether the push changed the PR contents
+        id: gate
+        # SHAs and the base ref go through env rather than being interpolated
+        # into the script, so a branch name can never become shell syntax.
+        env:
+          EVENT_ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        # A rebase or an "Update branch" merge fires `synchronize` without
+        # changing a single line under review, and re-reviewing it burns a
+        # full Claude run to restate the previous comment. Comparing the patch
+        # IDs of the branch's non-merge commits tells the two apart: a clean
+        # rebase preserves them (git rebase relies on the same property to drop
+        # already-applied commits) and a merge commit is excluded outright,
+        # while a conflict resolution — the case actually worth reviewing —
+        # rewrites the conflicting commit's patch and shows up as a change.
+        # Every failure path emits true: skipping a real review is far worse
+        # than the redundant run this step exists to avoid.
+        run: |
+          set -uo pipefail
+
+          emit() {
+            echo "changed=$1" >> "$GITHUB_OUTPUT"
+            echo "$2" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+
+          if [ "$EVENT_ACTION" != "synchronize" ]; then
+            emit true "Reviewing: PR was opened."
+          fi
+
+          if [ -z "$BEFORE" ] || [ -z "$AFTER" ]; then
+            emit true "Reviewing: synchronize payload carried no before/after SHA."
+          fi
+
+          # $BEFORE is unreachable from any ref after a force-push, so it has to
+          # be asked for by SHA.
+          if ! git fetch --no-tags --quiet origin "$BEFORE" "$AFTER"; then
+            emit true "Reviewing: could not fetch $BEFORE..$AFTER."
+          fi
+
+          patch_ids() {
+            local base
+            base=$(git merge-base "origin/$BASE_REF" "$1") || return 1
+            git rev-list --no-merges "$base..$1" \
+              | git diff-tree --stdin --patch --no-color \
+              | git patch-id --stable \
+              | cut -d' ' -f1 | sort
+          }
+
+          before_ids=$(patch_ids "$BEFORE") || emit true "Reviewing: no patch IDs for $BEFORE."
+          after_ids=$(patch_ids "$AFTER") || emit true "Reviewing: no patch IDs for $AFTER."
+
+          if [ "$before_ids" = "$after_ids" ]; then
+            emit false "Skipped: the push left every commit patch identical (rebase or base merge)."
+          fi
+          emit true "Reviewing: the push changed the commits under review."
 
       - name: Run Claude Code Review
         id: claude-review
+        if: steps.gate.outputs.changed == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
