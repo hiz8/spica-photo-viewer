@@ -117,6 +117,7 @@ pub struct WindowState {
 
 #[tauri::command]
 pub async fn maximize_window(app_handle: AppHandle) -> Result<(), String> {
+    crate::utils::perf::phase("maximize_start", "");
     let window = app_handle
         .get_webview_window("main")
         .ok_or("Failed to get main window")?;
@@ -124,6 +125,7 @@ pub async fn maximize_window(app_handle: AppHandle) -> Result<(), String> {
     window
         .maximize()
         .map_err(|e| format!("Failed to maximize window: {}", e))?;
+    crate::utils::perf::phase("maximize_end", "");
 
     Ok(())
 }

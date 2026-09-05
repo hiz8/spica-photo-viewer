@@ -12,6 +12,30 @@ pub fn enabled() -> bool {
     })
 }
 
+/// Wall-clock ms since the UNIX epoch, on the same clock as the WebView's
+/// `performance.timeOrigin`, so Rust startup phases can be lined up with
+/// the frontend's marks.
+pub fn wall_ms() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64() * 1000.0)
+        .unwrap_or(0.0)
+}
+
+/// Startup timeline point. `extra` is appended verbatim inside the JSON
+/// object (e.g. `,"n":42`), empty for none.
+pub fn phase(phase: &str, extra: &str) {
+    if !enabled() {
+        return;
+    }
+    eprintln!(
+        r#"{{"perf":"rust","op":"startup","phase":{},"wall":{:.1}{}}}"#,
+        serde_json::to_string(phase).unwrap_or_else(|_| "\"?\"".into()),
+        wall_ms(),
+        extra
+    );
+}
+
 pub fn format_perf_line(op: &str, path: &str, ms: f64) -> String {
     format!(
         r#"{{"perf":"rust","op":{},"path":{},"ms":{:.2}}}"#,

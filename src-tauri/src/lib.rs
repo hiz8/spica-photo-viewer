@@ -20,13 +20,25 @@ use commands::window::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crate::utils::perf::phase("run_start", "");
     // Stash the launcher's foreground window before Tauri creates ours and
     // takes focus (§6.3: picks among multiple Explorer windows).
     commands::explorer_sort::stash_foreground_window();
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|_app| {
+            crate::utils::perf::phase("setup", "");
+            Ok(())
+        })
+        .on_page_load(|_webview, payload| {
+            let name = match payload.event() {
+                tauri::webview::PageLoadEvent::Started => "page_load_started",
+                tauri::webview::PageLoadEvent::Finished => "page_load_finished",
+            };
+            crate::utils::perf::phase(name, "");
+        });
 
     // Custom `spica-img` scheme: serves image files straight to the WebView as
     // raw bytes instead of base64 over IPC. On Windows WebView2 reaches it at

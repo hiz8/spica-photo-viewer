@@ -10,6 +10,7 @@ import { useKeyboard } from "./hooks/useKeyboard";
 import { useCacheManager } from "./hooks/useCacheManager";
 import { useWindowState } from "./hooks/useWindowState";
 import { useAppStore } from "./store";
+import { perfMark } from "./utils/perf";
 import "./App.css";
 
 const App: React.FC = () => {
@@ -24,7 +25,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const checkStartupFile = async () => {
       try {
+        perfMark("app:startup_check");
         const startupFile = await invoke<string | null>("get_startup_file");
+        perfMark("app:startup_file", { path: startupFile });
         if (startupFile) {
           console.log("Opening startup file:", startupFile);
           await openImageFromPath(startupFile);

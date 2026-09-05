@@ -404,6 +404,7 @@ pub async fn get_cached_thumbnail(
     size: Option<u32>,
     preview_box: Option<String>,
 ) -> Result<Option<(String, Option<u32>, Option<u32>)>, String> {
+    let _t = crate::utils::perf::PerfTimer::start("thumb_lookup", &path);
     let cache_dir = get_cache_dir()?;
     Ok(lookup_thumbnail(
         &cache_dir,
@@ -441,6 +442,7 @@ pub async fn clear_old_cache() -> Result<(), String> {
         return Ok(());
     };
     let removed = tauri::async_runtime::spawn_blocking(move || {
+        let _t = crate::utils::perf::PerfTimer::start("cache_sweep", "");
         sweep(
             &cache_dir,
             current_unix_time(),
@@ -462,6 +464,7 @@ pub async fn get_cache_stats() -> Result<HashMap<String, u64>, String> {
     // Reads and parses every JSON file in the cache directory — off the
     // async runtime's core threads, like `clear_old_cache`.
     tauri::async_runtime::spawn_blocking(move || {
+        let _t = crate::utils::perf::PerfTimer::start("cache_stats", "");
         stats(&cache_dir, current_unix_time(), CACHE_DURATION)
     })
     .await

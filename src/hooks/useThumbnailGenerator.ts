@@ -9,6 +9,7 @@ import {
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
 import { getFilename } from "../utils/path";
+import { perfMark } from "../utils/perf";
 import { currentPreviewBox } from "../utils/previewBox";
 import type { ThumbnailWithDimensions } from "../types";
 
@@ -64,6 +65,7 @@ export const useThumbnailGenerator = () => {
           const [base64, width, height] = cachedThumbnail;
           if (width !== null && height !== null) {
             setCachedThumbnail(imagePath, { base64, width, height });
+            perfMark("thumb:done", { path: imagePath, source: "cache" });
             return true;
           }
           // If cached entry lacks dimensions, regenerate.
@@ -83,6 +85,7 @@ export const useThumbnailGenerator = () => {
           width: result.original_width,
           height: result.original_height,
         });
+        perfMark("thumb:done", { path: imagePath, source: "generate" });
 
         console.log(`Generated thumbnail: ${getFilename(imagePath)}`);
         return true;
@@ -168,6 +171,7 @@ export const useThumbnailGenerator = () => {
     const signal = abortControllerRef.current.signal;
 
     const queue = generationQueueRef.current;
+    perfMark("thumbgen:start", { queue: queue.length });
 
     try {
       for (let i = 0; i < queue.length; i += MAX_CONCURRENT_LOADS) {

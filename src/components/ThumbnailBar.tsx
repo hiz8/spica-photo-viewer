@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useAppStore } from "../store";
 import type { ImageInfo } from "../types";
 import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
+import { isPerfEnabled, perfMark } from "../utils/perf";
 
 interface ThumbnailItemProps {
   image: ImageInfo;
@@ -132,6 +133,23 @@ const ThumbnailBar: React.FC = () => {
 
     return () => clearTimeout(timeoutId);
   }, [scrollToActiveItem]);
+
+  // Perf instrumentation: first commit of the bar with items, and the frame
+  // that actually paints it.
+  const imageCount = folder.images.length;
+  useEffect(() => {
+    if (!imageCount || !isPerfEnabled()) return;
+    perfMark("thumbbar:committed", { n: imageCount });
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) perfMark("thumbbar:painted", { n: imageCount });
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageCount]);
 
   useEffect(() => {
     const thumbnailBar = thumbnailBarRef.current;

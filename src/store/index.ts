@@ -605,6 +605,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const images = await invoke<ImageInfo[]>("get_folder_images", {
         path: folderPath,
       });
+      perfMark("folder:scanned", { path: imagePath, n: images.length });
 
       // Check for race condition: user may have navigated away during folder scan
       const currentState = get();

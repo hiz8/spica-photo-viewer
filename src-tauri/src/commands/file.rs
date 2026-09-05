@@ -102,6 +102,9 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         return Err("Invalid folder path".to_string());
     }
 
+    crate::utils::perf::phase("folder_scan_start", "");
+    let t_scan = std::time::Instant::now();
+
     // Ask Explorer for this folder's sort setting concurrently with the scan
     // (sort §5); the answer is picked up after the scan with whatever remains
     // of the 300ms budget.
@@ -118,14 +121,29 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         })
         .map(|entry| entry.path().to_path_buf())
         .collect();
+    let walk_ms = t_scan.elapsed().as_secs_f64() * 1000.0;
 
     // Parallel: 900+ image folders are dominated by per-file metadata reads.
+    let t_meta = std::time::Instant::now();
     let mut images: Vec<ImageInfo> = image_paths
         .par_iter()
         .filter_map(|path| get_image_info(path).ok())
         .collect();
+    let meta_ms = t_meta.elapsed().as_secs_f64() * 1000.0;
 
+    let t_probe = std::time::Instant::now();
     let (detected, probe_ms) = probe.join();
+    let probe_wait_ms = t_probe.elapsed().as_secs_f64() * 1000.0;
+    crate::utils::perf::phase(
+        "folder_scan_end",
+        &format!(
+            r#","n":{},"walk_ms":{:.1},"meta_ms":{:.1},"probe_wait_ms":{:.1}"#,
+            images.len(),
+            walk_ms,
+            meta_ms,
+            probe_wait_ms
+        ),
+    );
     if crate::utils::perf::enabled() {
         // Sort provenance (sort §6.5): explorer = a window's setting was adopted,
         // fallback = Name ascending. Log-only; never surfaced in UI (sort D4).
@@ -171,6 +189,7 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn get_startup_file() -> Result<Option<String>, String> {
+    crate::utils::perf::phase("get_startup_file", "");
     let args: Vec<String> = std::env::args().collect();
 
     // Look for image file in command line arguments (usually args[1])
