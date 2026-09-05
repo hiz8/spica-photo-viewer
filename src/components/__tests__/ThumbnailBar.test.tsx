@@ -348,6 +348,52 @@ describe("ThumbnailBar", () => {
     });
   });
 
+  describe("virtualization", () => {
+    // jsdom's window.innerWidth is 1024 → visibleThumbnailRadius = 12; with
+    // the render margin that is far fewer than 500 items either way.
+    it("renders only the thumbnails around the current image for large folders", () => {
+      mockStoreState.folder.images = Array.from({ length: 500 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+      mockStoreState.currentImage.index = 250;
+
+      render(<ThumbnailBar />);
+
+      const buttons = screen.getAllByRole("button");
+      expect(buttons.length).toBeLessThan(200);
+      expect(buttons.length).toBeGreaterThanOrEqual(2 * 4 + 1);
+      expect(screen.getByTitle("image250.jpg")).toHaveClass("active");
+
+      // The omitted items are replaced by spacers of exactly their pitch, so
+      // offsets (and the centering scroll) are unchanged.
+      const spacers = document.querySelectorAll(".thumbnail-spacer");
+      expect(spacers).toHaveLength(2);
+      const first = Number(buttons[0].getAttribute("data-index"));
+      const last = Number(
+        buttons[buttons.length - 1].getAttribute("data-index"),
+      );
+      expect((spacers[0] as HTMLElement).style.width).toBe(`${first * 40}px`);
+      expect((spacers[1] as HTMLElement).style.width).toBe(
+        `${(499 - last) * 40}px`,
+      );
+    });
+
+    it("starts the window at the first image when there is no current image", () => {
+      mockStoreState.folder.images = Array.from({ length: 500 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+      mockStoreState.currentImage.index = -1;
+
+      render(<ThumbnailBar />);
+
+      const buttons = screen.getAllByRole("button");
+      expect(buttons[0].getAttribute("data-index")).toBe("0");
+      expect(buttons.length).toBeLessThan(200);
+      // Nothing is omitted on the left, so only the right spacer exists.
+      expect(document.querySelectorAll(".thumbnail-spacer")).toHaveLength(1);
+    });
+  });
+
   describe("memoization of ThumbnailItem", () => {
     it("should render different state for each thumbnail", () => {
       const images = Array.from({ length: 3 }, (_, i) =>

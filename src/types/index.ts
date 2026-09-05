@@ -32,6 +32,13 @@ export interface ThumbnailWithDimensions {
   preview_available: boolean;
 }
 
+/** `get_startup_file` result: the file passed on the command line. */
+export interface StartupFile {
+  path: string;
+  /** Prepared by the Rust startup prefetch when it finished in time. */
+  thumbnail: { base64: string; width: number; height: number } | null;
+}
+
 export interface UIState {
   isLoading: boolean;
   showAbout: boolean;

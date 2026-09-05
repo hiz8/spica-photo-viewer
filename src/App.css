@@ -316,6 +316,13 @@ body {
   display: none;
 }
 
+/* Stands in for the thumbnails outside the rendered window; must never
+   shrink or the offsets of the rendered items drift. */
+.thumbnail-spacer {
+  flex: none;
+  height: 1px;
+}
+
 .thumbnail-item {
   min-width: 30px;
   width: 30px;

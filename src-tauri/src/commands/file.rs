@@ -96,36 +96,78 @@ pub struct ThumbnailWithDimensions {
 
 #[tauri::command]
 pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
-    let folder_path = Path::new(&path);
-
-    if !folder_path.exists() || !folder_path.is_dir() {
+    if !Path::new(&path).is_dir() {
         return Err("Invalid folder path".to_string());
     }
+
+    // Both branches block — waiting for the prefetch or walking the folder —
+    // so they run off the async runtime's core threads.
+    tauri::async_runtime::spawn_blocking(move || {
+        let folder_path = Path::new(&path);
+        // The startup prefetch may have scanned (and sort-probed) this folder already.
+        if let Some(prefetched) = crate::commands::startup::take_folder(folder_path) {
+            crate::utils::perf::phase("folder_scan_prefetched", "");
+            return prefetched;
+        }
+        scan_folder(folder_path, &path)
+    })
+    .await
+    .map_err(|e| format!("folder scan task failed: {e}"))?
+}
+
+/// Enumerates `folder_path`'s images in Explorer's display order. `path` is
+/// the same folder as a string, for the perf log only.
+pub fn scan_folder(folder_path: &Path, path: &str) -> Result<Vec<ImageInfo>, String> {
+    crate::utils::perf::phase("folder_scan_start", "");
+    let t_scan = std::time::Instant::now();
 
     // Ask Explorer for this folder's sort setting concurrently with the scan
     // (sort §5); the answer is picked up after the scan with whatever remains
     // of the 300ms budget.
     let probe = crate::commands::explorer_sort::spawn_detect(folder_path.to_path_buf());
 
-    // First, collect all valid image paths (fast, no metadata reads)
-    let image_paths: Vec<_> = WalkDir::new(folder_path)
+    // Directory enumeration already carries type, size and timestamps
+    // (FindNextFile on Windows; walkdir keeps them on the entry), so neither
+    // `path.is_file()` nor a second `fs::metadata` is needed per file. Each
+    // of those opens a handle on Windows, which is also where real-time AV
+    // scanning hooks in — two avoidable opens per image, linear in folder size.
+    let entries: Vec<(std::path::PathBuf, Option<fs::Metadata>)> = WalkDir::new(folder_path)
         .max_depth(1)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|entry| {
-            let path = entry.path();
-            path.is_file() && is_supported_image(path)
+            let ft = entry.file_type();
+            // Symlinked images still count, matching the old is_file() walk.
+            (ft.is_file() || (ft.is_symlink() && entry.path().is_file()))
+                && is_supported_image(entry.path())
         })
-        .map(|entry| entry.path().to_path_buf())
+        .map(|entry| {
+            let meta = entry.metadata().ok();
+            (entry.into_path(), meta)
+        })
         .collect();
+    let walk_ms = t_scan.elapsed().as_secs_f64() * 1000.0;
 
-    // Parallel: 900+ image folders are dominated by per-file metadata reads.
-    let mut images: Vec<ImageInfo> = image_paths
+    let t_meta = std::time::Instant::now();
+    let mut images: Vec<ImageInfo> = entries
         .par_iter()
-        .filter_map(|path| get_image_info(path).ok())
+        .filter_map(|(path, meta)| image_info_from(path, meta.as_ref()).ok())
         .collect();
+    let meta_ms = t_meta.elapsed().as_secs_f64() * 1000.0;
 
+    let t_probe = std::time::Instant::now();
     let (detected, probe_ms) = probe.join();
+    let probe_wait_ms = t_probe.elapsed().as_secs_f64() * 1000.0;
+    crate::utils::perf::phase(
+        "folder_scan_end",
+        &format!(
+            r#","n":{},"walk_ms":{:.1},"meta_ms":{:.1},"probe_wait_ms":{:.1}"#,
+            images.len(),
+            walk_ms,
+            meta_ms,
+            probe_wait_ms
+        ),
+    );
     if crate::utils::perf::enabled() {
         // Sort provenance (sort §6.5): explorer = a window's setting was adopted,
         // fallback = Name ascending. Log-only; never surfaced in UI (sort D4).
@@ -170,18 +212,38 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn get_startup_file() -> Result<Option<String>, String> {
-    let args: Vec<String> = std::env::args().collect();
+pub fn get_startup_file() -> Result<Option<StartupFile>, String> {
+    crate::utils::perf::phase("get_startup_file", "");
+    Ok(startup_file_from_args().map(|path| {
+        let thumbnail = crate::commands::startup::take_thumbnail(&path);
+        crate::utils::perf::phase(
+            "get_startup_file_end",
+            &format!(r#","thumb":{}"#, thumbnail.is_some()),
+        );
+        StartupFile { path, thumbnail }
+    }))
+}
 
-    // Look for image file in command line arguments (usually args[1])
-    for arg in &args[1..] {
+#[derive(Debug, Serialize)]
+pub struct StartupFile {
+    pub path: String,
+    /// Thumbnail prepared by the startup prefetch when it finished in time;
+    /// its preview is then on disk too (preview I1), so the frontend can
+    /// seed its thumbnail cache and take the preview route for first paint.
+    pub thumbnail: Option<crate::commands::startup::PrefetchedThumbnail>,
+}
+
+/// The image passed on the command line (file association), if any.
+pub fn startup_file_from_args() -> Option<String> {
+    startup_file_in(std::env::args().skip(1))
+}
+
+pub fn startup_file_in(args: impl Iterator<Item = String>) -> Option<String> {
+    let mut args = args;
+    args.find(|arg| {
         let path = Path::new(arg);
-        if path.exists() && path.is_file() && is_supported_image(path) {
-            return Ok(Some(arg.clone()));
-        }
-    }
-
-    Ok(None)
+        path.exists() && path.is_file() && is_supported_image(path)
+    })
 }
 
 fn is_gif_path(path: &Path) -> bool {
@@ -360,8 +422,21 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
 }
 
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
-    let metadata =
-        fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    image_info_from(path, None)
+}
+
+/// `metadata` is the directory-entry metadata when the caller already has it
+/// (folder scan); None stats the file.
+fn image_info_from(path: &Path, metadata: Option<&fs::Metadata>) -> Result<ImageInfo, String> {
+    let owned;
+    let metadata = match metadata {
+        Some(m) => m,
+        None => {
+            owned =
+                fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+            &owned
+        }
+    };
 
     let filename = path
         .file_name()
@@ -933,6 +1008,40 @@ mod tests {
         // by testing the function doesn't panic and returns Ok
         let result = get_startup_file();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn image_info_from_dir_entry_metadata_matches_a_fresh_stat() {
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        let entry = WalkDir::new(dir.path())
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .find(|e| e.path() == img)
+            .unwrap();
+        let from_entry = image_info_from(&img, entry.metadata().ok().as_ref()).unwrap();
+        let from_stat = get_image_info(&img).unwrap();
+        assert_eq!(from_entry.size, from_stat.size);
+        assert_eq!(from_entry.modified_ns, from_stat.modified_ns);
+        assert_eq!(from_entry.created_ns, from_stat.created_ns);
+        assert_eq!(from_entry.filename, "a.jpg");
+        assert_eq!(from_entry.format, "jpg");
+    }
+
+    #[test]
+    fn startup_file_in_picks_the_first_existing_supported_image() {
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        let img_str = img.to_string_lossy().to_string();
+        let args = vec![
+            "--flag".to_string(),
+            dir.path().join("missing.jpg").to_string_lossy().to_string(),
+            dir.path().join("notes.txt").to_string_lossy().to_string(),
+            img_str.clone(),
+        ];
+        assert_eq!(startup_file_in(args.into_iter()), Some(img_str));
+        assert_eq!(startup_file_in(std::iter::empty()), None);
     }
 
     #[test]

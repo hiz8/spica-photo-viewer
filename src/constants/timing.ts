@@ -39,5 +39,12 @@ export const THUMBNAIL_GENERATION_EXPANDED_RANGE = 30;
 
 export const THUMBNAIL_SIZE = 20;
 
+/**
+ * Cached-thumbnail lookups per IPC call. Each hit used to be its own IPC
+ * round trip and its own store update (= one thumbnail-bar render); a batch
+ * turns a warm 2000-image folder into ~20 of each.
+ */
+export const THUMBNAIL_LOOKUP_BATCH = 100;
+
 /** Prevents visual stuttering when user navigates quickly between images. */
 export const SUPPRESS_TRANSITION_MS = 300;

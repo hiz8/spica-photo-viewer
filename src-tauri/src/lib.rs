@@ -8,7 +8,8 @@ mod utils;
 mod test_utils;
 
 use commands::cache::{
-    clear_old_cache, get_cache_stats, get_cached_thumbnail, set_cached_thumbnail,
+    clear_old_cache, get_cache_stats, get_cached_thumbnail, get_cached_thumbnails,
+    set_cached_thumbnail,
 };
 use commands::file::{
     generate_thumbnail_with_dimensions, get_folder_images, get_startup_file, handle_dropped_file,
@@ -20,13 +21,54 @@ use commands::window::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crate::utils::perf::phase("run_start", "");
     // Stash the launcher's foreground window before Tauri creates ours and
     // takes focus (§6.3: picks among multiple Explorer windows).
     commands::explorer_sort::stash_foreground_window();
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            crate::utils::perf::phase("setup", "");
+            // The main window is created here (config `create: false`) so it
+            // can be born maximized when launched with a file. A config
+            // window would first show at 800x600 and jump only when the
+            // frontend calls maximize_window ~500ms later (after WebView2
+            // init + page load + React mount).
+            let startup_file = commands::file::startup_file_from_args();
+            if let Some(path) = &startup_file {
+                // Overlaps the WebView2 init that window creation blocks on.
+                let screen = app
+                    .primary_monitor()
+                    .ok()
+                    .flatten()
+                    .map(|m| (m.size().width, m.size().height))
+                    .unwrap_or((0, 0));
+                commands::startup::start(path, screen);
+            }
+            let maximized = startup_file.is_some();
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("missing main window config")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .maximized(maximized)
+                .build()?;
+            crate::utils::perf::phase("window_created", "");
+            Ok(())
+        })
+        .on_page_load(|_webview, payload| {
+            let name = match payload.event() {
+                tauri::webview::PageLoadEvent::Started => "page_load_started",
+                tauri::webview::PageLoadEvent::Finished => "page_load_finished",
+            };
+            crate::utils::perf::phase(name, "");
+        });
 
     // Custom `spica-img` scheme: serves image files straight to the WebView as
     // raw bytes instead of base64 over IPC. On Windows WebView2 reaches it at
@@ -94,6 +136,7 @@ pub fn run() {
             get_startup_file,
             open_with_dialog,
             get_cached_thumbnail,
+            get_cached_thumbnails,
             set_cached_thumbnail,
             clear_old_cache,
             get_cache_stats,

@@ -63,6 +63,8 @@ vi.mock("../../hooks/useImagePreloader", () => ({
 const mockStore = {
   currentImage: {
     path: "",
+    // 0 = a navigation target; -1 = a fresh open before the folder scan.
+    index: 0 as number,
     data: null as AppImageData | null,
     error: null as Error | null,
   },
@@ -171,6 +173,7 @@ describe("ImageViewer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStore.currentImage.path = "";
+    mockStore.currentImage.index = 0;
     mockStore.currentImage.data = null;
     mockStore.currentImage.error = null;
     mockStore.view.zoom = 100;
@@ -344,6 +347,26 @@ describe("ImageViewer", () => {
         PROTOCOL_SRC("/test/image.jpg"),
       );
 
+      vi.useRealTimers();
+    });
+
+    it("loads immediately on a fresh open (index -1), skipping the navigation debounce", async () => {
+      vi.useFakeTimers();
+      mockStore.currentImage.path = "/test/image.jpg";
+      mockStore.currentImage.data = null;
+      mockStore.currentImage.index = -1;
+      mockStore.cache.thumbnails = new Map();
+
+      render(<ImageViewer />);
+
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+        await Promise.resolve();
+      });
+
+      expect(mockLoadImageViaProtocol).toHaveBeenCalledWith("/test/image.jpg");
+
+      mockStore.currentImage.index = 0;
       vi.useRealTimers();
     });
 

@@ -1491,6 +1491,37 @@ describe("AppStore", () => {
       expect(thumbnail).toBe("error");
     });
 
+    it("setCachedThumbnails stores every entry in one immutable update", () => {
+      const { setCachedThumbnail, setCachedThumbnails } =
+        useAppStore.getState();
+      setCachedThumbnail("/test/keep.jpg", "error");
+      const before = useAppStore.getState().cache.thumbnails;
+
+      setCachedThumbnails([
+        ["/test/a.jpg", { base64: "a", width: 1, height: 2 }],
+        ["/test/b.jpg", "error"],
+      ]);
+
+      const { thumbnails } = useAppStore.getState().cache;
+      expect(thumbnails).not.toBe(before);
+      expect(thumbnails.get("/test/a.jpg")).toEqual({
+        base64: "a",
+        width: 1,
+        height: 2,
+      });
+      expect(thumbnails.get("/test/b.jpg")).toBe("error");
+      expect(thumbnails.get("/test/keep.jpg")).toBe("error");
+    });
+
+    it("setCachedThumbnails with no entries does not touch the cache", () => {
+      const { setCachedThumbnails } = useAppStore.getState();
+      const before = useAppStore.getState().cache.thumbnails;
+
+      setCachedThumbnails([]);
+
+      expect(useAppStore.getState().cache.thumbnails).toBe(before);
+    });
+
     it("should remove thumbnail from cache", () => {
       const { setCachedThumbnail, removeCachedThumbnail } =
         useAppStore.getState();
