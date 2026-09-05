@@ -44,6 +44,7 @@ describe("AppStore", () => {
         panY: 0,
         isFullscreen: false,
         isMaximized: false,
+        windowed: false,
         thumbnailOpacity: 0.5,
       },
       cache: {
@@ -2027,6 +2028,155 @@ describe("AppStore", () => {
       useAppStore.getState().navigateToImage(0);
 
       expect(useAppStore.getState().currentImage.data?.tier).toBe("full");
+    });
+  });
+
+  describe("windowed mode (outside click)", () => {
+    const setWindowSize = (width: number, height: number) => {
+      Object.defineProperty(window, "innerWidth", {
+        value: width,
+        configurable: true,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        value: height,
+        configurable: true,
+      });
+    };
+
+    // A 2000x1000 image shown maximized at 50%, laid out at (280,134) and
+    // panned by (10,-20): its on-screen center is (1290, 614).
+    const showMaximized = () => {
+      useAppStore.setState((state) => ({
+        currentImage: {
+          ...state.currentImage,
+          path: "/test/wide.jpg",
+          index: 0,
+          data: {
+            ...mockImageData,
+            path: "/test/wide.jpg",
+            width: 2000,
+            height: 1000,
+          },
+          error: null,
+        },
+        view: {
+          ...state.view,
+          isMaximized: true,
+          zoom: 50,
+          imageLeft: 280,
+          imageTop: 134,
+          imageWidth: 2000,
+          imageHeight: 1000,
+          panX: 10,
+          panY: -20,
+        },
+      }));
+    };
+
+    it("asks the backend for the client box centered on the displayed image", async () => {
+      showMaximized();
+      mockInvoke.mockResolvedValue(undefined);
+
+      await useAppStore.getState().resizeToImage();
+
+      expect(mockInvoke).toHaveBeenCalledWith("resize_window_to_image", {
+        clientLeft: 790,
+        clientTop: 364,
+        clientWidth: 1000,
+        clientHeight: 500,
+      });
+    });
+
+    it("enters windowed mode with the pan cleared once the window is resized", async () => {
+      showMaximized();
+      mockInvoke.mockResolvedValue(undefined);
+      setWindowSize(1000, 500);
+
+      await useAppStore.getState().resizeToImage();
+
+      const { view } = useAppStore.getState();
+      expect(view.windowed).toBe(true);
+      expect(view.isMaximized).toBe(false);
+      expect(view.zoom).toBe(50);
+      expect([view.panX, view.panY]).toEqual([0, 0]);
+      // Whole client area, no bar exclusion: (1000 - 2000) / 2, (500 - 1000) / 2
+      expect([view.imageLeft, view.imageTop]).toEqual([-500, -250]);
+    });
+
+    it("does nothing unless the window is maximized", async () => {
+      showMaximized();
+      useAppStore.setState((state) => ({
+        view: { ...state.view, isMaximized: false },
+      }));
+
+      await useAppStore.getState().resizeToImage();
+
+      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(useAppStore.getState().view.windowed).toBe(false);
+    });
+
+    it("stays maximized when the backend refuses", async () => {
+      showMaximized();
+      mockInvoke.mockRejectedValue(new Error("Window is not maximized"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await useAppStore.getState().resizeToImage();
+      errorSpy.mockRestore();
+
+      const { view } = useAppStore.getState();
+      expect(view.windowed).toBe(false);
+      expect(view.isMaximized).toBe(true);
+      expect([view.panX, view.panY]).toEqual([10, -20]);
+    });
+
+    it("fits to the whole client area with no margin while windowed", () => {
+      useAppStore.setState((state) => ({
+        view: { ...state.view, windowed: true },
+      }));
+      setWindowSize(544, 272);
+
+      useAppStore.getState().fitToWindow(2000, 1000);
+
+      const { view } = useAppStore.getState();
+      expect(view.zoom).toBeCloseTo(27.2);
+      expect([view.imageLeft, view.imageTop]).toEqual([-728, -364]);
+    });
+
+    it("leaves windowed mode and re-centers above the bar when maximized again", () => {
+      showMaximized();
+      useAppStore.setState((state) => ({
+        view: {
+          ...state.view,
+          isMaximized: false,
+          windowed: true,
+          zoom: 27.2,
+          panX: 0,
+          panY: 0,
+        },
+      }));
+      setWindowSize(1920, 1080);
+
+      useAppStore.getState().setMaximized(true);
+
+      const { view } = useAppStore.getState();
+      expect(view.windowed).toBe(false);
+      expect(view.zoom).toBe(27.2);
+      // (1920 - 2000) / 2, ((1080 - 80) - 1000) / 2
+      expect([view.imageLeft, view.imageTop]).toEqual([-40, 0]);
+    });
+
+    it("leaves windowed mode when entering fullscreen", () => {
+      showMaximized();
+      useAppStore.setState((state) => ({
+        view: { ...state.view, isMaximized: false, windowed: true },
+      }));
+      setWindowSize(1920, 1080);
+
+      useAppStore.getState().setFullscreen(true);
+
+      const { view } = useAppStore.getState();
+      expect(view.windowed).toBe(false);
+      expect([view.imageLeft, view.imageTop]).toEqual([-40, 0]);
     });
   });
 });

@@ -222,25 +222,21 @@ const images = await invoke<ImageInfo[]>("get_folder_images", {
 ```rust
 pub async fn resize_window_to_image(
     app_handle: AppHandle,
-    image_width: u32,
-    image_height: u32,
-    zoom_percent: f64,
-    image_screen_center_x: f64,
-    image_screen_center_y: f64,
-    _disable_animation: Option<bool>,
+    client_left: f64,
+    client_top: f64,
+    client_width: f64,
+    client_height: f64,
 ) -> Result<(), String> {
 ```
 
-これをフロントから呼ぶときは `src/store/index.ts:749-756`:
+これをフロントから呼ぶときは `src/store/index.ts` の `resizeToImage`:
 
 ```typescript
 await invoke("resize_window_to_image", {
-  imageWidth: width,
-  imageHeight: height,
-  zoomPercent: currentZoom,
-  imageScreenCenterX: imageScreenCenterX,
-  imageScreenCenterY: imageScreenCenterY,
-  disableAnimation: true,
+  clientLeft: box.left,
+  clientTop: box.top,
+  clientWidth: box.width,
+  clientHeight: box.height,
 });
 ```
 
@@ -460,15 +456,14 @@ const unlistenUnmaximize = await window.listen("tauri://unmaximize", () => {
    // Rust 側 snake_case → JS 側で camelCase が要求される例
    // (resize_window_to_image は要件を満たすときだけ動くので、ここではあえてエラーを起こす)
    await invoke("resize_window_to_image", {
-     imageWidth: 100,
-     imageHeight: 100,
-     zoomPercent: 100,
-     imageScreenCenterX: 500,
-     imageScreenCenterY: 500,
+     clientLeft: 500,
+     clientTop: 300,
+     clientWidth: 800,
+     clientHeight: 600,
    });
    ```
 
-最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs:57-59`)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
+最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs` の `resize_window_to_image` 冒頭)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
 
 これにより:
 

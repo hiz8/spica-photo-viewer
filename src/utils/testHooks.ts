@@ -39,7 +39,16 @@ export interface SpicaTestHooks {
    */
   evictDecoded: () => { evictedBitmaps: number; evictedPreloaded: number };
   zoomIn: () => void;
+  zoomOut: () => void;
   resetZoom: () => void;
+  getView: () => {
+    zoom: number;
+    isMaximized: boolean;
+    isFullscreen: boolean;
+    windowed: boolean;
+  };
+  /** The outside-click action, for cases where no background is clickable (image larger than the window). */
+  resizeToImage: () => Promise<void>;
 }
 
 declare global {
@@ -84,6 +93,13 @@ export const installTestHooks = (): void => {
       return { evictedBitmaps, evictedPreloaded };
     },
     zoomIn: () => useAppStore.getState().zoomIn(),
+    zoomOut: () => useAppStore.getState().zoomOut(),
     resetZoom: () => useAppStore.getState().resetZoom(),
+    getView: () => {
+      const { zoom, isMaximized, isFullscreen, windowed } =
+        useAppStore.getState().view;
+      return { zoom, isMaximized, isFullscreen, windowed };
+    },
+    resizeToImage: () => useAppStore.getState().resizeToImage(),
   };
 };

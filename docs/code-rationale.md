@@ -160,3 +160,53 @@ d = −40 に対する `d × (1 − 1.2) = +8.000` / `d × (1 − 1/1.2) = −6.
 
 参照元: `src/store/index.ts`（`zoomAtPoint`）、
 `src/components/ImageViewer.tsx`（`handleWheel` / `imageStyle`）
+
+## W1
+
+**画像外クリックのウインドウ化: クライアント領域 = 表示画像、位置は画像基準、クランプ無し（Picasa 準拠）**
+
+Picasa Photo Viewer は画像の外をクリックすると、表示中の画像（ズーム適用後）の
+サイズにウインドウを縮め、画像の画面上の位置を変えない。ウインドウの横幅の最小値は
+544px で、それ未満の画像では 544 × (544·h/w) の箱の中央に現在のズームのまま置く
+（2000×1000 → 544×272、1000×2000 → 544×1088）。上限は無く、画面をはみ出すほど
+拡大していればウインドウもはみ出す。
+
+**サイズと位置はストアの状態から決める（DOM を見ない）**。表示要素は bitmap ヒット時
+`<canvas>`、ミス時 `<img>` で切り替わるため `querySelector(".image-viewer img")` は
+ヒット時に null になり（2026-09-06 時点の旧実装はこれで無反応だった）、また
+`transform` の 0.1s トランジション中にクリックされると `getBoundingClientRect` は
+中途の矩形を返す。Z1 の座標系では要素の画面上の中心は
+`(imageLeft + W/2 + panX, imageTop + H/2 + panY)` で閉じた式になる。
+
+**物理 px 変換と枠オフセット**。フロントは CSS px（ビューポート座標）を渡し、Rust が
+`scale_factor()` と `inner_position()` で画面上の物理 px に写す（CSS px をそのまま
+物理 px として使うと DPI ≠ 100% でずれる）。Tauri の `set_size` はクライアント寸法
+（tao `set_inner_size`）、`set_position` は外枠位置なので、復元後に
+`inner_position() − outer_position()` を実測してタイトルバー・境界分を差し引く。
+最大化中の枠オフセットは復元後と異なる（Windows は最大化時に境界を画面外へ押し出す）
+ため、復元**後**に測る。
+
+**画面より大きいウインドウ**。サイズ変更可能なウインドウは `WM_GETMINMAXINFO` の既定
+`ptMaxTrackSize`（仮想スクリーン + 枠）で `SetWindowPos` の寸法も切り詰められる。
+tao は `max_size` が設定されているときだけ `ptMaxTrackSize` を上書きするので、
+`set_size` の前に目標寸法以上の `set_max_size` を与える。
+
+**画面内へクランプしない**。位置一致を優先する。上端がはみ出してタイトルバーが
+届かなくなっても、Windows 11（26200 で 2026-09-06 に実測: 標準フレームのウインドウを
+y = −150 に置き、左端のリサイズ境界をクリックのみ / 20px ドラッグ → いずれも
+上端が y = 0 に揃った）はリサイズ境界の操作で上端をスクリーンに揃えるため、
+アプリ側の補正は不要。Picasa も同じ復帰手段に依存している。
+
+**ウインドウ表示中のレイアウト**。ストアの `view.windowed` が真の間はサムネイルバーを
+除外せず、マージン 0 でクライアント領域全体に中央配置する（`viewerLayoutArea`）。
+既定の「バーの上 + 20px マージン」のままだと、リサイズ直後の `resize` イベントが
+画像を 40px 上へ寄せ、位置一致が壊れる。フラグは `resizeToImage` 成功時にだけ立て、
+最大化 / フルスクリーンで下ろす。手動の「元のサイズに戻す」では立てない: 起動直後は
+`get_window_state` の IPC が返るまで `isMaximized` が偽なので、非最大化 = ウインドウ表示
+と定義すると起動時の fit がレイアウト面の広い方で計算され、最大化確定後にその
+ズームのまま残る競合が生じる。
+
+参照元: `src/utils/windowedGeometry.ts`（`windowedClientBox`）、
+`src/utils/viewerLayout.ts`（`viewerLayoutArea`）、
+`src/store/index.ts`（`resizeToImage` / `leaveWindowedView`）、
+`src-tauri/src/commands/window.rs`（`resize_window_to_image`）

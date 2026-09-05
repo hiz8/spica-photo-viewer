@@ -15,34 +15,38 @@ import { effectiveTier } from "../utils/bitmapCache";
 import { displayTierOf } from "../utils/displayTier";
 import { getFilename, getFolderPath } from "../utils/path";
 import { perfEvent, perfMark } from "../utils/perf";
+import {
+  centeredPosition,
+  fitZoom,
+  viewerLayoutArea,
+} from "../utils/viewerLayout";
+import { windowedClientBox } from "../utils/windowedGeometry";
 
-const THUMBNAIL_BAR_HEIGHT = 80;
+const layoutArea = (windowed: boolean) =>
+  viewerLayoutArea(window.innerWidth, window.innerHeight, windowed);
 
-const calculateFitToWindowZoom = (
-  imageWidth: number,
-  imageHeight: number,
-): number => {
-  const MARGIN = 20;
-  const MIN_DIMENSION = 1; // Minimum to prevent division by zero
-
-  const validImageWidth = Math.max(MIN_DIMENSION, imageWidth);
-  const validImageHeight = Math.max(MIN_DIMENSION, imageHeight);
-
-  const windowWidth = Math.max(MIN_DIMENSION, window.innerWidth);
-  const windowHeight = Math.max(MIN_DIMENSION, window.innerHeight);
-
-  const availableWidth = Math.max(MIN_DIMENSION, windowWidth - MARGIN * 2);
-  const availableHeight = Math.max(
-    MIN_DIMENSION,
-    windowHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2,
-  );
-
-  const scaleX = availableWidth / validImageWidth;
-  const scaleY = availableHeight / validImageHeight;
-  const fitScale = Math.min(scaleX, scaleY);
-  // Only scale down if image is larger than available space
-  // Clamp to minimum 10% for very large images or very small windows
-  return fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+// Maximize/fullscreen ends windowed mode. The image is re-centered above the
+// bar here, with its zoom kept, because the window's resize event may have run
+// before the mode flag changed and laid it out for the wrong area.
+const leaveWindowedView = (
+  state: AppState,
+  patch: Partial<ViewState>,
+): ViewState => {
+  const view = { ...state.view, ...patch };
+  if (!state.view.windowed) {
+    return view;
+  }
+  const { imageWidth, imageHeight } = state.view;
+  const position =
+    imageWidth !== undefined && imageHeight !== undefined
+      ? centeredPosition(layoutArea(false), imageWidth, imageHeight)
+      : undefined;
+  return {
+    ...view,
+    windowed: false,
+    imageLeft: position?.left ?? view.imageLeft,
+    imageTop: position?.top ?? view.imageTop,
+  };
 };
 
 export const thumbnailToImageData = (
@@ -132,6 +136,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     panY: 0,
     isFullscreen: false,
     isMaximized: false,
+    windowed: false,
     thumbnailOpacity: 0.5,
   },
   cache: {
@@ -231,18 +236,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   setFullscreen: (isFullscreen) =>
-    set((state) =>
-      state.view.isFullscreen === isFullscreen
-        ? state
-        : { view: { ...state.view, isFullscreen } },
-    ),
+    set((state) => {
+      if (state.view.isFullscreen === isFullscreen) {
+        return state;
+      }
+      return {
+        view: isFullscreen
+          ? leaveWindowedView(state, { isFullscreen })
+          : { ...state.view, isFullscreen },
+      };
+    }),
 
   setMaximized: (isMaximized) =>
-    set((state) =>
-      state.view.isMaximized === isMaximized
-        ? state
-        : { view: { ...state.view, isMaximized } },
-    ),
+    set((state) => {
+      if (state.view.isMaximized === isMaximized) {
+        return state;
+      }
+      return {
+        view: isMaximized
+          ? leaveWindowedView(state, { isMaximized })
+          : { ...state.view, isMaximized },
+      };
+    }),
 
   setThumbnailOpacity: (opacity) =>
     set((state) => ({
@@ -357,23 +372,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
           thumbnailFallback: thumbnailDisplayed,
         });
 
+        const area = layoutArea(state.view.windowed);
         let viewZoom = savedViewState?.zoom ?? 100;
         if (imageData && imageData.width > 0 && !savedViewState) {
-          viewZoom = calculateFitToWindowZoom(
-            imageData.width,
-            imageData.height,
-          );
+          viewZoom = fitZoom(area, imageData.width, imageData.height);
         }
 
         let viewImagePosition = {};
         if (imageData && imageData.width > 0) {
-          const containerWidth = window.innerWidth;
-          const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
-          const centerX = (containerWidth - imageData.width) / 2;
-          const centerY = (containerHeight - imageData.height) / 2;
+          const { left, top } = centeredPosition(
+            area,
+            imageData.width,
+            imageData.height,
+          );
           viewImagePosition = {
-            imageLeft: centerX,
-            imageTop: centerY,
+            imageLeft: left,
+            imageTop: top,
             imageWidth: imageData.width,
             imageHeight: imageData.height,
           };
@@ -546,24 +560,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   fitToWindow: (imageWidth, imageHeight, preserveZoom = false) => {
-    const fitZoom = calculateFitToWindowZoom(imageWidth, imageHeight);
-
-    // Calculate center position for the original image (before CSS scaling)
-    // CSS transform will scale from the center (transform-origin: center)
-    const containerWidth = window.innerWidth;
-    const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
-
-    const centerX = (containerWidth - imageWidth) / 2;
-    const centerY = (containerHeight - imageHeight) / 2;
+    const area = layoutArea(get().view.windowed);
+    const zoom = fitZoom(area, imageWidth, imageHeight);
+    const { left, top } = centeredPosition(area, imageWidth, imageHeight);
 
     set((state) => ({
       view: {
         ...state.view,
-        zoom: preserveZoom ? state.view.zoom : fitZoom,
+        zoom: preserveZoom ? state.view.zoom : zoom,
         panX: preserveZoom ? state.view.panX : 0,
         panY: preserveZoom ? state.view.panY : 0,
-        imageLeft: centerX,
-        imageTop: centerY,
+        imageLeft: left,
+        imageTop: top,
         imageWidth,
         imageHeight,
       },
@@ -787,16 +795,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }),
 
   updateImageDimensions: (imageWidth, imageHeight) => {
-    const containerWidth = window.innerWidth;
-    const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
-    const centerX = (containerWidth - imageWidth) / 2;
-    const centerY = (containerHeight - imageHeight) / 2;
+    const { left, top } = centeredPosition(
+      layoutArea(get().view.windowed),
+      imageWidth,
+      imageHeight,
+    );
 
     set((state) => ({
       view: {
         ...state.view,
-        imageLeft: centerX,
-        imageTop: centerY,
+        imageLeft: left,
+        imageTop: top,
         imageWidth,
         imageHeight,
       },
@@ -804,53 +813,49 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   resizeToImage: async () => {
+    const { view, currentImage } = get();
+    if (!view.isMaximized || view.isFullscreen || !currentImage.data) {
+      return;
+    }
+
+    const { width, height } = currentImage.data;
+    const box = windowedClientBox({
+      imageWidth: width,
+      imageHeight: height,
+      zoom: view.zoom,
+      imageLeft: view.imageLeft ?? 0,
+      imageTop: view.imageTop ?? 0,
+      panX: view.panX,
+      panY: view.panY,
+    });
+
     try {
-      const state = get();
-
-      if (
-        !state.view.isMaximized ||
-        state.view.isFullscreen ||
-        !state.currentImage.data
-      ) {
-        return;
-      }
-
-      const { width, height } = state.currentImage.data;
-      const currentZoom = state.view.zoom;
-
-      const imageElement = document.querySelector(
-        ".image-viewer img",
-      ) as HTMLImageElement;
-      if (imageElement) {
-        const rect = imageElement.getBoundingClientRect();
-
-        const imageScreenCenterX = rect.left + rect.width / 2;
-        const imageScreenCenterY = rect.top + rect.height / 2;
-
-        await invoke("resize_window_to_image", {
-          imageWidth: width,
-          imageHeight: height,
-          zoomPercent: currentZoom,
-          imageScreenCenterX: imageScreenCenterX,
-          imageScreenCenterY: imageScreenCenterY,
-          disableAnimation: true,
-        });
-
-        // Update maximized state and reset pan values to center the image in new window
-        set((state) => ({
-          view: {
-            ...state.view,
-            isMaximized: false,
-            panX: 0,
-            panY: 0,
-          },
-        }));
-      } else {
-        console.error("Could not find image element for positioning");
-      }
+      await invoke("resize_window_to_image", {
+        clientLeft: box.left,
+        clientTop: box.top,
+        clientWidth: box.width,
+        clientHeight: box.height,
+      });
     } catch (error) {
       console.error("Failed to resize window to image size:", error);
+      return;
     }
+
+    // The window's resize event may fire before or after this point; either
+    // way the final layout must be the whole-client-area one, so re-center
+    // here as well (the event's fitToWindow sees `windowed` once it is set).
+    const { left, top } = centeredPosition(layoutArea(true), width, height);
+    set((state) => ({
+      view: {
+        ...state.view,
+        isMaximized: false,
+        windowed: true,
+        panX: 0,
+        panY: 0,
+        imageLeft: left,
+        imageTop: top,
+      },
+    }));
   },
 
   openFileDialog: async () => {

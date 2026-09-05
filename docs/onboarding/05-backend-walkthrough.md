@@ -305,21 +305,20 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 最大化中・フルスクリーン中かを `WindowState` 構造体で返します。フロントは `useWindowState.ts:15` で起動時にこれを呼び、初期状態を取得します。
 
-### `resize_window_to_image` (39-103 行目)
+### `resize_window_to_image`
 
-このプロジェクトで一番複雑なコマンドです。「最大化されたウィンドウを、表示中の画像にぴったり合うサイズに縮める」処理を行います。
+このプロジェクトで一番複雑なコマンドです。「最大化されたウィンドウを、表示中の画像にぴったり合うサイズに縮め、画像の画面上の位置を変えない」処理を行います（Picasa の画像外クリック）。
+
+「どのサイズ・どの位置にするか」はフロント側の純関数 `src/utils/windowedGeometry.ts` が決め、このコマンドは受け取ったクライアント領域（CSS px、現在のビューポート座標）を物理 px に写してウィンドウを動かすだけです。
 
 ロジックの大筋:
 
-1. 最大化されていなければ早期 return (`57-59 行目`)
-2. ズーム率を考慮した「表示画像サイズ」を計算 (`61-63 行目`)
-3. UI 余白 (40px 横、80px 縦 — サムネイルバー分) を加算 (`65-70 行目`)
-4. ウィンドウを `unmaximize()` してから `set_size()`
-5. 画像が画面内のどの位置にいたかを基に新しいウィンドウ位置を計算
-6. プライマリモニターのサイズ取得 → 画面外にはみ出さないようにクランプ
-7. `set_position()`
+1. 最大化されていなければ早期 return
+2. `scale_factor()` と `inner_position()` で、CSS px の箱を画面上の物理 px に変換（`physical_client_target`）
+3. `unmaximize()` → `set_max_size()` → `set_size()`。`set_max_size` は画面より大きいウィンドウを OS の `WM_GETMINMAXINFO` 既定値が切り詰めるのを防ぐため
+4. 復元後の枠オフセット（`inner_position() - outer_position()`）を実測し、`set_position()` に渡す外枠位置を求める（`outer_position_for`）。`set_size` はクライアント寸法、`set_position` は外枠位置という非対称があるため、タイトルバー分を差し引かないと画像がその分ずれる
 
-`_disable_animation: Option<bool>` 引数は IPC 互換のためにシグネチャに残してありますが、現在は値を参照していません。以前は「アニメーションを抑制する/しない」で 2 分岐していましたが、フロント側 (`store/index.ts:742`) が常に `true` を渡し、しかも両分岐の処理内容が同一だったため、リファクタで分岐ごと削除しました。先頭のアンダースコアは Rust の慣用で「意図的に未使用」を表す印で、Tauri が JS キーへ変換するときに使う `heck` クレートはアンダースコアを区切り扱いするので、JS 側のキーは引き続き `disableAnimation` のまま（`_disable_animation` → `disableAnimation`）です。
+画面内へのクランプは行いません。根拠は `docs/code-rationale.md#W1`。
 
 ### `maximize_window` (118-128 行目)
 

@@ -24,7 +24,16 @@ export interface SpicaTestHooks {
   /** Drops decoded bitmaps + cache.preloaded (thumbnails/disk cache stay). */
   evictDecoded: () => { evictedBitmaps: number; evictedPreloaded: number };
   zoomIn: () => void;
+  zoomOut: () => void;
   resetZoom: () => void;
+  getView: () => {
+    zoom: number;
+    isMaximized: boolean;
+    isFullscreen: boolean;
+    windowed: boolean;
+  };
+  /** The outside-click action (for when the image leaves no background to click). */
+  resizeToImage: () => Promise<void>;
 }
 
 export interface PerfEntry {
