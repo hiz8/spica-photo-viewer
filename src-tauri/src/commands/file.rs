@@ -102,6 +102,18 @@ pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
         return Err("Invalid folder path".to_string());
     }
 
+    // The startup prefetch may have scanned (and sort-probed) this folder already.
+    if let Some(prefetched) = crate::commands::startup::take_folder(folder_path) {
+        crate::utils::perf::phase("folder_scan_prefetched", "");
+        return prefetched;
+    }
+
+    scan_folder(folder_path, &path)
+}
+
+/// Enumerates `folder_path`'s images in Explorer's display order. `path` is
+/// the same folder as a string, for the perf log only.
+pub fn scan_folder(folder_path: &Path, path: &str) -> Result<Vec<ImageInfo>, String> {
     crate::utils::perf::phase("folder_scan_start", "");
     let t_scan = std::time::Instant::now();
 
@@ -188,9 +200,25 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn get_startup_file() -> Result<Option<String>, String> {
+pub fn get_startup_file() -> Result<Option<StartupFile>, String> {
     crate::utils::perf::phase("get_startup_file", "");
-    Ok(startup_file_from_args())
+    Ok(startup_file_from_args().map(|path| {
+        let thumbnail = crate::commands::startup::take_thumbnail(&path);
+        crate::utils::perf::phase(
+            "get_startup_file_end",
+            &format!(r#","thumb":{}"#, thumbnail.is_some()),
+        );
+        StartupFile { path, thumbnail }
+    }))
+}
+
+#[derive(Debug, Serialize)]
+pub struct StartupFile {
+    pub path: String,
+    /// Thumbnail prepared by the startup prefetch when it finished in time;
+    /// its preview is then on disk too (preview I1), so the frontend can
+    /// seed its thumbnail cache and take the preview route for first paint.
+    pub thumbnail: Option<crate::commands::startup::PrefetchedThumbnail>,
 }
 
 /// The image passed on the command line (file association), if any.

@@ -10,12 +10,19 @@ import { useKeyboard } from "./hooks/useKeyboard";
 import { useCacheManager } from "./hooks/useCacheManager";
 import { useWindowState } from "./hooks/useWindowState";
 import { useAppStore } from "./store";
+import type { StartupFile } from "./types";
 import { perfMark } from "./utils/perf";
 import "./App.css";
 
 const App: React.FC = () => {
-  const { ui, currentImage, view, openImageFromPath, setCheckingStartupFile } =
-    useAppStore();
+  const {
+    ui,
+    currentImage,
+    view,
+    openImageFromPath,
+    setCachedThumbnail,
+    setCheckingStartupFile,
+  } = useAppStore();
 
   useKeyboard();
   useCacheManager();
@@ -26,11 +33,20 @@ const App: React.FC = () => {
     const checkStartupFile = async () => {
       try {
         perfMark("app:startup_check");
-        const startupFile = await invoke<string | null>("get_startup_file");
-        perfMark("app:startup_file", { path: startupFile });
-        if (startupFile) {
-          console.log("Opening startup file:", startupFile);
-          await openImageFromPath(startupFile);
+        const startup = await invoke<StartupFile | null>("get_startup_file");
+        perfMark("app:startup_file", {
+          path: startup?.path ?? null,
+          thumb: !!startup?.thumbnail,
+        });
+        if (startup) {
+          console.log("Opening startup file:", startup.path);
+          // A prefetched thumbnail means its preview is on disk (I1): seeding
+          // the cache lets the viewer paint the preview instead of decoding
+          // the full-resolution original.
+          if (startup.thumbnail) {
+            setCachedThumbnail(startup.path, startup.thumbnail);
+          }
+          await openImageFromPath(startup.path);
         }
       } catch (error) {
         console.error("Failed to check startup file:", error);
@@ -40,7 +56,7 @@ const App: React.FC = () => {
     };
 
     checkStartupFile();
-  }, [openImageFromPath, setCheckingStartupFile]);
+  }, [openImageFromPath, setCachedThumbnail, setCheckingStartupFile]);
 
   return (
     <div

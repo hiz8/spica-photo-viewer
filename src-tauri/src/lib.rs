@@ -35,7 +35,18 @@ pub fn run() {
             // window would first show at 800x600 and jump only when the
             // frontend calls maximize_window ~500ms later (after WebView2
             // init + page load + React mount).
-            let maximized = commands::file::startup_file_from_args().is_some();
+            let startup_file = commands::file::startup_file_from_args();
+            if let Some(path) = &startup_file {
+                // Overlaps the WebView2 init that window creation blocks on.
+                let screen = app
+                    .primary_monitor()
+                    .ok()
+                    .flatten()
+                    .map(|m| (m.size().width, m.size().height))
+                    .unwrap_or((0, 0));
+                commands::startup::start(path, screen);
+            }
+            let maximized = startup_file.is_some();
             let config = app
                 .config()
                 .app
