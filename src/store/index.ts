@@ -57,9 +57,28 @@ const suppressedTransitionUi = (
   };
 };
 
+// Layout position of the image currently shown for the given mode; nothing to
+// change while no image data is loaded (its load will fit it).
+const centeredCurrentImage = (
+  state: AppState,
+  windowed: boolean,
+): Pick<ViewState, "imageLeft" | "imageTop"> | undefined => {
+  const data = state.currentImage.data;
+  if (!data) {
+    return undefined;
+  }
+  const { left, top } = centeredPosition(
+    layoutArea(windowed),
+    data.width,
+    data.height,
+  );
+  return { imageLeft: left, imageTop: top };
+};
+
 // Maximize/fullscreen ends windowed mode. The image is re-centered above the
-// bar here, with its zoom kept, because the window's resize event may have run
-// before the mode flag changed and laid it out for the wrong area.
+// bar here, with its zoom and pan kept as on any other resize, because the
+// window's resize event may have run before the mode flag changed and laid it
+// out for the wrong area.
 const leaveWindowedView = (
   state: AppState,
   patch: Partial<ViewState>,
@@ -68,17 +87,7 @@ const leaveWindowedView = (
   if (!state.view.windowed) {
     return view;
   }
-  const { imageWidth, imageHeight } = state.view;
-  const position =
-    imageWidth !== undefined && imageHeight !== undefined
-      ? centeredPosition(layoutArea(false), imageWidth, imageHeight)
-      : undefined;
-  return {
-    ...view,
-    windowed: false,
-    imageLeft: position?.left ?? view.imageLeft,
-    imageTop: position?.top ?? view.imageTop,
-  };
+  return { ...view, windowed: false, ...centeredCurrentImage(state, false) };
 };
 
 export const thumbnailToImageData = (
@@ -895,16 +904,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
           // Navigated meanwhile: that image was laid out with the windowed
           // rule while the window stayed maximized, so re-fit it instead of
           // restoring this call's snapshot.
-          const data = state.currentImage.data;
-          const position = data
-            ? centeredPosition(layoutArea(false), data.width, data.height)
-            : undefined;
           return {
             view: {
               ...state.view,
               windowed: false,
-              imageLeft: position?.left ?? state.view.imageLeft,
-              imageTop: position?.top ?? state.view.imageTop,
+              ...centeredCurrentImage(state, false),
             },
           };
         });
@@ -919,18 +923,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // pan), so its pan is kept and re-centering it is idempotent.
       set((state) => {
         const sameImage = state.currentImage.path === currentImage.path;
-        const data = state.currentImage.data;
-        const position = data
-          ? centeredPosition(layoutArea(true), data.width, data.height)
-          : undefined;
         return {
           view: {
             ...state.view,
             isMaximized: false,
             windowed: true,
             ...(sameImage ? { panX: 0, panY: 0 } : {}),
-            imageLeft: position?.left ?? state.view.imageLeft,
-            imageTop: position?.top ?? state.view.imageTop,
+            ...centeredCurrentImage(state, true),
           },
         };
       });

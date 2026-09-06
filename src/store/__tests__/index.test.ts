@@ -2337,6 +2337,26 @@ describe("AppStore", () => {
       expect([view.imageLeft, view.imageTop]).toEqual([-40, 0]);
     });
 
+    it("keeps the pan when leaving windowed mode, like any other resize", () => {
+      showMaximized();
+      useAppStore.setState((state) => ({
+        view: {
+          ...state.view,
+          isMaximized: false,
+          windowed: true,
+          panX: 30,
+          panY: -10,
+        },
+      }));
+      setWindowSize(1920, 1080);
+
+      useAppStore.getState().setMaximized(true);
+
+      const { view } = useAppStore.getState();
+      expect([view.panX, view.panY]).toEqual([30, -10]);
+      expect([view.imageLeft, view.imageTop]).toEqual([-40, 0]);
+    });
+
     it("leaves windowed mode when entering fullscreen", () => {
       showMaximized();
       useAppStore.setState((state) => ({
