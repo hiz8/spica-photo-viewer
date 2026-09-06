@@ -17,6 +17,7 @@ describe("testHooks", () => {
     useAppStore.getState().setThumbnailDisplayed(false);
     useAppStore.getState().setImageData(null);
     useAppStore.getState().setZoom(100);
+    useAppStore.getState().setMaximized(false);
   });
 
   it("installs window.__SPICA_TEST__ when perf is enabled", () => {
@@ -127,11 +128,13 @@ describe("testHooks", () => {
     });
   });
 
-  it("resizeToImage forwards to the store action", () => {
+  it("resizeToImage forwards to the store action", async () => {
     _setPerfEnabledForTests(true);
     installTestHooks();
     expect(typeof window.__SPICA_TEST__?.resizeToImage).toBe("function");
-    // Not maximized: the store action returns without touching the backend.
-    expect(window.__SPICA_TEST__?.resizeToImage()).resolves.toBeUndefined();
+    // No image loaded: the store action returns without touching the backend.
+    await expect(
+      window.__SPICA_TEST__?.resizeToImage(),
+    ).resolves.toBeUndefined();
   });
 });

@@ -26,6 +26,8 @@ const MIN_WINDOWED_WIDTH = 544;
 const NATURAL_WIDTH = 1024;
 /** Fixed bar the maximized layout centers above (src/utils/viewerLayout.ts). */
 const THUMBNAIL_BAR_HEIGHT = 80;
+/** Covers a slow restore; the resize itself completes within ~100ms. */
+const FRAME_RECORD_BUDGET_MS = 3_000;
 
 interface Snapshot {
   innerWidth: number;
@@ -239,9 +241,12 @@ interface FrameSample {
  * changes" is asserted on these rather than on the settled state.
  */
 const recordFrames = (): Promise<void> =>
-  browser.execute(() => {
+  browser.execute((budgetMs: number) => {
     const w = window as Window & { __FRAMES__?: FrameSample[] };
     w.__FRAMES__ = [];
+    // Time-based rather than a frame count so a high-refresh display or a
+    // slow restore cannot end the recording before the window has resized.
+    const until = performance.now() + budgetMs;
     const tick = () => {
       const el =
         document.querySelector(".image-viewer canvas") ??
@@ -252,12 +257,12 @@ const recordFrames = (): Promise<void> =>
         left: r?.left ?? Number.NaN,
         top: r?.top ?? Number.NaN,
       });
-      if ((w.__FRAMES__?.length ?? 0) < 120) {
+      if (performance.now() < until) {
         requestAnimationFrame(tick);
       }
     };
     requestAnimationFrame(tick);
-  });
+  }, FRAME_RECORD_BUDGET_MS);
 
 const recordedFrames = async (): Promise<FrameSample[]> =>
   JSON.parse(
@@ -284,7 +289,11 @@ const expectImageSettledWithWindow = (
   const resized = frames.findIndex(
     (f) => Math.abs(f.innerWidth - finalWidth) <= SIZE_TOLERANCE_PX,
   );
-  expect(resized).toBeGreaterThanOrEqual(0);
+  if (resized < 0) {
+    throw new Error(
+      `window never reached width ${finalWidth} within the ${FRAME_RECORD_BUDGET_MS}ms frame recording (${frames.length} frames)`,
+    );
+  }
   const settled = frames.findIndex(
     (f, i) =>
       i >= resized &&

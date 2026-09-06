@@ -2122,6 +2122,29 @@ describe("AppStore", () => {
       expect(useAppStore.getState().view.windowed).toBe(true);
     });
 
+    it("re-asserts windowed mode after a stale maximize report during the IPC", async () => {
+      showMaximized();
+      let settle: () => void = () => {};
+      mockInvoke.mockReturnValue(
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      );
+
+      const pending = useAppStore.getState().resizeToImage();
+      // The unmaximize event, then a get_window_state response that was
+      // already in flight before the click and still says "maximized".
+      useAppStore.getState().setMaximized(false);
+      useAppStore.getState().setMaximized(true);
+      expect(useAppStore.getState().view.windowed).toBe(false);
+      settle();
+      await pending;
+
+      const { view } = useAppStore.getState();
+      expect(view.windowed).toBe(true);
+      expect(view.isMaximized).toBe(false);
+    });
+
     it("folds the pan into the layout before the backend responds", async () => {
       showMaximized();
       let settle: () => void = () => {};

@@ -25,9 +25,8 @@ import { windowedClientBox } from "../utils/windowedGeometry";
 const layoutArea = (windowed: boolean) =>
   viewerLayoutArea(window.innerWidth, window.innerHeight, windowed);
 
-// Suppresses the transform transition for SUPPRESS_TRANSITION_MS. The timer
-// is replaced rather than stacked so back-to-back callers extend the window
-// instead of an older timer ending a newer suppression early.
+// The timer is replaced rather than stacked so back-to-back callers extend the
+// suppression instead of an older timer ending a newer one early.
 const suppressedTransitionUi = (
   ui: AppState["ui"],
   set: (partial: Partial<AppState>) => void,
@@ -879,12 +878,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return;
     }
 
-    // Re-center here as well in case the resize event fired before the flag.
+    // Re-center here as well in case the resize event fired before the flag,
+    // and re-assert the flag: a get_window_state reply that was in flight
+    // before the click can still report "maximized" and clear it meanwhile.
     const { left, top } = centeredPosition(layoutArea(true), width, height);
     set((state) => ({
       view: {
         ...state.view,
         isMaximized: false,
+        windowed: true,
         panX: 0,
         panY: 0,
         imageLeft: left,

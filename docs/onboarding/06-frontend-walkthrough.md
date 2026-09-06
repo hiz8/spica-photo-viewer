@@ -266,7 +266,7 @@ if (cachedImage && cachedImage.format !== "error") {
 | `get_cache_stats` (`commands/cache.rs:180`) | `useCacheManager.ts:17` | なし | `Record<string, number>` |
 | `get_window_state` (`commands/window.rs:20`) | `useWindowState.ts:15` | なし (`AppHandle` は自動注入) | `{ is_maximized, is_fullscreen }` |
 | `maximize_window` (`commands/window.rs:118`) | `store/index.ts:559` | なし | `void` |
-| `resize_window_to_image` (`commands/window.rs:40`) | `store/index.ts:736` | `{ imageWidth, imageHeight, zoomPercent, imageScreenCenterX, imageScreenCenterY, disableAnimation }` (※ `disableAnimation` はバックエンドで現在使われていないが、IPC 互換のため受け取り続けている) | `void` |
+| `resize_window_to_image` (`commands/window.rs`) | `store/index.ts` の `resizeToImage` | `{ clientLeft, clientTop, clientWidth, clientHeight }`（CSS px のクライアント領域。算出は `utils/windowedGeometry.ts`、根拠は `docs/code-rationale.md#W1`） | `void` |
 | `open_with_dialog` (`commands/file.rs:230`) | `store/index.ts:830` | `{ path: string }` | `void` |
 
 未使用 (登録のみ):

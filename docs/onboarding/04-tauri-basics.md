@@ -215,9 +215,9 @@ const images = await invoke<ImageInfo[]>("get_folder_images", {
 | --- | --- |
 | `path: String` | `{ path: "..." }` |
 | `size: Option<u32>` | `{ size: 30 }` または `{ size: null }` |
-| `image_width: u32` | `{ imageWidth: 100 }` ← **snake_case の引数名に対応する camelCase で渡せる** |
+| `client_left: f64` | `{ clientLeft: 790 }` ← **snake_case の引数名に対応する camelCase で渡せる** |
 
-`commands/window.rs:42-47` の `resize_window_to_image` がよい例です:
+`commands/window.rs` の `resize_window_to_image` がよい例です:
 
 ```rust
 pub async fn resize_window_to_image(
@@ -270,10 +270,11 @@ pub async fn get_window_position(app_handle: AppHandle) -> Result<WindowPosition
 
 `WebviewWindow` には以下のようなメソッドが生えています。
 
-- `is_maximized()`、`is_fullscreen()` (`commands/window.rs:25-31`)
-- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`commands/window.rs:76-100`)
-- `maximize()`、`unmaximize()` (`commands/window.rs:124`、`commands/window.rs:73`)
-- `primary_monitor()` (画面サイズ取得、`commands/window.rs:85`)
+- `is_maximized()`、`is_fullscreen()` (`get_window_state`)
+- `scale_factor()`、`inner_position()`、`outer_position()`、`inner_size()` (`resize_window_to_image`: CSS px → 物理 px の変換と復元結果の検証)
+- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`restore_onto` の補正パス)
+- `maximize()`、`unmaximize()` (`maximize_window`、`restore_onto`)
+- `hwnd()` (Windows 専用。`native` モジュールで `SetWindowPlacement` / `DwmSetWindowAttribute` に渡す)
 
 詳細は Tauri 公式ドキュメントを参照: https://docs.rs/tauri/latest/tauri/window/struct.WebviewWindow.html
 

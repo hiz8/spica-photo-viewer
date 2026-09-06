@@ -97,7 +97,7 @@ spica-photo-viewer/
 
   - Default: Fullscreen when opened via file
   - Minimal size when opened standalone
-  - No minimum size restrictions
+  - No minimum size restrictions (the 544px figure under Mouse Controls is the size chosen on entering windowed mode, not a limit on manual resizing)
   - Windowed mode sized to the image after clicking outside it (see Mouse Controls)
 
 - **Image Display Area** (90% of window):

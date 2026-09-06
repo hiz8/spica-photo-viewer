@@ -46,6 +46,7 @@ pub(crate) struct ClientBox {
 }
 
 /// Physical screen-space rectangle (left/top inclusive, right/bottom exclusive).
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) struct Rect {
     pub left: i32,
@@ -55,6 +56,7 @@ pub(crate) struct Rect {
 }
 
 /// Thickness of the restored window's frame on each side of the client area.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FrameInsets {
     pub left: i32,
@@ -64,8 +66,9 @@ pub(crate) struct FrameInsets {
 }
 
 /// Max inner size given to the window builder: well above any monitor so the
-/// OS max tracking size never trims a zoomed-in image's window, yet with room
-/// under the 16-bit width/height packing of WM_SIZE at 200% DPI. It must be a
+/// OS max tracking size never trims a zoomed-in image's window, yet under the
+/// 16-bit width/height packing of WM_SIZE up to 200% DPI (at higher scales
+/// only a window that actually reaches the ceiling is affected). It must be a
 /// builder attribute: tao's `set_max_size` re-applies the current size through
 /// `set_inner_size`, which un-maximizes the window (docs/code-rationale.md#W1).
 pub const MAX_TRACK_LOGICAL_PX: f64 = 32_000.0;
@@ -82,7 +85,10 @@ pub(crate) fn physical_client_target(
     let y = (inner_origin.y as f64 + client.top * scale).round() as i32;
     let width = (client.width * scale).round().max(1.0) as u32;
     let height = (client.height * scale).round().max(1.0) as u32;
-    (PhysicalPosition::new(x, y), PhysicalSize::new(width, height))
+    (
+        PhysicalPosition::new(x, y),
+        PhysicalSize::new(width, height),
+    )
 }
 
 /// Outer position that puts the client area at `inner_target`. `set_position`
@@ -100,6 +106,7 @@ pub(crate) fn outer_position_for(
 }
 
 /// Outer rectangle whose client area is exactly `size` at `inner_target`.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn restored_outer_rect(
     inner_target: PhysicalPosition<i32>,
     size: PhysicalSize<u32>,
@@ -116,6 +123,7 @@ pub(crate) fn restored_outer_rect(
 /// `WINDOWPLACEMENT.rcNormalPosition` is in workspace coordinates, which
 /// differ from screen coordinates by the primary work area's origin (a
 /// taskbar docked at the top or left shifts them).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn to_workspace(rect: Rect, work_area_origin: PhysicalPosition<i32>) -> Rect {
     Rect {
         left: rect.left - work_area_origin.x,
@@ -314,9 +322,10 @@ pub async fn resize_window_to_image(
     native::set_transitions_disabled(hwnd, true)?;
     let placed = restore_onto(&window, target_inner, size, scale);
     // Re-enable before reporting so a failed restore never leaves the window
-    // without its minimize/maximize animations.
+    // without its minimize/maximize animations; a restore error is the more
+    // useful one to report, so it takes precedence over a re-enable error.
     #[cfg(windows)]
-    native::set_transitions_disabled(hwnd, false)?;
+    let placed = placed.and(native::set_transitions_disabled(hwnd, false));
     placed
 }
 

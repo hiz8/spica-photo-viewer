@@ -323,7 +323,7 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 画面内へのクランプは行いません。根拠は `docs/code-rationale.md#W1`。
 
-### `maximize_window` (118-128 行目)
+### `maximize_window`
 
 シンプルにウィンドウを最大化。`store/index.ts:572` で「画像を開いたときに自動最大化」のために呼ばれます。
 
@@ -337,7 +337,7 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 | --- | --- |
 | `commands/file.rs:40` | `Result<Vec<ImageInfo>, String>` |
 | `commands/cache.rs:180` | `Result<HashMap<String, u32>, String>` |
-| `commands/window.rs:40` | `Result<(), String>` |
+| `commands/window.rs` (`resize_window_to_image`) | `Result<(), String>` |
 
 エラーメッセージは英語の自然文で書かれます。フロント側では `try/catch` の `error` として受け取り、`store/index.ts:651` のように `new Error(...)` でラップして UI に表示されます。
 
