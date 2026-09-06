@@ -327,6 +327,8 @@ pub async fn resize_window_to_image(
     // Re-enable before reporting so a failed restore never leaves the window
     // without its minimize/maximize animations; a restore error is the more
     // useful one to report, so it takes precedence over a re-enable error.
+    // `and` (not `and_then`) evaluates its argument eagerly, so the re-enable
+    // call runs even when `placed` is an error.
     #[cfg(windows)]
     let placed = placed.and(native::set_transitions_disabled(hwnd, false));
     placed
