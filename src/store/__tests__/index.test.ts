@@ -2122,6 +2122,81 @@ describe("AppStore", () => {
       expect(useAppStore.getState().view.windowed).toBe(true);
     });
 
+    it("leaves a navigated image's layout alone when the resize resolves", async () => {
+      showMaximized();
+      let settle: () => void = () => {};
+      mockInvoke.mockReturnValue(
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      );
+      setWindowSize(1000, 500);
+
+      const pending = useAppStore.getState().resizeToImage();
+      // An arrow key during the IPC: the next image is shown and laid out
+      // (windowed rule, since the flag is already set) with its own pan.
+      useAppStore.setState((state) => ({
+        currentImage: {
+          ...state.currentImage,
+          path: "/test/next.jpg",
+          index: 1,
+          data: {
+            ...mockImageData,
+            path: "/test/next.jpg",
+            width: 1000,
+            height: 500,
+          },
+        },
+      }));
+      useAppStore.getState().fitToWindow(1000, 500);
+      useAppStore.getState().setPan(5, 5);
+      settle();
+      await pending;
+
+      const { view } = useAppStore.getState();
+      expect(view.windowed).toBe(true);
+      expect(view.isMaximized).toBe(false);
+      expect([view.imageLeft, view.imageTop]).toEqual([0, 0]);
+      expect([view.panX, view.panY]).toEqual([5, 5]);
+    });
+
+    it("re-fits a navigated image for the maximized area when the resize fails", async () => {
+      showMaximized();
+      let fail: (error: Error) => void = () => {};
+      mockInvoke.mockReturnValue(
+        new Promise<void>((_, reject) => {
+          fail = reject;
+        }),
+      );
+      setWindowSize(1920, 1080);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const pending = useAppStore.getState().resizeToImage();
+      useAppStore.setState((state) => ({
+        currentImage: {
+          ...state.currentImage,
+          path: "/test/next.jpg",
+          index: 1,
+          data: {
+            ...mockImageData,
+            path: "/test/next.jpg",
+            width: 1000,
+            height: 500,
+          },
+        },
+      }));
+      useAppStore.getState().fitToWindow(1000, 500);
+      fail(new Error("Window is not maximized"));
+      await pending;
+      errorSpy.mockRestore();
+
+      const { view } = useAppStore.getState();
+      expect(view.windowed).toBe(false);
+      // Centered above the bar: (1920 - 1000) / 2, ((1080 - 80) - 500) / 2
+      expect([view.imageLeft, view.imageTop]).toEqual([460, 250]);
+      expect([view.panX, view.panY]).toEqual([0, 0]);
+    });
+
     it("ignores a second click while the resize is in flight", async () => {
       showMaximized();
       let settle: () => void = () => {};

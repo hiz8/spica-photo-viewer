@@ -121,8 +121,9 @@ pub(crate) fn restored_outer_rect(
 }
 
 /// `WINDOWPLACEMENT.rcNormalPosition` is in workspace coordinates, which
-/// differ from screen coordinates by the primary work area's origin (a
-/// taskbar docked at the top or left shifts them).
+/// differ from screen coordinates by the PRIMARY work area's origin on every
+/// monitor (a taskbar docked at the top or left shifts them); a secondary
+/// monitor's own work area is not involved (measured, see W1).
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn to_workspace(rect: Rect, work_area_origin: PhysicalPosition<i32>) -> Rect {
     Rect {
@@ -197,6 +198,8 @@ mod native {
         })
     }
 
+    /// SPI_GETWORKAREA is the primary monitor's work area by definition, and
+    /// that is the origin workspace coordinates use on every monitor (W1).
     pub(super) fn work_area_origin() -> Result<PhysicalPosition<i32>, String> {
         let mut rect = RECT::default();
         unsafe {

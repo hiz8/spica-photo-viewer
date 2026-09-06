@@ -27,7 +27,9 @@ const layoutArea = (windowed: boolean) =>
 
 // isMaximized stays true until the resize IPC resolves, so a second outside
 // click in that window would pass resizeToImage's guard and its failure
-// path could undo the first call's state.
+// path could undo the first call's state. Other actions (navigation) are
+// not blocked; resizeToImage re-reads the current image when the IPC
+// settles instead.
 let resizeInFlight = false;
 
 // The timer is replaced rather than stacked so back-to-back callers extend the
@@ -877,35 +879,61 @@ export const useAppStore = create<AppStore>((set, get) => ({
         });
       } catch (error) {
         console.error("Failed to resize window to image size:", error);
-        set((state) => ({
-          view: {
-            ...state.view,
-            windowed: false,
-            imageLeft: view.imageLeft,
-            imageTop: view.imageTop,
-            panX,
-            panY,
-          },
-        }));
+        set((state) => {
+          if (state.currentImage.path === currentImage.path) {
+            return {
+              view: {
+                ...state.view,
+                windowed: false,
+                imageLeft: view.imageLeft,
+                imageTop: view.imageTop,
+                panX,
+                panY,
+              },
+            };
+          }
+          // Navigated meanwhile: that image was laid out with the windowed
+          // rule while the window stayed maximized, so re-fit it instead of
+          // restoring this call's snapshot.
+          const data = state.currentImage.data;
+          const position = data
+            ? centeredPosition(layoutArea(false), data.width, data.height)
+            : undefined;
+          return {
+            view: {
+              ...state.view,
+              windowed: false,
+              imageLeft: position?.left ?? state.view.imageLeft,
+              imageTop: position?.top ?? state.view.imageTop,
+            },
+          };
+        });
         return;
       }
 
       // Re-center here as well in case the resize event fired before the
       // flag, and re-assert the flag: a get_window_state reply that was in
       // flight before the click can still report "maximized" and clear it
-      // meanwhile.
-      const { left, top } = centeredPosition(layoutArea(true), width, height);
-      set((state) => ({
-        view: {
-          ...state.view,
-          isMaximized: false,
-          windowed: true,
-          panX: 0,
-          panY: 0,
-          imageLeft: left,
-          imageTop: top,
-        },
-      }));
+      // meanwhile. Read the image back from the state: an arrow key during
+      // the IPC has already laid the next image out (windowed rule, its own
+      // pan), so its pan is kept and re-centering it is idempotent.
+      set((state) => {
+        const sameImage = state.currentImage.path === currentImage.path;
+        const data = state.currentImage.data;
+        const position = data
+          ? centeredPosition(layoutArea(true), data.width, data.height)
+          : undefined;
+        return {
+          view: {
+            ...state.view,
+            isMaximized: false,
+            windowed: true,
+            ...(sameImage ? { panX: 0, panY: 0 } : {}),
+            imageLeft: position?.left ?? state.view.imageLeft,
+            imageTop: position?.top ?? state.view.imageTop,
+          },
+        };
+      });
     } finally {
       resizeInFlight = false;
     }
