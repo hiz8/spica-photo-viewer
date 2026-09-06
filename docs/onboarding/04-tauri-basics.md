@@ -215,32 +215,28 @@ const images = await invoke<ImageInfo[]>("get_folder_images", {
 | --- | --- |
 | `path: String` | `{ path: "..." }` |
 | `size: Option<u32>` | `{ size: 30 }` または `{ size: null }` |
-| `image_width: u32` | `{ imageWidth: 100 }` ← **snake_case の引数名に対応する camelCase で渡せる** |
+| `client_left: f64` | `{ clientLeft: 790 }` ← **snake_case の引数名に対応する camelCase で渡せる** |
 
-`commands/window.rs:42-47` の `resize_window_to_image` がよい例です:
+`commands/window.rs` の `resize_window_to_image` がよい例です:
 
 ```rust
 pub async fn resize_window_to_image(
     app_handle: AppHandle,
-    image_width: u32,
-    image_height: u32,
-    zoom_percent: f64,
-    image_screen_center_x: f64,
-    image_screen_center_y: f64,
-    _disable_animation: Option<bool>,
+    client_left: f64,
+    client_top: f64,
+    client_width: f64,
+    client_height: f64,
 ) -> Result<(), String> {
 ```
 
-これをフロントから呼ぶときは `src/store/index.ts:749-756`:
+これをフロントから呼ぶときは `src/store/index.ts` の `resizeToImage`:
 
 ```typescript
 await invoke("resize_window_to_image", {
-  imageWidth: width,
-  imageHeight: height,
-  zoomPercent: currentZoom,
-  imageScreenCenterX: imageScreenCenterX,
-  imageScreenCenterY: imageScreenCenterY,
-  disableAnimation: true,
+  clientLeft: box.left,
+  clientTop: box.top,
+  clientWidth: box.width,
+  clientHeight: box.height,
 });
 ```
 
@@ -274,10 +270,11 @@ pub async fn get_window_position(app_handle: AppHandle) -> Result<WindowPosition
 
 `WebviewWindow` には以下のようなメソッドが生えています。
 
-- `is_maximized()`、`is_fullscreen()` (`commands/window.rs:25-31`)
-- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`commands/window.rs:76-100`)
-- `maximize()`、`unmaximize()` (`commands/window.rs:124`、`commands/window.rs:73`)
-- `primary_monitor()` (画面サイズ取得、`commands/window.rs:85`)
+- `is_maximized()`、`is_fullscreen()` (`get_window_state`)
+- `scale_factor()`、`inner_position()`、`outer_position()`、`inner_size()` (`resize_window_to_image`: CSS px → 物理 px の変換と復元結果の検証)
+- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`restore_onto` の補正パス)
+- `maximize()`、`unmaximize()` (`maximize_window`、`restore_onto`)
+- `hwnd()` (Windows 専用。`native` モジュールで `SetWindowPlacement` / `DwmSetWindowAttribute` に渡す)
 
 詳細は Tauri 公式ドキュメントを参照: https://docs.rs/tauri/latest/tauri/window/struct.WebviewWindow.html
 
@@ -460,15 +457,14 @@ const unlistenUnmaximize = await window.listen("tauri://unmaximize", () => {
    // Rust 側 snake_case → JS 側で camelCase が要求される例
    // (resize_window_to_image は要件を満たすときだけ動くので、ここではあえてエラーを起こす)
    await invoke("resize_window_to_image", {
-     imageWidth: 100,
-     imageHeight: 100,
-     zoomPercent: 100,
-     imageScreenCenterX: 500,
-     imageScreenCenterY: 500,
+     clientLeft: 500,
+     clientTop: 300,
+     clientWidth: 800,
+     clientHeight: 600,
    });
    ```
 
-最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs:57-59`)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
+最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs` の `resize_window_to_image` 冒頭)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
 
 これにより:
 

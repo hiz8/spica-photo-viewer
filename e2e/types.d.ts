@@ -24,7 +24,18 @@ export interface SpicaTestHooks {
   /** Drops decoded bitmaps + cache.preloaded (thumbnails/disk cache stay). */
   evictDecoded: () => { evictedBitmaps: number; evictedPreloaded: number };
   zoomIn: () => void;
+  zoomOut: () => void;
   resetZoom: () => void;
+  /** Screen-px pan, as a drag would leave it (docs/code-rationale.md#Z1). */
+  setPan: (panX: number, panY: number) => void;
+  getView: () => {
+    zoom: number;
+    isMaximized: boolean;
+    isFullscreen: boolean;
+    windowed: boolean;
+  };
+  /** The outside-click action (for when the image leaves no background to click). */
+  resizeToImage: () => Promise<void>;
 }
 
 export interface PerfEntry {

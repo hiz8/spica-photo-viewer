@@ -76,6 +76,7 @@ export interface AppState {
     panY: number;
     isFullscreen: boolean;
     isMaximized: boolean;
+    windowed: boolean;
     thumbnailOpacity: number;
     imageLeft?: number;
     imageTop?: number;
@@ -108,6 +109,13 @@ export interface ViewState {
   panY: number;
   isFullscreen: boolean;
   isMaximized: boolean;
+  /**
+   * True after the viewer shrank the window to the image (outside click):
+   * the image is laid out over the whole client area with the thumbnail bar
+   * over its bottom. Cleared on maximize/fullscreen; a manual restore does
+   * not set it, so the default layout never depends on async window state.
+   */
+  windowed: boolean;
   thumbnailOpacity: number;
   imageLeft?: number;
   imageTop?: number;

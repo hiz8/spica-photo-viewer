@@ -17,6 +17,7 @@ describe("testHooks", () => {
     useAppStore.getState().setThumbnailDisplayed(false);
     useAppStore.getState().setImageData(null);
     useAppStore.getState().setZoom(100);
+    useAppStore.getState().setMaximized(false);
   });
 
   it("installs window.__SPICA_TEST__ when perf is enabled", () => {
@@ -95,5 +96,45 @@ describe("testHooks", () => {
 
     window.__SPICA_TEST__?.resetZoom();
     expect(useAppStore.getState().view.zoom).toBe(100);
+  });
+
+  it("zoomOut drives the store's zoom action", () => {
+    _setPerfEnabledForTests(true);
+    installTestHooks();
+    window.__SPICA_TEST__?.zoomOut();
+    expect(useAppStore.getState().view.zoom).toBeCloseTo(100 / 1.2);
+  });
+
+  it("setPan drives the store's pan action", () => {
+    _setPerfEnabledForTests(true);
+    installTestHooks();
+    window.__SPICA_TEST__?.setPan(-300, 20);
+    const { panX, panY } = useAppStore.getState().view;
+    expect([panX, panY]).toEqual([-300, 20]);
+    useAppStore.getState().setPan(0, 0);
+  });
+
+  it("getView reports the window-mode flags and the zoom", () => {
+    _setPerfEnabledForTests(true);
+    installTestHooks();
+    useAppStore.getState().setMaximized(true);
+    useAppStore.getState().setZoom(150);
+
+    expect(window.__SPICA_TEST__?.getView()).toEqual({
+      zoom: 150,
+      isMaximized: true,
+      isFullscreen: false,
+      windowed: false,
+    });
+  });
+
+  it("resizeToImage forwards to the store action", async () => {
+    _setPerfEnabledForTests(true);
+    installTestHooks();
+    expect(typeof window.__SPICA_TEST__?.resizeToImage).toBe("function");
+    // No image loaded: the store action returns without touching the backend.
+    await expect(
+      window.__SPICA_TEST__?.resizeToImage(),
+    ).resolves.toBeUndefined();
   });
 });

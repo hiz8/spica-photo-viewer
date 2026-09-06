@@ -97,7 +97,8 @@ spica-photo-viewer/
 
   - Default: Fullscreen when opened via file
   - Minimal size when opened standalone
-  - No minimum size restrictions
+  - No minimum size restrictions (the 544px figure under Mouse Controls is the size chosen on entering windowed mode, not a limit on manual resizing)
+  - Windowed mode sized to the image after clicking outside it (see Mouse Controls)
 
 - **Image Display Area** (90% of window):
 
@@ -145,6 +146,11 @@ spica-photo-viewer/
 - **Mouse wheel on image**: Zoom (cursor-based)
 - **Drag on zoomed image**: Pan
 - **Double-click image**: Reset zoom/fit to window
+- **Click outside the image** (maximized, not fullscreen): Leave maximized mode with the window sized to the displayed image, like Picasa Photo Viewer
+  - Client area = image size × current zoom, so a zoomed-in image yields a window larger than the screen
+  - The image stays exactly where it was on screen (DPI-aware, title bar accounted for); no clamping to the screen — Windows re-aligns an off-screen top edge when a resize border is clicked
+  - Minimum client width 544px; below it the window keeps the image's aspect ratio (2000×1000 → 544×272, 1000×2000 → 544×1088) and the image stays centered at its current zoom
+  - In this windowed mode the image is laid out over the whole client area with the thumbnail bar over its bottom; maximizing or fullscreen restores the normal layout
 - **Drag & Drop image file**: Open dropped image and switch to its folder
 
 ### Image Loading Strategy

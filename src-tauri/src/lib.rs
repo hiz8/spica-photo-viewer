@@ -58,6 +58,10 @@ pub fn run() {
                 .ok_or("missing main window config")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .maximized(maximized)
+                .max_inner_size(
+                    commands::window::MAX_TRACK_LOGICAL_PX,
+                    commands::window::MAX_TRACK_LOGICAL_PX,
+                )
                 .build()?;
             crate::utils::perf::phase("window_created", "");
             Ok(())
