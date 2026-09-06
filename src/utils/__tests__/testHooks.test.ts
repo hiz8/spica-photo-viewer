@@ -104,6 +104,15 @@ describe("testHooks", () => {
     expect(useAppStore.getState().view.zoom).toBeCloseTo(100 / 1.2);
   });
 
+  it("setPan drives the store's pan action", () => {
+    _setPerfEnabledForTests(true);
+    installTestHooks();
+    window.__SPICA_TEST__?.setPan(-300, 20);
+    const { panX, panY } = useAppStore.getState().view;
+    expect([panX, panY]).toEqual([-300, 20]);
+    useAppStore.getState().setPan(0, 0);
+  });
+
   it("getView reports the window-mode flags and the zoom", () => {
     _setPerfEnabledForTests(true);
     installTestHooks();

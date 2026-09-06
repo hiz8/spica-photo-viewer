@@ -26,6 +26,8 @@ export interface SpicaTestHooks {
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
+  /** Screen-px pan, as a drag would leave it (docs/code-rationale.md#Z1). */
+  setPan: (panX: number, panY: number) => void;
   getView: () => {
     zoom: number;
     isMaximized: boolean;

@@ -25,6 +25,32 @@ import { windowedClientBox } from "../utils/windowedGeometry";
 const layoutArea = (windowed: boolean) =>
   viewerLayoutArea(window.innerWidth, window.innerHeight, windowed);
 
+// Suppresses the transform transition for SUPPRESS_TRANSITION_MS. The timer
+// is replaced rather than stacked so back-to-back callers extend the window
+// instead of an older timer ending a newer suppression early.
+const suppressedTransitionUi = (
+  ui: AppState["ui"],
+  set: (partial: Partial<AppState>) => void,
+  get: () => AppState,
+): AppState["ui"] => {
+  if (ui.suppressTransitionTimeoutId !== null) {
+    clearTimeout(ui.suppressTransitionTimeoutId);
+  }
+  return {
+    ...ui,
+    suppressTransition: true,
+    suppressTransitionTimeoutId: setTimeout(() => {
+      set({
+        ui: {
+          ...get().ui,
+          suppressTransition: false,
+          suppressTransitionTimeoutId: null,
+        },
+      });
+    }, SUPPRESS_TRANSITION_MS),
+  };
+};
+
 // Maximize/fullscreen ends windowed mode. The image is re-centered above the
 // bar here, with its zoom kept, because the window's resize event may have run
 // before the mode flag changed and laid it out for the wrong area.
@@ -414,25 +440,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
             lastNavigationTime: now,
           },
           ui: {
-            ...state.ui,
-            suppressTransition: true,
+            ...suppressedTransitionUi(state.ui, set, get),
             thumbnailDisplayed,
-            // Atomically create new timeout and store ID to prevent race conditions
-            suppressTransitionTimeoutId: (() => {
-              if (state.ui.suppressTransitionTimeoutId !== null) {
-                clearTimeout(state.ui.suppressTransitionTimeoutId);
-              }
-              return setTimeout(() => {
-                const currentState = get();
-                set({
-                  ui: {
-                    ...currentState.ui,
-                    suppressTransition: false,
-                    suppressTransitionTimeoutId: null,
-                  },
-                });
-              }, SUPPRESS_TRANSITION_MS);
-            })(),
           },
         };
       });
@@ -831,8 +840,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     // The window's resize event usually arrives before the IPC resolves, and
     // its re-layout must already use the windowed rule, or the image is first
-    // centered above the bar and then moved (W1).
-    set((state) => ({ view: { ...state.view, windowed: true } }));
+    // centered above the bar and then moved. The pan is folded into the layout
+    // at the same time: visually identical now (the transform origin moves by
+    // the pan, Z1), and it leaves that re-layout nothing to animate away —
+    // resetting the pan afterwards slid the image in from its dragged
+    // position (W1).
+    const { imageLeft = 0, imageTop = 0, panX, panY } = view;
+    set((state) => ({
+      view: {
+        ...state.view,
+        windowed: true,
+        imageLeft: imageLeft + panX,
+        imageTop: imageTop + panY,
+        panX: 0,
+        panY: 0,
+      },
+      ui: suppressedTransitionUi(state.ui, set, get),
+    }));
     try {
       await invoke("resize_window_to_image", {
         clientLeft: box.left,
@@ -842,7 +866,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to resize window to image size:", error);
-      set((state) => ({ view: { ...state.view, windowed: false } }));
+      set((state) => ({
+        view: {
+          ...state.view,
+          windowed: false,
+          imageLeft: view.imageLeft,
+          imageTop: view.imageTop,
+          panX,
+          panY,
+        },
+      }));
       return;
     }
 

@@ -228,6 +228,17 @@ tao の `unmaximize` を呼ぶ。tao は最大化状態を自前フラグで持�
 WebView2 が新サイズのフレームを描くまでの 1〜2 フレームは旧フレームが左上基準で見える
 可能性があり、これはアプリ側では消せない。
 
+**pan は IPC の前にレイアウトへ畳み込む**（2026-09-06 追記）。ドラッグで pan した画像で
+クリックすると、最初の再レイアウト（`fitToWindow(preserveZoom)` は pan を保持する）は
+pan 分ずれた位置に置き、IPC 完了時の `panX/panY = 0` を `transform 0.1s` のトランジションが
+アニメーションするため、画像がドラッグ位置からスライドインして見えた（e2e のフレーム記録:
+リサイズ後 (−300, 40) に 2 フレーム留まり、5 フレームかけて (0, 0) へ）。Z1 の座標系では
+要素中心 O を pan 分動かして pan を 0 にしても全点の画面位置は不変（`O + T + s·L`）なので、
+`windowed` を立てるのと同時に `imageLeft/Top += pan, pan = 0` と畳み込み、その瞬間だけ
+`suppressTransition` でトランジションを止める。以後 transform は変わらず、再レイアウトは
+left/top（トランジション対象外）だけを動かす。IPC 失敗時は畳み込みも戻す（畳み込んだまま
+だと後続の `preserveZoom` 再レイアウトが pan 0 で中央へ戻し、ドラッグ位置が失われる）。
+
 参照元: `src/utils/windowedGeometry.ts`（`windowedClientBox`）、
 `src/utils/viewerLayout.ts`（`viewerLayoutArea`）、
 `src/store/index.ts`（`resizeToImage` / `leaveWindowedView`）、

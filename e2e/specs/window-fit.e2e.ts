@@ -24,6 +24,8 @@ const POSITION_TOLERANCE_PX = 2;
 const MIN_WINDOWED_WIDTH = 544;
 /** Every image in the "small" corpus folder is 1024x768. */
 const NATURAL_WIDTH = 1024;
+/** Fixed bar the maximized layout centers above (src/utils/viewerLayout.ts). */
+const THUMBNAIL_BAR_HEIGHT = 80;
 
 interface Snapshot {
   innerWidth: number;
@@ -190,6 +192,118 @@ const waitForZoomToSettle = async (): Promise<void> => {
   );
 };
 
+/**
+ * A pan is applied through the same 0.1s transform transition; wait until
+ * the rect sits at the panned position (maximized layout: centered above the
+ * bar, then offset by the pan).
+ */
+const waitForPanToSettle = async (
+  panX: number,
+  panY: number,
+): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (px: number, py: number, barHeight: number, tol: number) => {
+          const el =
+            document.querySelector(".image-viewer canvas") ??
+            document.querySelector(".image-viewer img");
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          const expectedLeft = window.innerWidth / 2 + px - r.width / 2;
+          const expectedTop =
+            (window.innerHeight - barHeight) / 2 + py - r.height / 2;
+          return (
+            Math.abs(r.left - expectedLeft) <= tol &&
+            Math.abs(r.top - expectedTop) <= tol
+          );
+        },
+        panX,
+        panY,
+        THUMBNAIL_BAR_HEIGHT,
+        SIZE_TOLERANCE_PX,
+      ),
+    { timeout: 5_000, timeoutMsg: "pan transition never settled" },
+  );
+};
+
+interface FrameSample {
+  innerWidth: number;
+  left: number;
+  top: number;
+}
+
+/**
+ * Samples the display element's rect on every animation frame. A frame is
+ * the finest visible unit, so "the image never moves while the window
+ * changes" is asserted on these rather than on the settled state.
+ */
+const recordFrames = (): Promise<void> =>
+  browser.execute(() => {
+    const w = window as Window & { __FRAMES__?: FrameSample[] };
+    w.__FRAMES__ = [];
+    const tick = () => {
+      const el =
+        document.querySelector(".image-viewer canvas") ??
+        document.querySelector(".image-viewer img");
+      const r = el?.getBoundingClientRect();
+      w.__FRAMES__?.push({
+        innerWidth: window.innerWidth,
+        left: r?.left ?? Number.NaN,
+        top: r?.top ?? Number.NaN,
+      });
+      if ((w.__FRAMES__?.length ?? 0) < 120) {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  });
+
+const recordedFrames = async (): Promise<FrameSample[]> =>
+  JSON.parse(
+    await browser.execute(() =>
+      JSON.stringify(
+        (window as Window & { __FRAMES__?: FrameSample[] }).__FRAMES__ ?? [],
+      ),
+    ),
+  );
+
+/**
+ * Frames between the window reaching its final width and the image reaching
+ * its final place. The resize event re-lays out within the same frame, so
+ * anything beyond a couple of frames is an animation the user can see.
+ */
+const MAX_SETTLE_FRAMES = 2;
+
+const expectImageSettledWithWindow = (
+  frames: FrameSample[],
+  finalWidth: number,
+  finalLeft: number,
+  finalTop: number,
+) => {
+  const resized = frames.findIndex(
+    (f) => Math.abs(f.innerWidth - finalWidth) <= SIZE_TOLERANCE_PX,
+  );
+  expect(resized).toBeGreaterThanOrEqual(0);
+  const settled = frames.findIndex(
+    (f, i) =>
+      i >= resized &&
+      Math.abs(f.left - finalLeft) <= SIZE_TOLERANCE_PX &&
+      Math.abs(f.top - finalTop) <= SIZE_TOLERANCE_PX,
+  );
+  expect(settled).toBeGreaterThanOrEqual(0);
+  const settleFrames = settled - resized;
+  if (settleFrames > MAX_SETTLE_FRAMES) {
+    const path = frames
+      .slice(resized, settled + 1)
+      .map((f) => `(${f.left.toFixed(1)}, ${f.top.toFixed(1)})`)
+      .join(" -> ");
+    throw new Error(
+      `image took ${settleFrames} frames to settle after the window resized (max ${MAX_SETTLE_FRAMES}): ${path}`,
+    );
+  }
+};
+
 const expectSameScreenPosition = (before: Snapshot, after: Snapshot) => {
   expect(
     Math.abs(
@@ -266,6 +380,37 @@ describe("windowed mode gate", () => {
       Math.abs(after.rect.top - (after.innerHeight - after.rect.height) / 2),
     ).toBeLessThanOrEqual(SIZE_TOLERANCE_PX);
     expectSameScreenPosition(before, after);
+  });
+
+  it("keeps a dragged image still while the window changes around it", async function () {
+    this.timeout(180_000);
+    // Zoomed out and dragged to the left: the pan must be folded into the
+    // final layout in the same frame as the resize, not animated away.
+    await openImage(join(CORPUS, "small", "img-002.jpg"));
+    await waitForMaximizedPaint();
+    await zoomUntil("zoomOut", (zoom) => zoom < 60);
+    await browser.execute(() => {
+      window.__SPICA_TEST__?.setPan(-300, 40);
+    });
+    await waitForZoomToSettle();
+    await waitForPanToSettle(-300, 40);
+    const before = await snapshot();
+    await recordFrames();
+
+    await clickOutsideImage();
+    await waitForClientWidth(
+      Math.max(MIN_WINDOWED_WIDTH, Math.round(before.rect.width)),
+    );
+    const after = await snapshot();
+    const frames = await recordedFrames();
+
+    expectSameScreenPosition(before, after);
+    expectImageSettledWithWindow(
+      frames,
+      after.innerWidth,
+      (after.innerWidth - after.rect.width) / 2,
+      (after.innerHeight - after.rect.height) / 2,
+    );
   });
 
   it("grows past the screen when the image is zoomed beyond it", async function () {

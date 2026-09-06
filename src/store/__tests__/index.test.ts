@@ -2122,6 +2122,41 @@ describe("AppStore", () => {
       expect(useAppStore.getState().view.windowed).toBe(true);
     });
 
+    it("folds the pan into the layout before the backend responds", async () => {
+      showMaximized();
+      let settle: () => void = () => {};
+      mockInvoke.mockReturnValue(
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      );
+
+      const pending = useAppStore.getState().resizeToImage();
+
+      // Visually identical in the maximized window (the transform origin
+      // moves by the pan), but the first windowed re-layout must not carry a
+      // pan that the transform transition would then animate away.
+      const { view, ui } = useAppStore.getState();
+      expect([view.panX, view.panY]).toEqual([0, 0]);
+      expect([view.imageLeft, view.imageTop]).toEqual([290, 114]);
+      expect(ui.suppressTransition).toBe(true);
+      settle();
+      await pending;
+    });
+
+    it("restores the pan and layout when the backend refuses", async () => {
+      showMaximized();
+      mockInvoke.mockRejectedValue(new Error("Window is not maximized"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await useAppStore.getState().resizeToImage();
+      errorSpy.mockRestore();
+
+      const { view } = useAppStore.getState();
+      expect([view.panX, view.panY]).toEqual([10, -20]);
+      expect([view.imageLeft, view.imageTop]).toEqual([280, 134]);
+    });
+
     it("does nothing unless the window is maximized", async () => {
       showMaximized();
       useAppStore.setState((state) => ({

@@ -41,6 +41,8 @@ export interface SpicaTestHooks {
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
+  /** Screen-px pan, as a drag would leave it (docs/code-rationale.md#Z1). */
+  setPan: (panX: number, panY: number) => void;
   getView: () => {
     zoom: number;
     isMaximized: boolean;
@@ -95,6 +97,7 @@ export const installTestHooks = (): void => {
     zoomIn: () => useAppStore.getState().zoomIn(),
     zoomOut: () => useAppStore.getState().zoomOut(),
     resetZoom: () => useAppStore.getState().resetZoom(),
+    setPan: (panX, panY) => useAppStore.getState().setPan(panX, panY),
     getView: () => {
       const { zoom, isMaximized, isFullscreen, windowed } =
         useAppStore.getState().view;
