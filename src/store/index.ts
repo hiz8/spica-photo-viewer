@@ -25,6 +25,11 @@ import { windowedClientBox } from "../utils/windowedGeometry";
 const layoutArea = (windowed: boolean) =>
   viewerLayoutArea(window.innerWidth, window.innerHeight, windowed);
 
+// isMaximized stays true until the resize IPC resolves, so a second outside
+// click in that window would pass resizeToImage's guard and its failure
+// path could undo the first call's state.
+let resizeInFlight = false;
+
 // The timer is replaced rather than stacked so back-to-back callers extend the
 // suppression instead of an older timer ending a newer one early.
 const suppressedTransitionUi = (
@@ -822,77 +827,88 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   resizeToImage: async () => {
     const { view, currentImage } = get();
-    if (!view.isMaximized || view.isFullscreen || !currentImage.data) {
+    if (
+      resizeInFlight ||
+      !view.isMaximized ||
+      view.isFullscreen ||
+      !currentImage.data
+    ) {
       return;
     }
+    resizeInFlight = true;
 
-    const { width, height } = currentImage.data;
-    const box = windowedClientBox({
-      imageWidth: width,
-      imageHeight: height,
-      zoom: view.zoom,
-      imageLeft: view.imageLeft ?? 0,
-      imageTop: view.imageTop ?? 0,
-      panX: view.panX,
-      panY: view.panY,
-    });
-
-    // The window's resize event usually arrives before the IPC resolves, and
-    // its re-layout must already use the windowed rule, or the image is first
-    // centered above the bar and then moved. The pan is folded into the layout
-    // at the same time: visually identical now (the transform origin moves by
-    // the pan, Z1), and it leaves that re-layout nothing to animate away —
-    // resetting the pan afterwards slid the image in from its dragged
-    // position (W1).
-    const { imageLeft = 0, imageTop = 0, panX, panY } = view;
-    set((state) => ({
-      view: {
-        ...state.view,
-        windowed: true,
-        imageLeft: imageLeft + panX,
-        imageTop: imageTop + panY,
-        panX: 0,
-        panY: 0,
-      },
-      ui: suppressedTransitionUi(state.ui, set, get),
-    }));
     try {
-      await invoke("resize_window_to_image", {
-        clientLeft: box.left,
-        clientTop: box.top,
-        clientWidth: box.width,
-        clientHeight: box.height,
+      const { width, height } = currentImage.data;
+      const box = windowedClientBox({
+        imageWidth: width,
+        imageHeight: height,
+        zoom: view.zoom,
+        imageLeft: view.imageLeft ?? 0,
+        imageTop: view.imageTop ?? 0,
+        panX: view.panX,
+        panY: view.panY,
       });
-    } catch (error) {
-      console.error("Failed to resize window to image size:", error);
+
+      // The window's resize event usually arrives before the IPC resolves,
+      // and its re-layout must already use the windowed rule, or the image is
+      // first centered above the bar and then moved. The pan is folded into
+      // the layout at the same time: visually identical now (the transform
+      // origin moves by the pan, Z1), and it leaves that re-layout nothing to
+      // animate away — resetting the pan afterwards slid the image in from
+      // its dragged position (W1).
+      const { imageLeft = 0, imageTop = 0, panX, panY } = view;
       set((state) => ({
         view: {
           ...state.view,
-          windowed: false,
-          imageLeft: view.imageLeft,
-          imageTop: view.imageTop,
-          panX,
-          panY,
+          windowed: true,
+          imageLeft: imageLeft + panX,
+          imageTop: imageTop + panY,
+          panX: 0,
+          panY: 0,
+        },
+        ui: suppressedTransitionUi(state.ui, set, get),
+      }));
+      try {
+        await invoke("resize_window_to_image", {
+          clientLeft: box.left,
+          clientTop: box.top,
+          clientWidth: box.width,
+          clientHeight: box.height,
+        });
+      } catch (error) {
+        console.error("Failed to resize window to image size:", error);
+        set((state) => ({
+          view: {
+            ...state.view,
+            windowed: false,
+            imageLeft: view.imageLeft,
+            imageTop: view.imageTop,
+            panX,
+            panY,
+          },
+        }));
+        return;
+      }
+
+      // Re-center here as well in case the resize event fired before the
+      // flag, and re-assert the flag: a get_window_state reply that was in
+      // flight before the click can still report "maximized" and clear it
+      // meanwhile.
+      const { left, top } = centeredPosition(layoutArea(true), width, height);
+      set((state) => ({
+        view: {
+          ...state.view,
+          isMaximized: false,
+          windowed: true,
+          panX: 0,
+          panY: 0,
+          imageLeft: left,
+          imageTop: top,
         },
       }));
-      return;
+    } finally {
+      resizeInFlight = false;
     }
-
-    // Re-center here as well in case the resize event fired before the flag,
-    // and re-assert the flag: a get_window_state reply that was in flight
-    // before the click can still report "maximized" and clear it meanwhile.
-    const { left, top } = centeredPosition(layoutArea(true), width, height);
-    set((state) => ({
-      view: {
-        ...state.view,
-        isMaximized: false,
-        windowed: true,
-        panX: 0,
-        panY: 0,
-        imageLeft: left,
-        imageTop: top,
-      },
-    }));
   },
 
   openFileDialog: async () => {

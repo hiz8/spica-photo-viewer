@@ -2122,6 +2122,26 @@ describe("AppStore", () => {
       expect(useAppStore.getState().view.windowed).toBe(true);
     });
 
+    it("ignores a second click while the resize is in flight", async () => {
+      showMaximized();
+      let settle: () => void = () => {};
+      mockInvoke.mockReturnValue(
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      );
+
+      const first = useAppStore.getState().resizeToImage();
+      // isMaximized is still true until the IPC resolves, so the guard on
+      // it alone would let this second call through.
+      const second = useAppStore.getState().resizeToImage();
+      settle();
+      await Promise.all([first, second]);
+
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().view.windowed).toBe(true);
+    });
+
     it("re-asserts windowed mode after a stale maximize report during the IPC", async () => {
       showMaximized();
       let settle: () => void = () => {};
