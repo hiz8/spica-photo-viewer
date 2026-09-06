@@ -235,6 +235,16 @@ tao の `unmaximize` を呼ぶ。tao は最大化状態を自前フラグで持�
 `fitToWindow(preserveZoom)` の流儀で pan を保持する。ここで pan を 0 にすると画像が
 跳ぶだけで、Picasa にも対応する挙動は無い。
 
+**失敗パスと別ファイルの open**。IPC 中は `windowed` を先に立てているので、その間に
+ナビゲーションで表示された画像は「クライアント領域全体」で fit されている。IPC が失敗して
+最大化のままになったら、その fit は利用者の選んだズームではないので保持せず、最大化用の
+領域で fit し直す（`refitCurrentImage`）。同様に `openImageFromPath` は
+`maximize_window` を呼ぶので、開始時点で `windowed` を下ろし、最大化イベントより先に
+画像が読み込まれても最大化用の領域で fit されるようにする。
+`set_restore_rect` は `unmaximize` より前に `rcNormalPosition` を書くため、万一 `unmaximize`
+が失敗すると最大化のまま復元先だけが画像サイズを指す（次に利用者が手動で復元すると
+そのサイズになる）。`ShowWindow(SW_RESTORE)` は実質失敗しないので補正は入れていない。
+
 **`get_window_state` の応答は最新の問い合わせ分だけ適用する**（`useWindowState`）。
 `tauri://resize` ごとに問い合わせるため、最大化中に発行された問い合わせの応答が復元後の
 応答より遅れて届くと、`setMaximized(true)` → `leaveWindowedView` で小さい窓のまま

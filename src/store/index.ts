@@ -75,6 +75,28 @@ const centeredCurrentImage = (
   return { imageLeft: left, imageTop: top };
 };
 
+// Fit of the image currently shown for the given mode. Only for a fit the app
+// made itself against the wrong area, never for a zoom the user chose, which
+// every other path keeps.
+const refitCurrentImage = (
+  state: AppState,
+  windowed: boolean,
+): Partial<ViewState> | undefined => {
+  const data = state.currentImage.data;
+  if (!data) {
+    return undefined;
+  }
+  const area = layoutArea(windowed);
+  const { left, top } = centeredPosition(area, data.width, data.height);
+  return {
+    zoom: fitZoom(area, data.width, data.height),
+    panX: 0,
+    panY: 0,
+    imageLeft: left,
+    imageTop: top,
+  };
+};
+
 // Maximize/fullscreen ends windowed mode. The image is re-centered above the
 // bar here, with its zoom and pan kept as on any other resize, because the
 // window's resize event may have run before the mode flag changed and laid it
@@ -631,6 +653,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
           data: null,
           error: null,
         },
+        // The window is maximized below; an image that loads before the
+        // maximize event comes back must not be fit for the windowed layout.
+        view: { ...state.view, windowed: false },
         ui: {
           ...state.ui,
           isLoading: true,
@@ -901,14 +926,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
               },
             };
           }
-          // Navigated meanwhile: that image was laid out with the windowed
-          // rule while the window stayed maximized, so re-fit it instead of
-          // restoring this call's snapshot.
+          // Navigated meanwhile: that image was fit with the windowed rule
+          // (the flag was already set) while the window stayed maximized, so
+          // re-fit it for the maximized area instead of restoring this
+          // call's snapshot; that zoom was ours, not the user's.
           return {
             view: {
               ...state.view,
               windowed: false,
-              ...centeredCurrentImage(state, false),
+              ...refitCurrentImage(state, false),
             },
           };
         });

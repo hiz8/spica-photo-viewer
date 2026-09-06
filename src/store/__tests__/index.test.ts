@@ -2172,6 +2172,8 @@ describe("AppStore", () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const pending = useAppStore.getState().resizeToImage();
+      // The next image is fit while `windowed` is optimistically set, i.e.
+      // against the whole client area: min(1920/4000, 1080/2000) = 48%.
       useAppStore.setState((state) => ({
         currentImage: {
           ...state.currentImage,
@@ -2180,21 +2182,38 @@ describe("AppStore", () => {
           data: {
             ...mockImageData,
             path: "/test/next.jpg",
-            width: 1000,
-            height: 500,
+            width: 4000,
+            height: 2000,
           },
         },
       }));
-      useAppStore.getState().fitToWindow(1000, 500);
+      useAppStore.getState().fitToWindow(4000, 2000);
+      expect(useAppStore.getState().view.zoom).toBeCloseTo(48);
       fail(new Error("Window is not maximized"));
       await pending;
       errorSpy.mockRestore();
 
       const { view } = useAppStore.getState();
       expect(view.windowed).toBe(false);
-      // Centered above the bar: (1920 - 1000) / 2, ((1080 - 80) - 500) / 2
-      expect([view.imageLeft, view.imageTop]).toEqual([460, 250]);
+      // That fit was ours, not the user's, so re-fit for the maximized area:
+      // min(1880/4000, 960/2000) = 47%, centered above the bar.
+      expect(view.zoom).toBeCloseTo(47);
+      expect([view.imageLeft, view.imageTop]).toEqual([-1040, -500]);
       expect([view.panX, view.panY]).toEqual([0, 0]);
+    });
+
+    it("leaves windowed mode when another file is opened", async () => {
+      showMaximized();
+      useAppStore.setState((state) => ({
+        view: { ...state.view, isMaximized: false, windowed: true },
+      }));
+      mockInvoke.mockResolvedValue([]);
+
+      await useAppStore.getState().openImageFromPath("C:\\pics\\other.jpg");
+
+      // The open maximizes the window, so the fit must use the maximized
+      // layout even if the image loads before the maximize event arrives.
+      expect(useAppStore.getState().view.windowed).toBe(false);
     });
 
     it("ignores a second click while the resize is in flight", async () => {
