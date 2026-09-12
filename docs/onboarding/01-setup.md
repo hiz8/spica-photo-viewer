@@ -12,7 +12,7 @@
 
 ## 前提
 
-このドキュメントは **Windows 10 / 11** を前提にしています。Spica Photo Viewer の主要ターゲットは Windows で、MSI インストーラ・ファイル関連付け・「プログラムから開く」ダイアログなど Windows 固有の機能を扱うためです。
+このドキュメントは **Windows 10 / 11** を前提にしています。Spica Photo Viewer の主要ターゲットは Windows で、NSIS インストーラ・ファイル関連付け・「プログラムから開く」ダイアログなど Windows 固有の機能を扱うためです。
 
 macOS / Linux でも開発自体は可能ですが、Windows 限定の機能 (`commands/file.rs:230` の `open_with_dialog` など) はそのままでは動作しません。
 
@@ -80,11 +80,9 @@ Rust が一部のクレートをコンパイルする際に MSVC リンカと Wi
   - 「**C++ によるデスクトップ開発**」ワークロード
   - 「**Windows 10/11 SDK**」 (バージョンは最新でよい)
 
-### 3-3. (本番ビルド時のみ) WiX Toolset v3
+### 3-3. (本番ビルド時のみ) NSIS
 
-MSI インストーラを生成するために使用します。**普段の `npm run tauri dev` には不要** で、`npm run tauri build` を実行する場合のみ必要です。
-
-- https://wixtoolset.org/ から WiX v3 をインストール
+インストーラ (`*-setup.exe`) を生成するために使用します。**手動のインストールは不要** で、`npm run tauri build` の初回に Tauri CLI が自動でダウンロードします (`%LOCALAPPDATA%\tauri\NSIS`)。MSI (WiX) は出力しない設定なので、WiX Toolset も不要です (`src-tauri/tauri.conf.json` の `bundle.targets`)。
 
 > Tauri 公式の最新ガイド: https://tauri.app/start/prerequisites/
 

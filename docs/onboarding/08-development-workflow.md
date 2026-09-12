@@ -119,9 +119,9 @@ npm run tauri build
 Windows の場合の出力先:
 
 - 実行ファイル: `src-tauri/target/release/spica-photo-viewer.exe`
-- MSI インストーラ: `src-tauri/target/release/bundle/msi/Spica Photo Viewer_<version>_x64_en-US.msi`
+- NSIS インストーラ: `src-tauri/target/release/bundle/nsis/Spica Photo Viewer_<version>_x64-setup.exe`
 
-MSI 生成には [01-setup.md](./01-setup.md#3-3-本番ビルド時のみ-wix-toolset-v3) で触れた WiX Toolset v3 が必要です。インストーラの設定は `tauri.conf.json:41-51` の `bundle` セクション。
+NSIS は [01-setup.md](./01-setup.md#3-3-本番ビルド時のみ-nsis) の通り初回ビルド時に自動で取得されます。インストーラの設定は `tauri.conf.json:43-91` の `bundle` セクション、インストーラに差し込む処理は `src-tauri/installer-hooks.nsh`。
 
 リリースビルドは初回 10〜15 分かかります。差分ビルドでも数分かかるので、頻繁に走らせるものではありません。
 
