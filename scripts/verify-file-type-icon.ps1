@@ -3,6 +3,10 @@
 # ビルド済み exe に本体アイコン (32512) とファイルタイプアイコン (32513) の
 # 両方が入っていることを確認する。LoadImage はシェルと同じ RT_GROUP_ICON の
 # 解決を行うので、ID の指定ミスをそのまま検出できる。
+#
+# NOTE: このファイルは UTF-8 BOM 付きで保存すること。BOM を落とすと
+# Windows PowerShell 5.1 がシステムの既定コードページとして誤読し、
+# 下記の日本語文字列リテラルが文字化けしてパースエラーになる。
 param(
   [Parameter(Mandatory = $true)][string]$ExePath
 )
