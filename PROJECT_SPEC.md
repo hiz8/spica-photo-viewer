@@ -512,9 +512,11 @@ npm run tauri build
 
 ### Installer Creation
 
-- Use Tauri's WiX integration
+- Use Tauri's NSIS integration (`bundle.targets` is `["nsis"]`; the WiX/MSI target is not supported)
 - Configure file associations for .jpg, .jpeg, .png, .webp, .gif
 - Set registry entries for default image viewer
+- Give Explorer a dedicated file-type icon via `installerHooks`, separate from the app icon
+  (see `docs/superpowers/specs/2026-09-12-file-type-icon-design.md`)
 
 ## Performance Targets
 
