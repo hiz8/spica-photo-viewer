@@ -2,11 +2,10 @@
 fn main() {
     let ico = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("icons/file-type.ico");
-    // tauri-build はウィンドウアイコンに rerun-if-changed を出さないので自前で出す (F8)
+    // (F8) tauri-build はアイコンに rerun-if-changed を出さない
     println!("cargo:rerun-if-changed={}", ico.display());
 
-    // 32513 は tauri-build がアプリ本体に使う 32512 より大きくする必要がある。
-    // シェルは最小 ID のグループを exe の顔として採るため (F1)。
+    // (F1) ID は tauri-build が exe 本体のアイコンに使う 32512 より大きくする。
     // .rc の文字列リテラルなのでバックスラッシュのエスケープが要る。
     let rc = format!(
         r#"32513 ICON "{}""#,
