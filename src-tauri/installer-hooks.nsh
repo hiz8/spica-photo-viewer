@@ -43,8 +43,27 @@
   !insertmacro UPDATEFILEASSOC
 !macroend
 
+; (F13) APP_UNASSOCIATE は _backup 値を残し、既定値も空文字で書き戻すだけで消さない。
+; 値の上ではインストール前の状態に戻す。
+!macro SPICA_CLEAN_EXTENSION EXT PROGID
+  DeleteRegValue SHCTX "Software\Classes\.${EXT}" "${PROGID}_backup"
+  ReadRegStr $R0 SHCTX "Software\Classes\.${EXT}" ""
+  ${If} $R0 == ""
+    DeleteRegValue SHCTX "Software\Classes\.${EXT}" ""
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_POSTUNINSTALL
   ; (F3) ProgID 側は APP_UNASSOCIATE がキーごと消すので触らない。
+  Push $R0
+  !insertmacro SPICA_CLEAN_EXTENSION "jpg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_CLEAN_EXTENSION "jpeg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_CLEAN_EXTENSION "png" "SpicaPhotoViewer.png"
+  !insertmacro SPICA_CLEAN_EXTENSION "webp" "SpicaPhotoViewer.webp"
+  !insertmacro SPICA_CLEAN_EXTENSION "gif" "SpicaPhotoViewer.gif"
+  Pop $R0
   DeleteRegKey SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\DefaultIcon"
+  ; Windows が作った shell\open\command が残っていればキーは消さない（§8）。
+  DeleteRegKey /ifempty SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe"
   !insertmacro UPDATEFILEASSOC
 !macroend

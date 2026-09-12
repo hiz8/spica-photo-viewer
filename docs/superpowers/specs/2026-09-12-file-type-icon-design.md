@@ -182,8 +182,25 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
   !insertmacro UPDATEFILEASSOC
 !macroend
 
+; (F13) APP_UNASSOCIATE が拡張子キーに残す値を消す。
+!macro SPICA_CLEAN_EXTENSION EXT PROGID
+  DeleteRegValue SHCTX "Software\Classes\.${EXT}" "${PROGID}_backup"
+  ReadRegStr $R0 SHCTX "Software\Classes\.${EXT}" ""
+  ${If} $R0 == ""
+    DeleteRegValue SHCTX "Software\Classes\.${EXT}" ""
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_POSTUNINSTALL
+  Push $R0
+  !insertmacro SPICA_CLEAN_EXTENSION "jpg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_CLEAN_EXTENSION "jpeg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_CLEAN_EXTENSION "png" "SpicaPhotoViewer.png"
+  !insertmacro SPICA_CLEAN_EXTENSION "webp" "SpicaPhotoViewer.webp"
+  !insertmacro SPICA_CLEAN_EXTENSION "gif" "SpicaPhotoViewer.gif"
+  Pop $R0
   DeleteRegKey SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\DefaultIcon"
+  DeleteRegKey /ifempty SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe"
   !insertmacro UPDATEFILEASSOC
 !macroend
 ```
@@ -198,7 +215,7 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 
 - **(F1) リソース ID は 32512 より大きい値にする。** シェルは exe の顔として「アイコングループのうちリソース ID が最小のもの」を採る。32512 未満を選ぶとタスクバーとショートカットのアイコンが入れ替わり、要件そのものを壊す。
 - **(F2) `DefaultIcon` は序数ではなく負値（リソース ID）で指定する。** Firefox の `,1` は ID 昇順に並べた位置への依存で、将来リソースが増えると別のアイコンを指す。`-32513` なら ID を直接指すので順序に依存しない。
-- **(F3) POSTUNINSTALL で ProgID 側を削除しない。** `APP_UNASSOCIATE` が `DeleteRegKey SHELL_CONTEXT Software\Classes\${FILECLASS}` でキーごと消すため、フックで書いた `DefaultIcon` も巻き添えで消える。重複して消すと Tauri 側の実装変更時に二重管理になる。フックが後始末するのは `Applications\<exe>` 側だけでよい。
+- **(F3) POSTUNINSTALL で ProgID 側を削除しない。** `APP_UNASSOCIATE` が `DeleteRegKey SHELL_CONTEXT Software\Classes\${FILECLASS}` でキーごと消すため、フックで書いた `DefaultIcon` も巻き添えで消える。重複して消すと Tauri 側の実装変更時に二重管理になる。フックが後始末するのは `Applications\<exe>` 側と、`APP_UNASSOCIATE` が拡張子キーに残す値（F13）だけでよい。
 - **(F4) `UPDATEFILEASSOC` を自前で呼ぶ。** `SHChangeNotify(SHCNE_ASSOCCHANGED)` を発行するこのマクロは `FileAssociation.nsh` に定義されているのに `installer.nsi` から一度も呼ばれていない。呼ばないとアイコンの反映がシェルの気分次第になる。`!include "FileAssociation.nsh"` は既に済んでいるので `!insertmacro` するだけでよい。
 - **(F5) `fileAssociations` の `name` を必ず指定する。** NSIS テンプレートは `{{or association.name ext}}` を ext ごとに評価するため、省略すると ProgID が裸の `png` / `jpg` になりグローバル名前空間を汚す。`name` を与えると 1 つの association 内の全 ext が同じ ProgID を共有するので、`jpg` と `jpeg` を Windows 標準（どちらも `jpegfile`）と同じ扱いにできる。
 - **(F6) `SHCTX` を使う。** `installMode` のデフォルトは `currentUser` なので実体は HKCU だが、将来 perMachine に変えても追随する。
@@ -208,6 +225,7 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 - **(F10) `.nsh` のトップレベルで `${MAINBINARYNAME}` を参照しない。** テンプレートはフックの `!include` を `!define MAINBINARYNAME` より前に置く。トップレベルの `!define` は include 時に評価されるため未定義参照になる。マクロ本体は `!insertmacro` 時に展開されるので、そこで参照すれば解決される。
 - **(F11) `tauri-build` の依存要求を `"2.6"` に上げる。** `append_rc_content` は 2.5.6 に存在しない。現在の `Cargo.toml` は `"2.5"`（= `^2.5`）で、たまたま lock が 2.6.3 を指しているだけなので、API への依存を要求として明示する。
 - **(F12) PREINSTALL で、既定値が自分の ProgID を指している拡張子を `_backup` の値へ戻す。** アンインストールを経ない上書きインストール（同一バージョンで既定の「追加/再インストール」を選んだ場合、`/UPDATE`、アップグレード時に「アンインストールしない」を選んだ場合）では `APP_ASSOCIATE` が再実行され、その時点の既定値＝自分の ProgID を `<ProgID>_backup` に退避し直す。前の持ち主はここで失われ、アンインストール時に `APP_UNASSOCIATE` が既定値を削除済みの自分の ProgID へ「復元」し、拡張子が存在しない ProgID を指したまま残る。先に既定値を `_backup` の値へ戻せば、`APP_ASSOCIATE` は常に前の持ち主を退避するので `_backup` が自分の ProgID を指すことは無い。既定値が自分の ProgID でない場合（初回インストール、または他アプリが既定の場合）は何もしないので、`APP_ASSOCIATE` は従来通りその値（無ければ空文字）を退避する。PREINSTALL は `CheckIfAppIsRunning` より前に走るため、そこで中止すると既定値は前の持ち主に戻ったまま残るが、この状態からの再インストール・アンインストールはどちらも正しく動く。`jpg` と `jpeg` は ProgID を共有するが `_backup` は拡張子キーごとに持つので、拡張子ごとに補正する。
+- **(F13) POSTUNINSTALL で拡張子キーに残る値を消す。** `APP_UNASSOCIATE` は `<ProgID>_backup` の値を既定値へ書き戻すだけで、`_backup` 値そのものは消さない。インストール前に既定値が無かった拡張子（調査時の実機の HKCU では 5 拡張子すべてがこれで、`OpenWithProgids` サブキーだけがあった）では、既定値を空文字で書き戻し、値が無い状態には戻さない。`_backup` 値を消し、既定値が空なら既定値ごと消して、値の上ではインストール前と同じ状態に戻す。`.<ext>` キー自体は Windows の `OpenWithProgids` などが入っているので消さない。
 
 ## 6. 検証計画
 
@@ -222,7 +240,7 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 5. **中アイコン以上でサムネイルが出続ける**こと（§1.2 の退行確認）
 6. 「プログラムから開く > 別のアプリを選択」で既定にした場合もアイコンが変わること
 7. ファイルのダブルクリックで画像が開くこと（`commands/file.rs` の `startup_file_in(std::env::args().skip(1))` 経路の退行確認）
-8. アンインストール後、`Software\Classes\SpicaPhotoViewer.*` と `Applications\<exe>\DefaultIcon` が消え、`.png` の既定値が復元されること
+8. アンインストール後、`Software\Classes\SpicaPhotoViewer.*` と `Applications\<exe>\DefaultIcon` が消え、各拡張子キーの `<ProgID>_backup` 値が消え、既定値がインストール前の状態（前の ProgID、または値なし）に戻ること（F12, F13）
 
 アイコンが古いまま見える場合は Explorer のアイコンキャッシュを疑う（`ie4uinit.exe -show`）。
 
@@ -242,4 +260,4 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 
 - **既定アプリの奪取**: `fileAssociations` を入れると `APP_ASSOCIATE` が `Software\Classes\.<ext>` の既定値を書き換える。Windows 10/11 では UserChoice が優先されるため既定アプリ自体は乗っ取られないが、**既定を一度も設定していない環境ではインストールしただけで画像の既定が本アプリになる**。画像ビューアというアプリの性格上むしろ意図と整合的と判断して受け入れる。アンインストール時は `APP_UNASSOCIATE` が `_backup` 値から復元する。アンインストールを経ない上書きインストールでも `_backup` が前の持ち主を保つよう、PREINSTALL で補正している（F12）
 - **upstream 実装時の移行**: `fileAssociations` に icon フィールドが入れば、`installer-hooks.nsh` の ProgID 4 行と `build.rs` の `append_rc_content` は設定 1 行に畳める。Tauri 標準の配線に乗せてあるので移行は局所的で済む
-- **`Applications\<exe>\DefaultIcon` の残骸**: アンインストール時に消すのはフックが書いた `DefaultIcon` キーのみ。Windows が作った `shell\open\command` は残るが、これは Windows 側が管理する領域なので触らない
+- **`Applications\<exe>` の残骸**: アンインストール時に消すのはフックが書いた `DefaultIcon` キーと、それで空になった場合の `Applications\<exe>` キー（`DeleteRegKey /ifempty`）のみ。Windows が作った `shell\open\command` は（あればキーごと）残るが、これは Windows 側が管理する領域なので触らない

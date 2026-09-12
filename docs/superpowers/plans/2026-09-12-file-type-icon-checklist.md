@@ -105,25 +105,30 @@ Spec: docs/superpowers/specs/2026-09-12-file-type-icon-design.md
   表示される（`commands/file.rs` の `startup_file_in` 経路）。
 
 - [ ] 8. アンインストール後、`Software\Classes\SpicaPhotoViewer.*` と
-      `Applications\spica-photo-viewer.exe\DefaultIcon` が消え、`.png` の
-      既定値が元に戻る。
+      `Applications\spica-photo-viewer.exe\DefaultIcon` が消え、各拡張子キーの
+      `SpicaPhotoViewer.*_backup` 値が消え、既定値がインストール前の状態に戻る。
 
   アンインストールは「設定 > アプリ」から行うか、
   `%LOCALAPPDATA%\Spica Photo Viewer\uninstall.exe` を実行する。
 
-  確認コマンド:
+  確認コマンド（`.png` 以外の 4 拡張子も同様に見る）:
 
   ```
   reg query "HKCU\Software\Classes\SpicaPhotoViewer.png"
   reg query "HKCU\Software\Classes\Applications\spica-photo-viewer.exe\DefaultIcon"
-  reg query "HKCU\Software\Classes\.png" /ve
+  reg query "HKCU\Software\Classes\.png"
   ```
 
-  **合格の見え方**: 前 2 つは `ERROR: 指定されたレジストリ キーが見つかりません`
-  のように「見つからない」旨のエラーで終わる。3 つ目はこのチェックリストの
-  作業を始める前に `.png` の既定値だった ProgID に戻っている（本アプリを
-  インストールする前にどの ProgID が既定だったかは、可能なら 0c の前に
-  同じコマンドで一度記録しておくとよい）。
+  **合格の見え方**: 前 2 つは
+  `ERROR: The system was unable to find the specified registry key or value.`
+  （日本語表示の環境では「見つかりません」旨のエラー）で終わる。3 つ目は
+  0c の前に同じコマンドで記録した出力と一致する。記録が無い場合の目安:
+  このチェックリスト作成時点の実機では、5 拡張子とも HKCU 側の既定値は無く
+  `OpenWithProgids` サブキーだけだった。その場合は出力が
+  `HKEY_CURRENT_USER\Software\Classes\.png\OpenWithProgids` の 1 行だけになり、
+  `(Default)` 行も `SpicaPhotoViewer.png_backup` 行も出ない（設計 F13）。
+  `.jpg` と `.jpeg` で消えているべき値名はどちらも
+  `SpicaPhotoViewer.jpeg_backup`（ProgID を共有するため）。
 
 ## トラブルシューティング
 
