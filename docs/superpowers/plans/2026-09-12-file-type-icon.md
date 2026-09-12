@@ -595,7 +595,7 @@ Expected: `src-tauri/target/release/bundle/nsis/Spica Photo Viewer_1.0.0_x64-set
 
 既存の `C:\Program Files\Spica Photo Viewer\`（MSI 版）が残っていれば先にアンインストールする。その後インストーラを実行し:
 
-Run: `powershell -ExecutionPolicy Bypass -File scripts/verify-file-type-icon.ps1 -ExePath "$env:LOCALAPPDATA\Programs\Spica Photo Viewer\spica-photo-viewer.exe" -CheckRegistry`
+Run: `powershell -ExecutionPolicy Bypass -File scripts/verify-file-type-icon.ps1 -ExePath "$env:LOCALAPPDATA\Spica Photo Viewer\spica-photo-viewer.exe" -CheckRegistry`
 Expected: PASS — `OK: 32512 (アプリ) と 32513 (ファイルタイプ) の 2 グループを確認`
 
 - [ ] **Step 6: コミット**

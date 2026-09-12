@@ -1,7 +1,7 @@
 # Windows のファイル関連付けアイコンをアプリアイコンから分離する設計
 
 - 日付: 2026-09-12
-- 状態: 設計承認済み・実装未着手
+- 状態: 実装済み。実機での手動検証（`docs/superpowers/plans/2026-09-12-file-type-icon-checklist.md`）待ち
 - 関連: `PROJECT_SPEC.md` の Windows Installer 節（§7 で更新する）
 
 ## 0. 苦情
@@ -209,7 +209,7 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 
 生成された `installer.nsi` の install セクションは `NSIS_HOOK_PREINSTALL` → `CheckIfAppIsRunning` → 関連付け作成（`APP_ASSOCIATE`）→ `NSIS_HOOK_POSTINSTALL` の順。uninstall セクションも `NSIS_HOOK_PREUNINSTALL` → 関連付け削除 → `NSIS_HOOK_POSTUNINSTALL` の順。いずれも事前補正・上書き・後片付けとして正しい位置にある。`${If}` を使える LogicLib は、テンプレート冒頭の `!include MUI2.nsh` が既に読み込んでいる。
 
-`Applications\<exe>\DefaultIcon` を別途書くのは、ユーザーが「プログラムから開く > 別のアプリを選択」で既定にした場合、UserChoice が指す ProgID が `Applications\spica-photo-viewer.exe` になり、上表の ProgID 群を通らないため。実機でもこのキーが（`shell\open\command` だけの状態で）存在することを確認している。
+`Applications\<exe>\DefaultIcon` を別途書くのは、ユーザーが「プログラムから開く > 別のアプリを選択」から exe を直接指定して（「PC でアプリを探す」）既定にした場合、UserChoice が指す ProgID が `Applications\spica-photo-viewer.exe` になり、上表の ProgID 群を通らないため（一覧に出る本アプリの項目を選べば `SpicaPhotoViewer.*` を指す）。実機でもこのキーが（`shell\open\command` だけの状態で）存在することを確認している。
 
 ## 5. 設計上の判断
 
@@ -231,14 +231,14 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 
 インストーラ経路は自動テストで担保できない。現行 e2e はビルド済み exe を直接起動する構成でインストーラを通らないため。手動チェックリストを用意する。
 
-検証前に、現在 `C:\Program Files\Spica Photo Viewer\` に入っている実体（NSIS の currentUser モードは `%LOCALAPPDATA%\Programs\` に入れるため、MSI 版と思われる）をアンインストールして環境を揃える。
+検証前に、現在 `C:\Program Files\Spica Photo Viewer\` に入っている実体をアンインストールして環境を揃える。NSIS の currentUser モードは `%LOCALAPPDATA%\Spica Photo Viewer\` に入れる（生成される `installer.nsi` の `StrCpy $INSTDIR "$LOCALAPPDATA\${PRODUCTNAME}"`）ので、これは MSI 版である（HKLM の Uninstall エントリの `UninstallString` も `MsiExec.exe /X{...}`）。
 
 1. ビルド後の exe のアイコングループ数が 2 であること（`ExtractIconExW(path, -1, ...)` で計数）
 2. タスクバー / スタートメニュー / デスクトップのショートカットが**従来のアイコンのまま**であること
 3. インストール直後にレジストリ 5 箇所が期待値であること
-4. png / jpg / webp / gif の**詳細・一覧・小アイコン**表示が新アイコンになること
+4. png / jpg / webp / gif の**詳細・一覧・小アイコン**表示が新アイコンになること（本アプリを既定にした状態で。インストールだけでは UserChoice は変わらない、§8）
 5. **中アイコン以上でサムネイルが出続ける**こと（§1.2 の退行確認）
-6. 「プログラムから開く > 別のアプリを選択」で既定にした場合もアイコンが変わること
+6. 「プログラムから開く」で exe を直接指定して既定にした場合（UserChoice が `Applications\<exe>` を指す）もアイコンが変わること
 7. ファイルのダブルクリックで画像が開くこと（`commands/file.rs` の `startup_file_in(std::env::args().skip(1))` 経路の退行確認）
 8. アンインストール後、`Software\Classes\SpicaPhotoViewer.*` と `Applications\<exe>\DefaultIcon` が消え、各拡張子キーの `<ProgID>_backup` 値が消え、既定値がインストール前の状態（前の ProgID、または値なし）に戻ること（F12, F13）
 
