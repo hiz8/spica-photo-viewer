@@ -148,6 +148,25 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 `src-tauri/installer-hooks.nsh`（新規）:
 
 ```nsh
+; (F12) 上書きインストールで _backup が自分の ProgID に置き換わるのを防ぐ。
+!macro SPICA_UNDO_OWN_ASSOCIATION EXT PROGID
+  ReadRegStr $R0 SHCTX "Software\Classes\.${EXT}" ""
+  ${If} $R0 == "${PROGID}"
+    ReadRegStr $R0 SHCTX "Software\Classes\.${EXT}" "${PROGID}_backup"
+    WriteRegStr SHCTX "Software\Classes\.${EXT}" "" $R0
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  Push $R0
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "jpg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "jpeg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "png" "SpicaPhotoViewer.png"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "webp" "SpicaPhotoViewer.webp"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "gif" "SpicaPhotoViewer.gif"
+  Pop $R0
+!macroend
+
 ; (F10) ${MAINBINARYNAME} はこの !include より後で !define されるため、
 ; トップレベルでは解決できない。マクロ本体は !insertmacro 時に展開される。
 !macro SPICA_WRITE_FILE_TYPE_ICON KEY
@@ -171,7 +190,7 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 
 `installerHooks` に書くパスは bundler の cwd（`src-tauri/`）基準で canonicalize され、テンプレートには絶対パスとして埋め込まれる。
 
-生成された `installer.nsi` で、関連付け作成は install セクションの途中、`NSIS_HOOK_POSTINSTALL` はその後に挿入される。uninstall セクションも `NSIS_HOOK_PREUNINSTALL` → 関連付け削除 → `NSIS_HOOK_POSTUNINSTALL` の順。いずれも上書き・後片付けとして正しい位置にある。
+生成された `installer.nsi` の install セクションは `NSIS_HOOK_PREINSTALL` → `CheckIfAppIsRunning` → 関連付け作成（`APP_ASSOCIATE`）→ `NSIS_HOOK_POSTINSTALL` の順。uninstall セクションも `NSIS_HOOK_PREUNINSTALL` → 関連付け削除 → `NSIS_HOOK_POSTUNINSTALL` の順。いずれも事前補正・上書き・後片付けとして正しい位置にある。`${If}` を使える LogicLib は、テンプレート冒頭の `!include MUI2.nsh` が既に読み込んでいる。
 
 `Applications\<exe>\DefaultIcon` を別途書くのは、ユーザーが「プログラムから開く > 別のアプリを選択」で既定にした場合、UserChoice が指す ProgID が `Applications\spica-photo-viewer.exe` になり、上表の ProgID 群を通らないため。実機でもこのキーが（`shell\open\command` だけの状態で）存在することを確認している。
 
@@ -188,6 +207,7 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 - **(F9) `targets` を `["nsis"]` に絞る。** MSI にはこのフックが効かず、同じビルドから挙動の違う 2 つの配布物が出るのは事故のもと。GitHub Releases はまだ 1 件も公開しておらず、配布形態を選べる状態にある。
 - **(F10) `.nsh` のトップレベルで `${MAINBINARYNAME}` を参照しない。** テンプレートはフックの `!include` を `!define MAINBINARYNAME` より前に置く。トップレベルの `!define` は include 時に評価されるため未定義参照になる。マクロ本体は `!insertmacro` 時に展開されるので、そこで参照すれば解決される。
 - **(F11) `tauri-build` の依存要求を `"2.6"` に上げる。** `append_rc_content` は 2.5.6 に存在しない。現在の `Cargo.toml` は `"2.5"`（= `^2.5`）で、たまたま lock が 2.6.3 を指しているだけなので、API への依存を要求として明示する。
+- **(F12) PREINSTALL で、既定値が自分の ProgID を指している拡張子を `_backup` の値へ戻す。** アンインストールを経ない上書きインストール（同一バージョンで既定の「追加/再インストール」を選んだ場合、`/UPDATE`、アップグレード時に「アンインストールしない」を選んだ場合）では `APP_ASSOCIATE` が再実行され、その時点の既定値＝自分の ProgID を `<ProgID>_backup` に退避し直す。前の持ち主はここで失われ、アンインストール時に `APP_UNASSOCIATE` が既定値を削除済みの自分の ProgID へ「復元」し、拡張子が存在しない ProgID を指したまま残る。先に既定値を `_backup` の値へ戻せば、`APP_ASSOCIATE` は常に前の持ち主を退避するので `_backup` が自分の ProgID を指すことは無い。既定値が自分の ProgID でない場合（初回インストール、または他アプリが既定の場合）は何もしないので、`APP_ASSOCIATE` は従来通りその値（無ければ空文字）を退避する。PREINSTALL は `CheckIfAppIsRunning` より前に走るため、そこで中止すると既定値は前の持ち主に戻ったまま残るが、この状態からの再インストール・アンインストールはどちらも正しく動く。`jpg` と `jpeg` は ProgID を共有するが `_backup` は拡張子キーごとに持つので、拡張子ごとに補正する。
 
 ## 6. 検証計画
 
@@ -220,6 +240,6 @@ Tauri の `APP_ASSOCIATE` マクロが書くもの（フックでは触らない
 
 ## 8. リスク
 
-- **既定アプリの奪取**: `fileAssociations` を入れると `APP_ASSOCIATE` が `Software\Classes\.<ext>` の既定値を書き換える。Windows 10/11 では UserChoice が優先されるため既定アプリ自体は乗っ取られないが、**既定を一度も設定していない環境ではインストールしただけで画像の既定が本アプリになる**。画像ビューアというアプリの性格上むしろ意図と整合的と判断して受け入れる。アンインストール時は `APP_UNASSOCIATE` が `_backup` 値から復元する
+- **既定アプリの奪取**: `fileAssociations` を入れると `APP_ASSOCIATE` が `Software\Classes\.<ext>` の既定値を書き換える。Windows 10/11 では UserChoice が優先されるため既定アプリ自体は乗っ取られないが、**既定を一度も設定していない環境ではインストールしただけで画像の既定が本アプリになる**。画像ビューアというアプリの性格上むしろ意図と整合的と判断して受け入れる。アンインストール時は `APP_UNASSOCIATE` が `_backup` 値から復元する。アンインストールを経ない上書きインストールでも `_backup` が前の持ち主を保つよう、PREINSTALL で補正している（F12）
 - **upstream 実装時の移行**: `fileAssociations` に icon フィールドが入れば、`installer-hooks.nsh` の ProgID 4 行と `build.rs` の `append_rc_content` は設定 1 行に畳める。Tauri 標準の配線に乗せてあるので移行は局所的で済む
 - **`Applications\<exe>\DefaultIcon` の残骸**: アンインストール時に消すのはフックが書いた `DefaultIcon` キーのみ。Windows が作った `shell\open\command` は残るが、これは Windows 側が管理する領域なので触らない

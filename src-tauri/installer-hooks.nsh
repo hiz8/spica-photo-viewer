@@ -2,7 +2,30 @@
 ;
 ; Tauri の APP_ASSOCIATE は DefaultIcon を "exe,0" 固定で書く。設定で変える
 ; 手段が無いので、関連付け作成の後に走る POSTINSTALL で上書きする。
-;
+
+; (F12) アンインストールを経ない上書きインストールでは APP_ASSOCIATE が再実行され、
+; 自分の ProgID を _backup に退避し直して前の持ち主を失う。既定値が自分の ProgID
+; なら _backup の値へ戻してから APP_ASSOCIATE に渡す。
+!macro SPICA_UNDO_OWN_ASSOCIATION EXT PROGID
+  ReadRegStr $R0 SHCTX "Software\Classes\.${EXT}" ""
+  ${If} $R0 == "${PROGID}"
+    ReadRegStr $R0 SHCTX "Software\Classes\.${EXT}" "${PROGID}_backup"
+    WriteRegStr SHCTX "Software\Classes\.${EXT}" "" $R0
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  ; フックはテンプレートの途中に展開されるので、使うレジスタは元に戻す。
+  Push $R0
+  ; jpg と jpeg は ProgID を共有するが、_backup は拡張子キーごとに別に持つ。
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "jpg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "jpeg" "SpicaPhotoViewer.jpeg"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "png" "SpicaPhotoViewer.png"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "webp" "SpicaPhotoViewer.webp"
+  !insertmacro SPICA_UNDO_OWN_ASSOCIATION "gif" "SpicaPhotoViewer.gif"
+  Pop $R0
+!macroend
+
 ; (F10) ${MAINBINARYNAME} はこの .nsh の !include より後で !define される。
 ; トップレベルでは解決できないが、マクロ本体は !insertmacro 時に展開される。
 !macro SPICA_WRITE_FILE_TYPE_ICON KEY
