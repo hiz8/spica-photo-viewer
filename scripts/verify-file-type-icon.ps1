@@ -8,7 +8,9 @@
 # Windows PowerShell 5.1 がシステムの既定コードページとして誤読し、
 # 下記の日本語文字列リテラルが文字化けしてパースエラーになる。
 param(
-  [Parameter(Mandatory = $true)][string]$ExePath
+  [Parameter(Mandatory = $true)][string]$ExePath,
+  [switch]$CheckRegistry,
+  [string]$InstallDir
 )
 
 $sig = @'
@@ -41,6 +43,28 @@ try {
   }
 } finally {
   [void]$api::FreeLibrary($module)
+}
+
+if ($CheckRegistry) {
+  if (-not $InstallDir) { $InstallDir = Split-Path -Parent $exe }
+  $expected = '"{0}\spica-photo-viewer.exe",-32513' -f $InstallDir
+  $keys = @(
+    "Software\Classes\SpicaPhotoViewer.jpeg\DefaultIcon",
+    "Software\Classes\SpicaPhotoViewer.png\DefaultIcon",
+    "Software\Classes\SpicaPhotoViewer.webp\DefaultIcon",
+    "Software\Classes\SpicaPhotoViewer.gif\DefaultIcon",
+    "Software\Classes\Applications\spica-photo-viewer.exe\DefaultIcon"
+  )
+  foreach ($key in $keys) {
+    # インストーラは SHCTX に書く。installMode の既定は currentUser なので HKCU。
+    $path = "Registry::HKEY_CURRENT_USER\$key"
+    if (-not (Test-Path $path)) {
+      $failures += "$key が無い"
+      continue
+    }
+    $actual = (Get-ItemProperty $path).'(default)'
+    if ($actual -ne $expected) { $failures += "$key = '$actual' (期待値 '$expected')" }
+  }
 }
 
 if ($failures.Count -gt 0) {
