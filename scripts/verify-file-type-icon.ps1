@@ -13,6 +13,9 @@ param(
   [string]$InstallDir
 )
 
+# パス誤りなどを、後続の API 呼び出しの的外れな結果ではなく元の原因で止める。
+$ErrorActionPreference = 'Stop'
+
 $sig = @'
 [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
 public static extern IntPtr LoadLibraryExW(string lpFileName, IntPtr hFile, uint dwFlags);
@@ -35,7 +38,12 @@ $groups = $api::ExtractIconExW($exe, -1, $null, $null, 0)
 if ($groups -ne 2) { $failures += "アイコングループ数が $groups (期待値 2)" }
 
 $module = $api::LoadLibraryExW($exe, [IntPtr]::Zero, $LOAD_LIBRARY_AS_DATAFILE)
-if ($module -eq [IntPtr]::Zero) { throw "LoadLibraryExW に失敗: $exe" }
+# 後続の P/Invoke（Win32Exception の生成を含む）で上書きされうるので直後に取る。
+$loadError = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+if ($module -eq [IntPtr]::Zero) {
+  $reason = (New-Object System.ComponentModel.Win32Exception $loadError).Message
+  throw "LoadLibraryExW に失敗: $exe (Win32 エラー ${loadError}: $reason)"
+}
 try {
   foreach ($id in 32512, 32513) {
     $icon = $api::LoadImageW($module, [IntPtr]$id, $IMAGE_ICON, 16, 16, 0)
@@ -56,7 +64,7 @@ if ($CheckRegistry) {
     "Software\Classes\Applications\spica-photo-viewer.exe\DefaultIcon"
   )
   foreach ($key in $keys) {
-    # インストーラは SHCTX に書く。installMode の既定は currentUser なので HKCU。
+    # HKCU 固定。installMode を perMachine / both に変えたらここも変える (F6)。
     $path = "Registry::HKEY_CURRENT_USER\$key"
     if (-not (Test-Path $path)) {
       $failures += "$key が無い"
