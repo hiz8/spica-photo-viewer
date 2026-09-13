@@ -9,7 +9,7 @@
 ### Supported Platforms
 
 - Windows 10/11 (primary target)
-- MSI installer with file association for image formats
+- NSIS installer (per-user) with file association for image formats
 
 ### Supported Image Formats
 
@@ -46,7 +46,7 @@
 - **Build Tools**:
   - Vite for frontend bundling
   - Tauri CLI for building and packaging
-  - WiX Toolset for MSI installer creation
+  - NSIS (downloaded by the Tauri CLI) for installer creation
 
 ### Project Structure
 
@@ -512,9 +512,11 @@ npm run tauri build
 
 ### Installer Creation
 
-- Use Tauri's WiX integration
+- Use Tauri's NSIS integration (`bundle.targets` is `["nsis"]`; the WiX/MSI target is not supported)
 - Configure file associations for .jpg, .jpeg, .png, .webp, .gif
-- Set registry entries for default image viewer
+- Register per-user ProgIDs (`SpicaPhotoViewer.*`) and point each extension key at them (the previous value is kept in `<ProgID>_backup` and restored on uninstall). This does not change the user's default app (`UserChoice`) and does not register in Windows Settings' "Default apps" list (`RegisteredApplications` / `Capabilities`)
+- Give Explorer a dedicated file-type icon via `installerHooks`, separate from the app icon
+  (see `docs/superpowers/specs/2026-09-12-file-type-icon-design.md`)
 
 ## Performance Targets
 
@@ -560,7 +562,7 @@ All four implementation phases have been completed successfully:
 ### Key Achievements
 
 - **Supported Formats**: JPEG, PNG, WebP, GIF (with animation)
-- **Windows Integration**: MSI installer with file association
+- **Windows Integration**: NSIS installer with file association
 - **User Interface**: Thumbnail navigation, fullscreen mode, keyboard shortcuts
 - **Performance**: Memory management, caching system, responsive UI
 - **Error Handling**: Graceful degradation for all error scenarios
@@ -570,7 +572,7 @@ All four implementation phases have been completed successfully:
 - **Frontend**: React 19 + TypeScript + Zustand
 - **Backend**: Tauri v2.1 + Rust
 - **Build System**: Vite + Tauri CLI
-- **Installer**: WiX Toolset (MSI)
+- **Installer**: NSIS
 
 ### Known Limitations
 
@@ -580,4 +582,4 @@ All four implementation phases have been completed successfully:
 
 ### Production Status
 
-The application is production-ready and fully functional. Installation via MSI installer enables double-click opening of image files and complete integration with Windows Explorer.
+The application is production-ready and fully functional. Installation via the NSIS installer enables double-click opening of image files and complete integration with Windows Explorer.

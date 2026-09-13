@@ -10,13 +10,13 @@ A lightweight, fast image viewer application for Windows, inspired by Picasa Pho
 - **Keyboard Shortcuts**: Full keyboard navigation support
 - **Fullscreen Mode**: F11 toggle for immersive viewing
 - **File Association**: Double-click image files to open directly
-- **Windows Integration**: MSI installer with file type associations
+- **Windows Integration**: NSIS installer (per-user, no admin rights) with file type associations
 
 ## Installation
 
 ### For Users
 
-1. Download the latest MSI installer from [Releases](https://github.com/hiz8/spica-photo-viewer/releasess)
+1. Download the latest installer (`Spica Photo Viewer_<version>_x64-setup.exe`) from [Releases](https://github.com/hiz8/spica-photo-viewer/releasess)
 2. Run the installer and follow the setup wizard
 3. Double-click any supported image file to open with Spica Photo Viewer
 
@@ -123,7 +123,7 @@ If you are new to Rust or Tauri, start with [`docs/onboarding/README.md`](docs/o
 npm run tauri build
 ```
 
-The MSI installer will be generated in `src-tauri/target/release/bundle/msi/`.
+The NSIS installer (`*_x64-setup.exe`) will be generated in `src-tauri/target/release/bundle/nsis/`.
 
 ### Version Management
 
@@ -169,7 +169,7 @@ spica-photo-viewer/
 - **Frontend**: React 19 + TypeScript + Zustand
 - **Backend**: Tauri v2.1 + Rust
 - **Build Tools**: Vite + Tauri CLI
-- **Installer**: WiX Toolset (MSI)
+- **Installer**: NSIS (via the Tauri bundler)
 
 ## Contributing
 

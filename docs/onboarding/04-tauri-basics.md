@@ -32,7 +32,7 @@ Tauri v2 アプリは大きく 4 つの要素でできています。
 
 ## `tauri.conf.json` の主要セクション
 
-`src-tauri/tauri.conf.json:1-52` を上から順に読み解きます。
+`src-tauri/tauri.conf.json:1-92` を上から順に読み解きます。
 
 ### `productName` / `version` / `identifier` (3-5 行目)
 
@@ -42,7 +42,7 @@ Tauri v2 アプリは大きく 4 つの要素でできています。
 "identifier": "com.hirof.spica-photo-viewer"
 ```
 
-`identifier` は逆ドメイン形式で書きます。MSI インストーラやファイル関連付け時のレジストリキーに使われる、アプリのユニーク ID です。
+`identifier` は逆ドメイン形式で書きます。アプリのユニーク ID で、アプリデータのフォルダ名 (`%APPDATA%\com.hirof.spica-photo-viewer` など) や、インストーラがショートカットに設定する AppUserModelID に使われます。ファイル関連付けのレジストリキー (ProgID) には使われず、`bundle.fileAssociations` の `name` が使われます。
 
 ### `build` (6-11 行目)
 
@@ -91,9 +91,9 @@ Tauri v2 アプリは大きく 4 つの要素でできています。
 ]
 ```
 
-### `bundle` (41-51 行目)
+### `bundle` (43-91 行目)
 
-`tauri build` で出力するインストーラの設定。`targets: "all"` は対応する OS 全部 (Windows なら MSI、macOS なら DMG、Linux なら AppImage 等) を出すという意味です。
+`tauri build` で出力するインストーラの設定。`targets: ["nsis"]` で Windows 向けの NSIS インストーラ (`*-setup.exe`) だけを出します。MSI を出さないのは、MSI にはインストーラフックが効かないため (`docs/superpowers/specs/2026-09-12-file-type-icon-design.md` の F9)。`fileAssociations` はファイル関連付け (拡張子ごとの ProgID)、`windows.nsis.installerHooks` はインストーラに差し込む NSIS スクリプト (`src-tauri/installer-hooks.nsh`) です。
 
 ---
 

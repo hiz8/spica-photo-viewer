@@ -17,6 +17,8 @@
     "test:coverage": "vitest --coverage",
     "bench:build": "node e2e/scripts/build-bench.mjs",
     "bench:corpus": "node e2e/scripts/generate-corpus.mjs",
+    "build:file-icon": "node scripts/build-file-icon.mjs src-tauri/icons/file-type.svg src-tauri/icons/file-type.ico",
+    "build:file-icon:test": "node --test scripts/__tests__/build-file-icon.test.mjs",
     "profile:rust": "node e2e/scripts/profile-rust.mjs",
     "profile:nav-rapid": "node e2e/scripts/profile-nav-rapid.mjs",
     "profile:nav-rapid:analyze": "node e2e/scripts/analyze-nav-rapid.mjs",
