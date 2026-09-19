@@ -715,13 +715,7 @@ mod tests {
         // An entry whose file is old but whose `created` claims fresh goes
         // too: the sweep never opens entries, it trusts the mtime.
         let mtime_old_path = touch("mtime-old.jpg");
-        store_thumbnail_entry(
-            dir.path(),
-            &mtime_old_path,
-            20,
-            &entry(Some((1, 1)), None),
-        )
-        .unwrap();
+        store_thumbnail_entry(dir.path(), &mtime_old_path, 20, &entry(Some((1, 1)), None)).unwrap();
         filetime::set_file_mtime(
             json_file(dir.path(), &mtime_old_path, 20),
             filetime_for_test(now - 100_000),
@@ -777,7 +771,10 @@ mod tests {
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].as_ref().map(|r| r.0.as_str()), Some("AAAA"));
         assert!(results[1].is_none());
-        assert_eq!(results[2].as_ref().map(|r| (r.1, r.2)), Some((Some(800), Some(600))));
+        assert_eq!(
+            results[2].as_ref().map(|r| (r.1, r.2)),
+            Some((Some(800), Some(600)))
+        );
     }
 
     #[test]

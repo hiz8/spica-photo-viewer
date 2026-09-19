@@ -8,7 +8,9 @@ use std::time::Instant;
 pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        std::env::var("SPICA_PERF").map(|v| v == "1").unwrap_or(false)
+        std::env::var("SPICA_PERF")
+            .map(|v| v == "1")
+            .unwrap_or(false)
     })
 }
 

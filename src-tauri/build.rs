@@ -13,9 +13,8 @@ fn main() {
     );
 
     tauri_build::try_build(
-        tauri_build::Attributes::new().windows_attributes(
-            tauri_build::WindowsAttributes::new().append_rc_content(rc),
-        ),
+        tauri_build::Attributes::new()
+            .windows_attributes(tauri_build::WindowsAttributes::new().append_rc_content(rc)),
     )
     .expect("failed to run tauri-build");
 }
