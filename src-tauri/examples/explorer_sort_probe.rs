@@ -22,32 +22,42 @@ fn main() {
             unsafe { CoUninitialize() };
         }
         Some("order") => {
-            let folder = args.get(1).expect("usage: explorer_sort_probe order <folder>");
+            let folder = args
+                .get(1)
+                .expect("usage: explorer_sort_probe order <folder>");
             unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap() };
             win::dump_display_order(folder);
             unsafe { CoUninitialize() };
         }
         Some("app") => {
-            let folder = args.get(1).expect("usage: explorer_sort_probe app <folder> [--hwnd N]");
+            let folder = args
+                .get(1)
+                .expect("usage: explorer_sort_probe app <folder> [--hwnd N]");
             let hwnd = args
                 .iter()
                 .position(|a| a == "--hwnd")
                 .and_then(|i| args.get(i + 1))
                 .and_then(|v| v.parse::<isize>().ok());
-            let spec =
-                spica_photo_viewer_lib::probe_api::detect_sort_spec(std::path::Path::new(folder), hwnd);
+            let spec = spica_photo_viewer_lib::probe_api::detect_sort_spec(
+                std::path::Path::new(folder),
+                hwnd,
+            );
             eprintln!("detect_sort_spec(hwnd={hwnd:?}) => {spec:?}");
             let images = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap()
-                .block_on(spica_photo_viewer_lib::probe_api::get_folder_images(folder.clone()))
+                .block_on(spica_photo_viewer_lib::probe_api::get_folder_images(
+                    folder.clone(),
+                ))
                 .expect("get_folder_images failed");
             for img in &images {
                 println!("{}", img.filename);
             }
         }
-        _ => eprintln!("usage: explorer_sort_probe (list | order <folder> | app <folder> [--hwnd N])"),
+        _ => eprintln!(
+            "usage: explorer_sort_probe (list | order <folder> | app <folder> [--hwnd N])"
+        ),
     }
 }
 
@@ -65,7 +75,7 @@ mod win {
     use windows::Win32::System::Variant::{VARIANT, VARIANT_0_0, VARIANT_0_0_0, VT_I4};
     use windows::Win32::UI::Shell::{
         IFolderView2, IPersistFolder2, IShellBrowser, IShellItem, IShellView, IShellWindows,
-        IUnknown_QueryService, SHGetPathFromIDListW, ShellWindows, SID_STopLevelBrowser,
+        IUnknown_QueryService, SHGetPathFromIDListW, SID_STopLevelBrowser, ShellWindows,
         SIGDN_PARENTRELATIVEPARSING, SORTCOLUMN, SVGIO_ALLVIEW,
     };
     use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
@@ -91,20 +101,28 @@ mod win {
                 wReserved3: 0,
                 Anonymous: VARIANT_0_0_0 { lVal: i },
             });
-            let Ok(disp) = (unsafe { shell_windows.Item(&idx) }) else { continue };
-            let disp: IDispatch = disp;
-            let Ok(browser) =
-                (unsafe { IUnknown_QueryService::<_, IShellBrowser>(&disp, &SID_STopLevelBrowser) })
-            else {
+            let Ok(disp) = (unsafe { shell_windows.Item(&idx) }) else {
                 continue;
             };
-            let Ok(view) = (unsafe { browser.QueryActiveShellView() }) else { continue };
+            let disp: IDispatch = disp;
+            let Ok(browser) = (unsafe {
+                IUnknown_QueryService::<_, IShellBrowser>(&disp, &SID_STopLevelBrowser)
+            }) else {
+                continue;
+            };
+            let Ok(view) = (unsafe { browser.QueryActiveShellView() }) else {
+                continue;
+            };
             let view: IShellView = view;
-            let Ok(view2) = view.cast::<IFolderView2>() else { continue };
+            let Ok(view2) = view.cast::<IFolderView2>() else {
+                continue;
+            };
             let top = unsafe { browser.GetWindow() }
                 .ok()
                 .map(|h| unsafe { GetAncestor(h, GA_ROOT) }.0 as isize);
-            let Some(path) = folder_path(&view2) else { continue };
+            let Some(path) = folder_path(&view2) else {
+                continue;
+            };
             out.push((view2, top, path));
         }
         out
@@ -135,7 +153,12 @@ mod win {
                 if unsafe { view.GetSortColumns(&mut cols) }.is_ok() {
                     cols_txt = cols
                         .iter()
-                        .map(|c| format!("{:?}/{} dir={}", c.propkey.fmtid, c.propkey.pid, c.direction.0))
+                        .map(|c| {
+                            format!(
+                                "{:?}/{} dir={}",
+                                c.propkey.fmtid, c.propkey.pid, c.direction.0
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join("; ");
                 }
@@ -161,7 +184,9 @@ mod win {
             }
             let count = unsafe { view.ItemCount(SVGIO_ALLVIEW) }.unwrap_or(0);
             for i in 0..count {
-                let Ok(item) = (unsafe { view.GetItem::<IShellItem>(i) }) else { continue };
+                let Ok(item) = (unsafe { view.GetItem::<IShellItem>(i) }) else {
+                    continue;
+                };
                 if let Ok(name) = unsafe { item.GetDisplayName(SIGDN_PARENTRELATIVEPARSING) } {
                     let s = unsafe { name.to_string() }.unwrap_or_default();
                     unsafe { CoTaskMemFree(Some(name.0 as *const core::ffi::c_void)) };

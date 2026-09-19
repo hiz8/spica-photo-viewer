@@ -13,11 +13,17 @@ npm run sync-version       # Sync version from package.json to Cargo.toml and ta
 # Rust backend tests
 cd src-tauri && cargo test --lib
 cd src-tauri && cargo test commands::file::tests  # Run specific test module
+
+# Rust lint/format (CI gates on both)
+cd src-tauri && cargo fmt                                    # Auto-fix formatting (rustfmt)
+cd src-tauri && cargo fmt --check                            # Formatting check
+cd src-tauri && cargo clippy --all-targets -- -D warnings    # Lint check
 ```
 
 ## Code Style
 
 - oxlint for linting, oxfmt for formatting (not ESLint/Prettier, not Biome)
+- Rust uses rustfmt and clippy defaults (no `rustfmt.toml`, no `clippy.toml`)
 - Run `npm run lint:fix` and `npm run format:fix` before committing
 
 ## Testing

@@ -66,9 +66,7 @@ pub(crate) fn natural_cmp_fallback(a: &str, b: &str) -> Ordering {
             j += 1;
         }
     }
-    (av.len() - i)
-        .cmp(&(bv.len() - j))
-        .then_with(|| a.cmp(b))
+    (av.len() - i).cmp(&(bv.len() - j)).then_with(|| a.cmp(b))
 }
 
 #[cfg(test)]

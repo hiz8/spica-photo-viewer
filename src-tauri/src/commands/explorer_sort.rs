@@ -187,18 +187,16 @@ mod imp {
     use windows::Win32::System::Variant::{VARIANT, VARIANT_0_0, VARIANT_0_0_0, VT_I4};
     use windows::Win32::UI::Shell::{
         IFolderView2, IPersistFolder2, IShellBrowser, IShellView, IShellWindows,
-        IUnknown_QueryService, SHGetPathFromIDListW, ShellWindows, SID_STopLevelBrowser,
+        IUnknown_QueryService, SHGetPathFromIDListW, SID_STopLevelBrowser, ShellWindows,
     };
     use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
 
-    pub(super) fn scan_shell_windows(
-        folder: &Path,
-        foreground: Option<isize>,
-    ) -> Option<SortSpec> {
+    pub(super) fn scan_shell_windows(folder: &Path, foreground: Option<isize>) -> Option<SortSpec> {
         let target = normalize_path(&folder.to_string_lossy());
-        let shell_windows: IShellWindows =
-            unsafe { CoCreateInstance(&ShellWindows, None::<&windows::core::IUnknown>, CLSCTX_ALL) }
-                .ok()?;
+        let shell_windows: IShellWindows = unsafe {
+            CoCreateInstance(&ShellWindows, None::<&windows::core::IUnknown>, CLSCTX_ALL)
+        }
+        .ok()?;
         let count = unsafe { shell_windows.Count() }.ok()?;
         // Outer Option: "some window showing the folder was seen"; inner:
         // that window's mapped spec. The FIRST matching window is locked in
@@ -234,7 +232,10 @@ mod imp {
     /// Resolves one IShellWindows entry to its folder view and top-level
     /// frame HWND. Entries can be non-browser shell hosts or vanish
     /// mid-enumeration; any failure skips the entry.
-    fn entry_at(shell_windows: &IShellWindows, index: i32) -> Option<(IFolderView2, Option<isize>)> {
+    fn entry_at(
+        shell_windows: &IShellWindows,
+        index: i32,
+    ) -> Option<(IFolderView2, Option<isize>)> {
         let mut idx = VARIANT::default();
         idx.Anonymous.Anonymous = std::mem::ManuallyDrop::new(VARIANT_0_0 {
             vt: VT_I4,
@@ -382,7 +383,10 @@ mod tests {
 
     #[test]
     fn normalize_path_unifies_forward_slashes() {
-        assert_eq!(normalize_path("C:/photos/2024"), normalize_path(r"C:\photos\2024"));
+        assert_eq!(
+            normalize_path("C:/photos/2024"),
+            normalize_path(r"C:\photos\2024")
+        );
     }
 
     #[test]

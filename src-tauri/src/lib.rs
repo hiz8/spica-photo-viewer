@@ -156,8 +156,8 @@ pub fn run() {
 /// Probe-only surface for scripts/explorer-sort-probe. Not a public API.
 #[doc(hidden)]
 pub mod probe_api {
-    pub use crate::commands::explorer_sort::normalize_path;
     #[cfg(windows)]
     pub use crate::commands::explorer_sort::detect_sort_spec;
+    pub use crate::commands::explorer_sort::normalize_path;
     pub use crate::commands::file::get_folder_images;
 }

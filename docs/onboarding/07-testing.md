@@ -124,7 +124,7 @@ fn test_open_with_dialog_with_nonexistent_file() {
 }
 ```
 
-CI は Linux で動く (`.github/workflows/ci.yml:46-68`) ので、Windows 限定テストは CI ではスキップされ、Windows 開発機でのみ走ります。
+CI は Linux で動く (`.github/workflows/ci.yml:45-79`) ので、Windows 限定テストは CI ではスキップされ、Windows 開発機でのみ走ります。同じ理由で `cargo clippy` も Windows 限定コードを見ません。
 
 ### Tauri command のテストで気をつけること
 
