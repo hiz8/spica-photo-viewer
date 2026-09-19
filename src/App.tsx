@@ -1,17 +1,19 @@
+import { invoke } from "@tauri-apps/api/core";
 import type React from "react";
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import ImageViewer from "./components/ImageViewer";
+
+import AboutDialog from "./components/AboutDialog";
 import DropZone from "./components/DropZone";
 import FileOpenButton from "./components/FileOpenButton";
+import ImageViewer from "./components/ImageViewer";
 import ThumbnailBar from "./components/ThumbnailBar";
-import AboutDialog from "./components/AboutDialog";
-import { useKeyboard } from "./hooks/useKeyboard";
 import { useCacheManager } from "./hooks/useCacheManager";
+import { useKeyboard } from "./hooks/useKeyboard";
 import { useWindowState } from "./hooks/useWindowState";
 import { useAppStore } from "./store";
 import type { StartupFile } from "./types";
 import { perfMark } from "./utils/perf";
+
 import "./App.css";
 
 const App: React.FC = () => {
@@ -56,6 +58,7 @@ const App: React.FC = () => {
     };
 
     checkStartupFile();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- setCheckingStartupFile IS read (in the finally above); oxlint 1.83 does not count reads inside try/finally, so it calls the dependency unnecessary
   }, [openImageFromPath, setCachedThumbnail, setCheckingStartupFile]);
 
   return (

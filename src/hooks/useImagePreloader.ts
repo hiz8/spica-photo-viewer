@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+
 import { BITMAP_CACHE_BUDGET_BYTES } from "../constants/memory";
 import { MAX_CONCURRENT_LOADS } from "../constants/timing";
 import { useAppStore } from "../store";
@@ -139,8 +140,8 @@ export const useImagePreloader = (): void => {
     // farthest-first, never current.
     const ranked = [currentPath, ...windowIndices.map((i) => images[i].path)];
     while (bitmapBytes() > BITMAP_CACHE_BUDGET_BYTES) {
-      const victim = [...ranked]
-        .reverse()
+      const victim = ranked
+        .toReversed()
         .find((p) => p !== currentPath && hasBitmap(p));
       if (!victim) break;
       deleteBitmap(victim);
@@ -240,9 +241,11 @@ export const useImagePreloader = (): void => {
           // hook stays mounted for the app's lifetime (ImageViewer is
           // permanently mounted, App.tsx) — if it ever unmounted mid-flight
           // this could launch an owner-less load.
+          // oxlint-disable-next-line react/immutability -- self-recursion is the point: pump() re-arms itself on completion, and useCallback([]) keeps that identity stable
           pump();
         });
     }
+    // oxlint-disable-next-line react/memo-dependencies -- the missing dep IS pump itself; a callback cannot list itself
   }, []);
 
   // Folder change invalidates every retained bitmap and in-flight load.
@@ -260,7 +263,14 @@ export const useImagePreloader = (): void => {
     budgetSaturatedRef.current = false;
   }, [folder.path]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: folder.images isn't read in the closure (pump() re-reads it fresh via useAppStore.getState()), but it must stay a dependency so this effect re-fires — and pumps — when the image list itself changes (e.g. populates asynchronously) even while currentImage.index stays put. cache.thumbnails and currentReady are also unread here but must stay dependencies so the effect re-fires — and lets the fill phase inside pump() reach newly eligible paths — when a thumbnail lands or the fill gate opens without the index itself changing.
+  // folder.images isn't read in the closure (pump() re-reads it fresh via
+  // useAppStore.getState()), but it must stay a dependency so this effect
+  // re-fires — and pumps — when the image list itself changes (e.g. populates
+  // asynchronously) even while currentImage.index stays put. cache.thumbnails
+  // and currentReady are also unread here but must stay dependencies so the
+  // effect re-fires — and lets the fill phase inside pump() reach newly
+  // eligible paths — when a thumbnail lands or the fill gate opens without the
+  // index itself changing.
   useEffect(() => {
     const index = currentImage.index;
     if (index !== prevIndexRef.current) {
@@ -280,6 +290,7 @@ export const useImagePreloader = (): void => {
       return;
     }
     pump();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the three "unnecessary" deps are the deliberate re-fire triggers described above this effect
   }, [currentImage.index, folder.images, cache.thumbnails, currentReady, pump]);
 
   // The retained radius is derived from window.innerWidth (how many

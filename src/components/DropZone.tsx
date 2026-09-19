@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback } from "react";
+
 import { useAppStore } from "../store";
 
 interface DropZoneProps {
@@ -66,6 +67,7 @@ const DropZone: React.FC<DropZoneProps> = ({ className = "", children }) => {
   );
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a drop zone is a region by definition; the drag handlers belong to the region, not to a control inside it
     <section
       aria-label="Drop zone"
       className={`drop-zone ${className} ${ui.isDragOver ? "drag-over" : ""}`}

@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+
 import { FULL_UPGRADE_DEBOUNCE_MS } from "../constants/memory";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../constants/timing";
 import { useImagePreloader } from "../hooks/useImagePreloader";
@@ -786,6 +787,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
   }
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- pan/zoom is a whole-surface gesture; the handlers have no single interactive child to move to
     <section
       ref={containerRef}
       aria-label="Image viewer"
@@ -800,6 +802,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       {currentImage.data && displayBitmap && (
         <canvas
           ref={canvasMountRef}
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- this IS the canvas the viewer paints into; an <img> cannot replace it
           role="img"
           aria-label={getFilename(currentImage.path) || "Current image"}
           style={imageStyle}
@@ -811,6 +814,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         />
       )}
       {currentImage.data && !displayBitmap && (
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- drag-to-pan starts on the image itself; keyboard pan/zoom lives on the section above
         <img
           ref={imageRef}
           src={currentImage.data.src}
