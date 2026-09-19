@@ -528,7 +528,7 @@ npm run tauri build
 
 ## Development Guidelines
 
-1. **Code Style**: Use Biome for linting and formatting consistency (frontend code: TypeScript/React)
+1. **Code Style**: Use oxlint (lint) and oxfmt (format) for consistency (frontend code: TypeScript/React)
 2. **Commits**: Conventional commits for clear history
 3. **Documentation**: JSDoc for public APIs
 4. **Error Handling**: Never crash, always graceful degradation

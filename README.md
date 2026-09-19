@@ -96,7 +96,7 @@ cargo test commands::cache::tests
 
 ### Linting and Formatting
 
-The project uses [Biome](https://biomejs.dev/) for linting and formatting frontend code (TypeScript/React):
+The project uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) for linting and [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) for formatting frontend code (TypeScript/React):
 
 ```bash
 # Check for lint issues
