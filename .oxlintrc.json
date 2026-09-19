@@ -37,9 +37,8 @@
     "typescript/unbound-method": "error",
     "typescript/no-unnecessary-type-assertion": "error",
     "typescript/no-unnecessary-type-arguments": "error",
-    // 未処理の Promise 拒否を捕まえる、typeAware の中で最も correctness 寄りの
-    // ルール。呼び先が自前で catch していれば void で意図を明示し、していなければ
-    // 呼び元で .catch() する。
+    // 未処理の Promise 拒否を捕まえる、typeAware で最も correctness 寄りのルール。
+    // void は呼び先が自前で catch している場合に限る（していなければ .catch()）。
     "typescript/no-floating-promises": "error",
     // 残る 3 つは本体に指摘が残っており、それぞれ別に採否を決める。
     "typescript/consistent-return": "off",
@@ -96,9 +95,8 @@
       }
     },
     {
-      // node:test の test() は Promise を返すが、その完了はランナーが待つ。
-      // await しないのが正しい使い方なので、この規約のファイルだけ外す
-      // （vitest の spec と e2e では await 漏れが本物のバグなので対象外）。
+      // node:test の test() が返す Promise はランナーが待つので await しないのが
+      // 正しい。vitest / e2e の spec では await 漏れが本物のバグなので含めない。
       "files": ["scripts/__tests__/**"],
       "rules": {
         "typescript/no-floating-promises": "off"

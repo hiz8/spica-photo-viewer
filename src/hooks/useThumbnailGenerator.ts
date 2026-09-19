@@ -339,10 +339,8 @@ export const useThumbnailGenerator = () => {
 
     debounceTimeoutRef.current = setTimeout(
       () => {
-        // processQueue propagates failures (try/finally, no catch) and no
-        // caller sits above this timer, so an error not caught here surfaces
-        // as an unhandled rejection. The expansion is returned into the same
-        // chain so that its failures land in the same handler.
+        // processQueue lets failures propagate (try/finally, no catch) and
+        // nothing above this timer can catch them.
         processQueue()
           .then(() => expandQueueProgressively())
           .catch((error) => {

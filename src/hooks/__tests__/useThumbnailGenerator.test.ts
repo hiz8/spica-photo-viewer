@@ -564,8 +564,6 @@ describe("useThumbnailGenerator", () => {
       const consoleErrorSpy = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
-      // processQueue has no catch of its own (try/finally), so a throw from
-      // the store update it makes before the try rejects the whole batch.
       mockStore.setThumbnailGeneration.mockImplementationOnce(() => {
         throw new Error("store update failed");
       });
@@ -598,9 +596,8 @@ describe("useThumbnailGenerator", () => {
           return images.map(() => null);
         }
         if (cmd === "generate_thumbnail_with_dimensions") {
-          // The folder is re-listed shorter while the initial batch is in
-          // flight: the expansion then builds its queue from an index past
-          // the end and throws inside the chained promise, not the batch.
+          // Shrinking the folder mid-batch makes the expansion's queue build
+          // read past the end: the failure comes from the chained step.
           mockStore.folder.images = images.slice(0, 1);
           return {
             thumbnail_base64: "base64data",
