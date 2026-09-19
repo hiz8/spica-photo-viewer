@@ -3,7 +3,12 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
-const SUPPORTED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".json", ".jsonc"];
+const OXFMT_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".json", ".jsonc"];
+const RUST_EXTENSIONS = [".rs"];
+
+// Keep in sync with `edition` in src-tauri/Cargo.toml: rustfmt invoked on a
+// bare file assumes edition 2015 and mis-parses this crate's 2021 syntax.
+const RUST_EDITION = "2021";
 
 function parseInput(inputData) {
   try {
@@ -13,35 +18,53 @@ function parseInput(inputData) {
   }
 }
 
-function hasValidExtension(filePath) {
+function matches(filePath, extensions) {
+  return extensions.some((ext) => filePath.endsWith(ext));
+}
+
+function formatterFor(filePath) {
   if (!filePath) {
-    return false;
+    return null;
   }
-  return SUPPORTED_EXTENSIONS.some((ext) => filePath.endsWith(ext));
+  if (matches(filePath, OXFMT_EXTENSIONS)) {
+    // Node >=20.12 refuses to spawn a .cmd shim without a shell (CVE-2024-27980),
+    // so npx.cmd fails with EINVAL unless we opt in — and once cmd.exe parses the
+    // line, the path has to carry its own quotes.
+    const useShell = process.platform === "win32";
+    return {
+      name: "oxfmt",
+      command: useShell ? "npx.cmd" : "npx",
+      args: ["oxfmt", "--write", useShell ? `"${filePath}"` : filePath],
+      useShell,
+    };
+  }
+  if (matches(filePath, RUST_EXTENSIONS)) {
+    // rustfmt ships as a native executable, so it needs neither the shell nor
+    // the quoting the npx.cmd shim above forces on us.
+    return {
+      name: "rustfmt",
+      command: "rustfmt",
+      args: ["--edition", RUST_EDITION, filePath],
+      useShell: false,
+    };
+  }
+  return null;
 }
 
-function getNpxCommand() {
-  return process.platform === "win32" ? "npx.cmd" : "npx";
-}
-
-function runOxfmtFormat(filePath) {
-  const npxCommand = getNpxCommand();
-  // Node >=20.12 refuses to spawn a .cmd shim without a shell (CVE-2024-27980),
-  // so npx.cmd fails with EINVAL unless we opt in — and once cmd.exe parses the
-  // line, the path has to carry its own quotes.
-  const useShell = process.platform === "win32";
-  const target = useShell ? `"${filePath}"` : filePath;
-  const oxfmt = spawn(npxCommand, ["oxfmt", "--write", target], {
+function runFormatter(formatter) {
+  const child = spawn(formatter.command, formatter.args, {
     stdio: "inherit",
-    shell: useShell,
+    shell: formatter.useShell,
   });
 
-  oxfmt.on("error", (err) => {
-    console.error(`Failed to start oxfmt formatter: ${err?.message ?? err}`);
+  child.on("error", (err) => {
+    console.error(
+      `Failed to start ${formatter.name} formatter: ${err?.message ?? err}`,
+    );
     process.exit(1);
   });
 
-  oxfmt.on("close", (code) => {
+  child.on("close", (code) => {
     process.exit(code ?? 0);
   });
 }
@@ -59,10 +82,10 @@ rl.on("close", () => {
     process.exit(0);
   }
 
-  const filePath = data?.tool_input?.file_path ?? "";
-  if (!hasValidExtension(filePath)) {
+  const formatter = formatterFor(data?.tool_input?.file_path ?? "");
+  if (formatter === null) {
     process.exit(0);
   }
 
-  runOxfmtFormat(filePath);
+  runFormatter(formatter);
 });

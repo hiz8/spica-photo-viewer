@@ -56,11 +56,23 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # This action installs the minimal profile, which ships neither
+          # rustfmt nor clippy.
+          components: rustfmt, clippy
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      - name: Format check
+        run: cargo fmt --check
+        working-directory: src-tauri
+
+      - name: Lint check
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
 
       - name: Run backend tests
         run: cargo test --lib
