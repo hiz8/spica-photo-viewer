@@ -1,11 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 
-import { useAppStore } from "../store";
-
-const MAX_PRELOADED_IMAGES = 20;
-const MAX_THUMBNAIL_CACHE = 100;
-const CLEANUP_INTERVAL_MS = 30000;
 /**
  * The disk sweep walks every cache entry (thousands of files after a few
  * large folders); run at mount it competes with the startup image and the
@@ -13,6 +8,15 @@ const CLEANUP_INTERVAL_MS = 30000;
  */
 const DISK_SWEEP_DELAY_MS = 5000;
 
+/**
+ * Deliberately no periodic count cap on the in-memory caches. Thumbnails
+ * are inserted nearest-first, so an oldest-first cap blanked exactly the
+ * visible part of the bar in folders above the cap; and cache.preloaded is
+ * owned by useImagePreloader (window eviction + byte budget, I3), where a
+ * second sweep dropped entries whose bitmaps were still retained. Both maps
+ * are bounded by the folder: a folder switch drops the other folder's
+ * entries.
+ */
 export const useCacheManager = () => {
   useEffect(() => {
     const sweepDiskCache = async () => {
@@ -26,33 +30,5 @@ export const useCacheManager = () => {
 
     const timeoutId = setTimeout(sweepDiskCache, DISK_SWEEP_DELAY_MS);
     return () => clearTimeout(timeoutId);
-  }, []);
-
-  useEffect(() => {
-    const cleanupMemoryCache = () => {
-      const { cache, removePreloadedImages, removeCachedThumbnails } =
-        useAppStore.getState();
-
-      if (cache.preloaded.size > MAX_PRELOADED_IMAGES) {
-        const paths = Array.from(cache.preloaded.keys()).slice(
-          0,
-          cache.preloaded.size - MAX_PRELOADED_IMAGES,
-        );
-        removePreloadedImages(paths);
-        console.log(`Cleaned up ${paths.length} preloaded images from memory`);
-      }
-
-      if (cache.thumbnails.size > MAX_THUMBNAIL_CACHE) {
-        const paths = Array.from(cache.thumbnails.keys()).slice(
-          0,
-          cache.thumbnails.size - MAX_THUMBNAIL_CACHE,
-        );
-        removeCachedThumbnails(paths);
-        console.log(`Cleaned up ${paths.length} thumbnails from memory`);
-      }
-    };
-
-    const interval = setInterval(cleanupMemoryCache, CLEANUP_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, []);
 };

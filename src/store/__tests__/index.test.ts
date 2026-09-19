@@ -1064,6 +1064,44 @@ describe("AppStore", () => {
         expect.anything(),
       );
     });
+
+    it("drops the previous folder's thumbnails but keeps ones seeded for the new folder", async () => {
+      mockInvoke.mockResolvedValue(mockImageList);
+      const seeded = { base64: "AAAA", width: 4000, height: 3000 };
+      useAppStore.setState((state) => ({
+        folder: { ...state.folder, path: "/old" },
+        cache: {
+          ...state.cache,
+          thumbnails: new Map([
+            ["/old/a.jpg", seeded],
+            ["/old/b.jpg", "error" as const],
+            // App.tsx seeds the startup file's thumbnail before the folder
+            // is opened (I1); a folder switch must not throw it away.
+            ["/test/image2.png", seeded],
+          ]),
+        },
+      }));
+
+      await useAppStore.getState().openImageFromPath("/test/image2.png");
+
+      const { thumbnails } = useAppStore.getState().cache;
+      expect([...thumbnails.keys()]).toEqual(["/test/image2.png"]);
+      expect(thumbnails.get("/test/image2.png")).toBe(seeded);
+    });
+
+    it("keeps the thumbnail map as is when the opened file is in the current folder", async () => {
+      mockInvoke.mockResolvedValue(mockImageList);
+      const existing = { base64: "AAAA", width: 4000, height: 3000 };
+      const thumbnails = new Map([["/test/image1.jpg", existing]]);
+      useAppStore.setState((state) => ({
+        folder: { ...state.folder, path: "/test" },
+        cache: { ...state.cache, thumbnails },
+      }));
+
+      await useAppStore.getState().openImageFromPath("/test/image2.png");
+
+      expect(useAppStore.getState().cache.thumbnails).toBe(thumbnails);
+    });
   });
 
   describe("cache management", () => {
