@@ -49,7 +49,7 @@ const KEYS = [
 ];
 
 const median = (arr) => {
-  const a = arr.filter((v) => typeof v === "number").sort((x, y) => x - y);
+  const a = arr.filter((v) => typeof v === "number").toSorted((x, y) => x - y);
   return a.length ? a[Math.floor(a.length / 2)] : null;
 };
 const pad = (s, n) => String(s ?? "-").padEnd(n);
@@ -66,9 +66,7 @@ for (const k of KEYS) {
     const vals = data[l].map((r) => r[k]);
     const m = median(vals);
     const shown =
-      m === null
-        ? String(vals[0])
-        : String(Math.round(m * 10) / 10);
+      m === null ? String(vals[0]) : String(Math.round(m * 10) / 10);
     const list = vals
       .map((v) =>
         v === null || v === undefined

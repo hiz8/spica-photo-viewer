@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { browser, expect } from "@wdio/globals";
 
 // import.meta.dirname is not reliably populated by wdio's TS loader, so derive
@@ -71,8 +72,8 @@ const measureDrift = async (
       // (1px * 1.2^n) and reads as a product bug.
       const x = Math.round(before.left + ax * before.width);
       const y = Math.round(before.top + ay * before.height);
-      const fx = (x - before.left) / before.width;
-      const fy = (y - before.top) / before.height;
+      const roundedFx = (x - before.left) / before.width;
+      const roundedFy = (y - before.top) / before.height;
 
       const frames: { t: number; dx: number; dy: number }[] = [];
       for (let i = 0; i < n; i++) {
@@ -89,8 +90,8 @@ const measureDrift = async (
         const now = el.getBoundingClientRect();
         frames.push({
           t: i + 1,
-          dx: now.left + fx * now.width - x,
-          dy: now.top + fy * now.height - y,
+          dx: now.left + roundedFx * now.width - x,
+          dy: now.top + roundedFy * now.height - y,
         });
       }
       return { frames };

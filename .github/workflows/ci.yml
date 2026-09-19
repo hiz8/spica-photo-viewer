@@ -7,7 +7,6 @@ on:
       - '*.md'
       - 'LICENSE'
       - '.gitignore'
-      - 'scripts/**'
       - 'public/**'
   pull_request:
     branches: [main]

@@ -3,6 +3,7 @@
 // make decode artificially cheap). Never commit the generated files.
 import { mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+
 import sharp from "sharp";
 
 const OUT = join(import.meta.dirname, "../fixtures/corpus");

@@ -21,11 +21,11 @@ const JOIN_TOLERANCE_MS = 20; // pipe-latency slack when joining serve windows
 
 // nearest-rank, mirrors e2e/lib/stats.ts
 const median = (xs) => {
-  const s = [...xs].sort((a, b) => a - b);
+  const s = xs.toSorted((a, b) => a - b);
   return s.length === 0 ? null : s[Math.floor((s.length - 1) / 2)];
 };
 const p95 = (xs) => {
-  const s = [...xs].sort((a, b) => a - b);
+  const s = xs.toSorted((a, b) => a - b);
   return s.length === 0 ? null : s[Math.ceil(0.95 * s.length) - 1];
 };
 const fmt = (v) => (v === null ? "-" : v.toFixed(1));

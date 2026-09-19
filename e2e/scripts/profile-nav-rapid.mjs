@@ -29,7 +29,7 @@ if (!existsSync(largeDir))
 
 const files = readdirSync(largeDir)
   .filter((f) => f.endsWith(".jpg"))
-  .sort()
+  .toSorted()
   .map((f) => join(largeDir, f));
 if (files.length <= STEPS)
   throw new Error(`large corpus has ${files.length} images, need > ${STEPS}`);
@@ -75,7 +75,7 @@ const wd = async (method, path, body) => {
   const res = await fetch(`${base}${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const json = await res.json();
   if (!res.ok)

@@ -97,7 +97,7 @@ const runOnce = async (runIndex) => {
     const res = await fetch(`${base}${path}`, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const json = await res.json();
     if (!res.ok)
@@ -171,16 +171,20 @@ const runOnce = async (runIndex) => {
 };
 
 // --- timeline summary -------------------------------------------------------
+const median = (a) => {
+  if (!a.length) return null;
+  const s = a.toSorted((x, y) => x - y);
+  return s[Math.floor(s.length / 2)];
+};
+
 const summarize = (r) => {
   const rel = (wall) => Math.round(wall - r.t0);
   const js = (name, pred = () => true) => {
-    const e = r.perf.find((e) => e.name === name && pred(e));
-    return e ? rel(r.timeOrigin + e.ts) : null;
+    const entry = r.perf.find((e) => e.name === name && pred(e));
+    return entry ? rel(r.timeOrigin + entry.ts) : null;
   };
   const rust = (phase) => {
-    const e = r.rustLines.find(
-      (l) => l.op === "startup" && l.phase === phase,
-    );
+    const e = r.rustLines.find((l) => l.op === "startup" && l.phase === phase);
     return e ? rel(e.wall) : null;
   };
   const rustTimer = (op) =>
@@ -194,11 +198,6 @@ const summarize = (r) => {
   const paints = r.perf
     .filter((e) => e.name === "paint:done" && e.detail?.path === file)
     .map((e) => ({ t: rel(r.timeOrigin + e.ts), tier: e.detail?.tier }));
-  const median = (a) => {
-    if (!a.length) return null;
-    const s = [...a].sort((x, y) => x - y);
-    return s[Math.floor(s.length / 2)];
-  };
   return {
     run: r.run,
     innerWidth: r.innerWidth,
@@ -268,7 +267,13 @@ mkdirSync(dirname(OUT_FILE), { recursive: true });
 writeFileSync(
   OUT_FILE,
   JSON.stringify(
-    { capturedAt: new Date().toISOString(), file, label: LABEL, cold: COLD, runs },
+    {
+      capturedAt: new Date().toISOString(),
+      file,
+      label: LABEL,
+      cold: COLD,
+      runs,
+    },
     null,
     1,
   ),
@@ -282,7 +287,7 @@ const keys = Object.keys(runs[0].summary).filter(
 console.log("\nmetric\tmedian(ms from spawn)\tvalues");
 for (const k of keys) {
   const vals = runs.map((r) => r.summary[k]).filter((v) => v !== null);
-  const s = [...vals].sort((a, b) => a - b);
+  const s = vals.toSorted((a, b) => a - b);
   const med = s.length ? s[Math.floor(s.length / 2)] : null;
   console.log(`${k}\t${med}\t${vals.join(",")}`);
 }

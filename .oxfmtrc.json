@@ -4,5 +4,8 @@
   // 整形結果と 1 バイトも変わらない。移行 PR を設定差分だけに保つため据え置く。
   "printWidth": 80,
   // Biome の assist `organizeImports` の後継。oxfmt では既定 off なので明示する。
-  "sortImports": {}
+  "sortImports": {},
+  // oxfmt は Markdown も整形する。`scripts/` をディレクトリごと指定すると
+  // README まで巻き込まれるので、散文は対象から外す。
+  "ignorePatterns": ["**/*.md"]
 }

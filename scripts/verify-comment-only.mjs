@@ -31,6 +31,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+
 import { transformSync } from "esbuild";
 
 const strip = (source, loader) =>
@@ -167,13 +168,19 @@ export const classifyTsFileChange = ({
     };
   }
   if (before instanceof Error) {
-    return { hard: `${path}: git show failed — ${before.message}`, manual: null };
+    return {
+      hard: `${path}: git show failed — ${before.message}`,
+      manual: null,
+    };
   }
   if (!fileExists) {
     return { hard: `${path}: file deleted`, manual: null };
   }
   if (!tsCodeEquivalent(before, after, loader)) {
-    return { hard: `${path}: code changed (esbuild output differs)`, manual: null };
+    return {
+      hard: `${path}: code changed (esbuild output differs)`,
+      manual: null,
+    };
   }
   return { hard: null, manual: null };
 };
@@ -251,21 +258,27 @@ const main = () => {
   manual.push(...rust.manual);
 
   if (hard.length > 0) {
-    console.error("NON-COMMENT CHANGE — revert it or move it to a logic commit:");
+    console.error(
+      "NON-COMMENT CHANGE — revert it or move it to a logic commit:",
+    );
     for (const l of hard) console.error(`  ${l}`);
     process.exit(1);
   }
   if (manual.length > 0) {
-    console.error("MANUAL REVIEW REQUIRED — could not be judged automatically, confirm by eye:");
-    console.error("  (a line containing // may be a trailing comment or a // inside a string;");
+    console.error(
+      "MANUAL REVIEW REQUIRED — could not be judged automatically, confirm by eye:",
+    );
+    console.error(
+      "  (a line containing // may be a trailing comment or a // inside a string;",
+    );
     console.error("   an added file has no prior revision to diff against)");
     for (const l of manual) console.error(`  ${l}`);
     process.exit(2);
   }
   const tsChecked = statuses.filter(({ path }) => /\.tsx?$/.test(path));
-  const rustChecked = statuses.filter(({ path }) => /\.rs$/.test(path));
+  const rustChecked = statuses.filter(({ path }) => path.endsWith(".rs"));
   const uncovered = statuses.filter(
-    ({ path }) => !/\.tsx?$/.test(path) && !/\.rs$/.test(path),
+    ({ path }) => !/\.tsx?$/.test(path) && !path.endsWith(".rs"),
   );
 
   console.log(
@@ -281,6 +294,9 @@ const main = () => {
   }
 };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main();
 }

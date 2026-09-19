@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+
 import { buildIco, ICON_SIZES } from "../build-file-icon.mjs";
 
 function readDirectory(ico) {
@@ -17,7 +18,12 @@ function readDirectory(ico) {
       imageOffset: ico.readUInt32LE(o + 12),
     });
   }
-  return { reserved: ico.readUInt16LE(0), type: ico.readUInt16LE(2), count, entries };
+  return {
+    reserved: ico.readUInt16LE(0),
+    type: ico.readUInt16LE(2),
+    count,
+    entries,
+  };
 }
 
 test("the header declares an icon file with one entry per image", () => {
@@ -32,13 +38,17 @@ test("the header declares an icon file with one entry per image", () => {
 });
 
 test("256 is written as 0 because the field is one byte wide", () => {
-  const [entry] = readDirectory(buildIco([{ size: 256, png: Buffer.from("a") }])).entries;
+  const [entry] = readDirectory(
+    buildIco([{ size: 256, png: Buffer.from("a") }]),
+  ).entries;
   assert.equal(entry.width, 0);
   assert.equal(entry.height, 0);
 });
 
 test("sizes below 256 are written verbatim", () => {
-  const [entry] = readDirectory(buildIco([{ size: 48, png: Buffer.from("a") }])).entries;
+  const [entry] = readDirectory(
+    buildIco([{ size: 48, png: Buffer.from("a") }]),
+  ).entries;
   assert.equal(entry.width, 48);
   assert.equal(entry.height, 48);
 });
@@ -53,8 +63,14 @@ test("each entry points at its own payload", () => {
   const [a, b] = readDirectory(ico).entries;
   assert.equal(a.bytesInRes, first.length);
   assert.equal(b.bytesInRes, second.length);
-  assert.deepEqual(ico.subarray(a.imageOffset, a.imageOffset + a.bytesInRes), first);
-  assert.deepEqual(ico.subarray(b.imageOffset, b.imageOffset + b.bytesInRes), second);
+  assert.deepEqual(
+    ico.subarray(a.imageOffset, a.imageOffset + a.bytesInRes),
+    first,
+  );
+  assert.deepEqual(
+    ico.subarray(b.imageOffset, b.imageOffset + b.bytesInRes),
+    second,
+  );
 });
 
 test("the first payload starts immediately after the directory", () => {
@@ -66,7 +82,9 @@ test("the first payload starts immediately after the directory", () => {
 });
 
 test("entries declare truecolor so Windows keeps the alpha channel", () => {
-  const [entry] = readDirectory(buildIco([{ size: 16, png: Buffer.from("a") }])).entries;
+  const [entry] = readDirectory(
+    buildIco([{ size: 16, png: Buffer.from("a") }]),
+  ).entries;
   assert.equal(entry.paletteCount, 0);
   assert.equal(entry.planes, 1);
   assert.equal(entry.bitCount, 32);

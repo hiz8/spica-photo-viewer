@@ -11,6 +11,7 @@
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+
 import {
   COLD_SAMPLES_FILE,
   type ColdSample,

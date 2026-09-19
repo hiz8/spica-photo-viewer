@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { browser, expect } from "@wdio/globals";
 
 // import.meta.dirname is not reliably populated by wdio's TS loader, so derive

@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    // Match the app's tsconfig: the specs run on Node 22 and in WebView2,
+    // both of which have the ES2023 array methods (toSorted/toReversed).
+    "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "bundler",
     // Specs import helpers with an explicit .ts extension so wdio's ESM TS
