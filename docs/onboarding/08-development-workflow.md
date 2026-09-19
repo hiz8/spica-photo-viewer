@@ -55,9 +55,26 @@ npm run format:fix         # フォーマット適用
 
 ### 自動整形 hook について
 
-このリポジトリには Claude Code 用の hook (`.claude/hooks/format.mjs`) が組み込まれており、**Edit / Write の直後に対象ファイルが oxfmt で自動整形** されます。手動で `format:fix` を頻発させる必要はありません。CI では `npm run format` (チェックのみ) が走るため、もし整形漏れがあれば検知されます。
+このリポジトリには Claude Code 用の hook (`.claude/hooks/format.mjs`) が組み込まれており、**Edit / Write の直後に対象ファイルが自動整形** されます。手動で `format:fix` を頻発させる必要はありません。拡張子で整形器を選び、`.ts` / `.tsx` / `.js` / `.jsx` / `.json` / `.jsonc` は oxfmt、`.rs` は `rustfmt --edition 2021` を呼びます (edition を渡さないと rustfmt は 2015 とみなして 2021 の構文を解釈できません)。CI では `npm run format` と `cargo fmt --check` (どちらもチェックのみ) が走るため、もし整形漏れがあれば検知されます。
 
-このプロジェクトでは、`package.json` の npm scripts で `oxlint src/` / `oxfmt --check src/` を実行しているため、lint と format は通常 `src/` 配下を対象にします。`src-tauri/` 配下の Rust コードは対象外なので、Rust の整形は `cargo fmt` を別途使ってください (本プロジェクトでは CI で `cargo fmt` のチェックは行っていませんが、`rustfmt` のデフォルトに従うのが習慣です)。
+npm scripts の lint / format 対象は `src/` `e2e/` `scripts/` `.claude/hooks/` とルートの ts 設定ファイルで、`src-tauri/` 配下の Rust コードは含みません。Rust には cargo 側のコマンドを使ってください。
+
+---
+
+## Rust の Lint と Format
+
+`rustfmt.toml` も `clippy.toml` も置いておらず、**rustfmt と clippy のデフォルト設定** をそのまま使います。
+
+```bash
+cd src-tauri
+cargo fmt                                    # 整形を適用
+cargo fmt --check                            # 整形チェック (修正なし)
+cargo clippy --all-targets -- -D warnings    # lint チェック
+```
+
+CI の `backend-tests` ジョブはこの 3 つのうち `cargo fmt --check` と `cargo clippy --all-targets -- -D warnings` をテストの前に実行します。**clippy の警告は 1 件でも CI を落とします** (`-D warnings`)。`--all-targets` は `examples/` も対象に含めます。
+
+なお `backend-tests` は ubuntu-latest で動くため、`#[cfg(windows)]` で囲まれたコード (Explorer 連動の COM レイヤなど) は fmt 以外はチェックされません。これは `cargo test --lib` も同じ制約です。Windows 限定コードを触ったときは手元で `cargo clippy --all-targets -- -D warnings` を回してください。
 
 ---
 
@@ -179,11 +196,11 @@ PR を作成すると、`.github/workflows/ci.yml` が走ります (`*.md`、`sc
 | ジョブ | 実行内容 |
 | --- | --- |
 | `frontend-tests` | `npm ci` → `npm run type-check` → `npm run lint` → `npm run format` → `npm test` |
-| `backend-tests` | apt で webkit2gtk 等を入れる → Rust toolchain stable → `cargo test --lib` |
+| `backend-tests` | apt で webkit2gtk 等を入れる → Rust toolchain stable (`components: rustfmt, clippy`) → `cargo fmt --check` → `cargo clippy --all-targets -- -D warnings` → `cargo test --lib` |
 
 両方が green になればマージ可能。
 
-ローカルで `npm run type-check && npm run lint && npm run format && npm test` を通してから push すると CI 待ちのストレスが減ります。Rust 側は `cd src-tauri && cargo test --lib` を加えればフルチェックです。
+ローカルで `npm run type-check && npm run lint && npm run format && npm test` を通してから push すると CI 待ちのストレスが減ります。Rust 側は `cd src-tauri` して `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --lib` の 3 つを加えればフルチェックです。
 
 ---
 
