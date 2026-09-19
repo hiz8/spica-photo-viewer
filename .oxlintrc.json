@@ -1,0 +1,61 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // oxlint の既定プラグインは typescript / unicorn / oxc のみ。react・jsx-a11y・
+  // import・promise を足さないと、Biome の recommended が見ていた React フック
+  // 依存配列とアクセシビリティの領域が丸ごと無検査になる。
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc",
+    "react",
+    "jsx-a11y",
+    "import",
+    "promise"
+  ],
+  // 既定は correctness のみ。Biome recommended 相当の網羅には suspicious まで
+  // 必要（exhaustive-effect-dependencies などがこちらに属する）。pedantic /
+  // style は no-magic-numbers・sort-keys の類で性格が違うため入れない。
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "env": {
+    "builtin": true,
+    "browser": true
+  },
+  "rules": {
+    // tsconfig.json の jsx は react-jsx（自動 JSX ランタイム）。React を
+    // スコープに入れる必要はない。
+    "react/react-in-jsx-scope": "off",
+    // 先頭アンダースコアは「本番コードから呼ぶな」を示す本プロジェクトの印。
+    // 既存の 4 つだけを許可し、無制限のアンダースコア命名は引き続き弾く。
+    "eslint/no-underscore-dangle": [
+      "error",
+      {
+        "allow": [
+          "__PERF__",
+          "__SPICA_TEST__",
+          "_setPerfEnabledForTests",
+          "_resetPreviewBoxForTests"
+        ]
+      }
+    ],
+    // CSS の副作用 import と jest-dom のマッチャ登録は、値を持たないのが正しい形。
+    "import/no-unassigned-import": [
+      "error",
+      { "allow": ["**/*.css", "@testing-library/jest-dom"] }
+    ],
+    // チェーン末尾の then() は副作用専用で、戻り値を受け取る呼び出し側がいない。
+    "promise/always-return": ["error", { "ignoreLastCallback": true }]
+  },
+  "overrides": [
+    {
+      "files": ["**/__tests__/**"],
+      "rules": {
+        // テストのヘルパーは、対応する describe の中に置いて初めて何のための
+        // スタブか読める。モジュール先頭への巻き上げは可読性を下げる。
+        "unicorn/consistent-function-scoping": "off"
+      }
+    }
+  ]
+}

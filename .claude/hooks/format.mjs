@@ -30,18 +30,24 @@ function getNpxCommand() {
   return process.platform === 'win32' ? 'npx.cmd' : 'npx';
 }
 
-function runBiomeFormat(filePath) {
+function runOxfmtFormat(filePath) {
   const npxCommand = getNpxCommand();
-  const biome = spawn(npxCommand, ['biome', 'format', '--write', filePath], {
+  // Node >=20.12 refuses to spawn a .cmd shim without a shell (CVE-2024-27980),
+  // so npx.cmd fails with EINVAL unless we opt in — and once cmd.exe parses the
+  // line, the path has to carry its own quotes.
+  const useShell = process.platform === 'win32';
+  const target = useShell ? `"${filePath}"` : filePath;
+  const oxfmt = spawn(npxCommand, ['oxfmt', '--write', target], {
     stdio: 'inherit',
+    shell: useShell,
   });
 
-  biome.on('error', (err) => {
-    console.error(`Failed to start biome formatter: ${err?.message ?? err}`);
+  oxfmt.on('error', (err) => {
+    console.error(`Failed to start oxfmt formatter: ${err?.message ?? err}`);
     process.exit(1);
   });
 
-  biome.on('close', (code) => {
+  oxfmt.on('close', (code) => {
     process.exit(code ?? 0);
   });
 }
@@ -64,5 +70,5 @@ rl.on('close', () => {
     process.exit(0);
   }
 
-  runBiomeFormat(filePath);
+  runOxfmtFormat(filePath);
 });
