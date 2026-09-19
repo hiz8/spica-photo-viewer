@@ -1,6 +1,6 @@
-import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../store";
+import { useEffect, useRef, useCallback } from "react";
+
 import {
   THUMBNAIL_GENERATION_DEBOUNCE_MS,
   THUMBNAIL_GENERATION_INITIAL_RANGE,
@@ -9,10 +9,11 @@ import {
   THUMBNAIL_SIZE,
   MAX_CONCURRENT_LOADS,
 } from "../constants/timing";
+import { useAppStore } from "../store";
+import type { ThumbnailWithDimensions } from "../types";
 import { getFilename } from "../utils/path";
 import { perfMark } from "../utils/perf";
 import { currentPreviewBox } from "../utils/previewBox";
-import type { ThumbnailWithDimensions } from "../types";
 
 /**
  * Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
@@ -157,15 +158,19 @@ export const useThumbnailGenerator = () => {
   /** @param maxRange - Maximum offset from current image (undefined = all images) */
   const buildPriorityQueue = useCallback((maxRange?: number): string[] => {
     // Get fresh state to avoid stale closure
-    const { currentImage, folder, cache } = useAppStore.getState();
+    const {
+      currentImage: freshCurrentImage,
+      folder: freshFolder,
+      cache,
+    } = useAppStore.getState();
 
-    if (currentImage.index === -1 || !folder.images.length) {
+    if (freshCurrentImage.index === -1 || !freshFolder.images.length) {
       return [];
     }
 
     const queue: string[] = [];
-    const currentIndex = currentImage.index;
-    const images = folder.images;
+    const currentIndex = freshCurrentImage.index;
+    const images = freshFolder.images;
 
     queue.push(images[currentIndex].path);
 
@@ -243,13 +248,15 @@ export const useThumbnailGenerator = () => {
       });
       generationQueueRef.current = [];
     }
+    // oxlint-disable-next-line react/memo-dependencies -- both ARE read, inside the try above; oxlint 1.83 does not count reads inside try/finally
   }, [generateThumbnail, lookupCachedThumbnails]); // Both stable (no deps)
 
   /** Progressive expansion (initial → expanded → full) avoids processing all 900+ images immediately. */
   const expandQueueProgressively = useCallback(async () => {
-    const { currentImage, folder } = useAppStore.getState();
+    const { currentImage: freshCurrentImage, folder: freshFolder } =
+      useAppStore.getState();
 
-    if (currentImage.index === -1 || folder.images.length === 0) {
+    if (freshCurrentImage.index === -1 || freshFolder.images.length === 0) {
       return;
     }
 
@@ -269,6 +276,7 @@ export const useThumbnailGenerator = () => {
       }
 
       // Continue to full range after the expanded range completes.
+      // oxlint-disable-next-line react/immutability -- self-recursion is the phase machine: phase 0 chains into phase 1 through this very callback
       await expandQueueProgressively();
       return;
     }
@@ -289,6 +297,7 @@ export const useThumbnailGenerator = () => {
       generationQueueRef.current = fullQueue;
       await processQueue();
     }
+    // oxlint-disable-next-line react/memo-dependencies -- the missing dep IS expandQueueProgressively itself; a callback cannot list itself
   }, [buildPriorityQueue, processQueue]);
 
   const startGeneration = useCallback(() => {

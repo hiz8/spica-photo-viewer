@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+
 import {
   RAPID_NAVIGATION_THRESHOLD_MS,
   SUPPRESS_TRANSITION_MS,
@@ -382,20 +383,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       const savedViewState = state.cache.imageViewStates.get(image.path);
 
-      set((state) => {
-        const newImageViewStates = new Map(state.cache.imageViewStates);
+      set((prev) => {
+        const newImageViewStates = new Map(prev.cache.imageViewStates);
 
         // Only save current image's view state if NOT in rapid navigation mode
-        if (state.currentImage.path && !isRapidNavigation) {
-          newImageViewStates.set(state.currentImage.path, {
-            zoom: state.view.zoom,
-            panX: state.view.panX,
-            panY: state.view.panY,
+        if (prev.currentImage.path && !isRapidNavigation) {
+          newImageViewStates.set(prev.currentImage.path, {
+            zoom: prev.view.zoom,
+            panX: prev.view.panX,
+            panY: prev.view.panY,
           });
         }
 
         // Priority 1: Check if image is already preloaded (full resolution)
-        const cachedImage = state.cache.preloaded.get(image.path);
+        const cachedImage = prev.cache.preloaded.get(image.path);
         const hit = !!(cachedImage && cachedImage.format !== "error");
         let imageData: ImageData | null = null;
         let thumbnailDisplayed = false;
@@ -418,7 +419,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           };
         } else {
           // Priority 2: Check if thumbnail is available for instant display
-          const cachedThumbnail = state.cache.thumbnails.get(image.path);
+          const cachedThumbnail = prev.cache.thumbnails.get(image.path);
           if (cachedThumbnail && cachedThumbnail !== "error") {
             imageData = thumbnailToImageData(image.path, cachedThumbnail);
             thumbnailDisplayed = true;
@@ -435,7 +436,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           thumbnailFallback: thumbnailDisplayed,
         });
 
-        const area = layoutArea(state.view.windowed);
+        const area = layoutArea(prev.view.windowed);
         let viewZoom = savedViewState?.zoom ?? 100;
         if (imageData && imageData.width > 0 && !savedViewState) {
           viewZoom = fitZoom(area, imageData.width, imageData.height);
@@ -458,26 +459,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         return {
           currentImage: {
-            ...state.currentImage,
+            ...prev.currentImage,
             path: image.path,
             index,
             data: imageData, // Use cached data if available for instant display, otherwise null
             error: null,
           },
           view: {
-            ...state.view,
+            ...prev.view,
             zoom: viewZoom,
             panX: savedViewState?.panX ?? 0,
             panY: savedViewState?.panY ?? 0,
             ...viewImagePosition,
           },
           cache: {
-            ...state.cache,
+            ...prev.cache,
             imageViewStates: newImageViewStates,
             lastNavigationTime: now,
           },
           ui: {
-            ...suppressedTransitionUi(state.ui, set, get),
+            ...suppressedTransitionUi(prev.ui, set, get),
             thumbnailDisplayed,
           },
         };
@@ -494,7 +495,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const cachedImage = state.cache.preloaded.get(
         state.folder.images[nextIndex].path,
       );
-      if (!cachedImage || cachedImage.format !== "error") {
+      if (cachedImage?.format !== "error") {
         get().navigateToImage(nextIndex);
         return;
       }
@@ -515,7 +516,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const cachedImage = state.cache.preloaded.get(
         state.folder.images[prevIndex].path,
       );
-      if (!cachedImage || cachedImage.format !== "error") {
+      if (cachedImage?.format !== "error") {
         get().navigateToImage(prevIndex);
         return;
       }
@@ -535,9 +536,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         state.currentImage.data.height,
       );
     } else {
-      set((state) => ({
+      set((prev) => ({
         view: {
-          ...state.view,
+          ...prev.view,
           zoom: 100,
           panX: 0,
           panY: 0,
@@ -594,12 +595,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // newZoom, so the anchor holds at the 10%/2000% limits too.
       const ratio = newZoom / currentZoom;
 
-      set((state) => ({
+      set((prev) => ({
         view: {
-          ...state.view,
+          ...prev.view,
           zoom: newZoom,
-          panX: state.view.panX * ratio + pointX * (1 - ratio),
-          panY: state.view.panY * ratio + pointY * (1 - ratio),
+          panX: prev.view.panX * ratio + pointX * (1 - ratio),
+          panY: prev.view.panY * ratio + pointY * (1 - ratio),
         },
       }));
     }
@@ -1020,9 +1021,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const state = get();
 
       if (!state.currentImage.path) {
-        set((state) => ({
+        set((prev) => ({
           ui: {
-            ...state.ui,
+            ...prev.ui,
             error: new Error("No image is currently loaded"),
           },
         }));

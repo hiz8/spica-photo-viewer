@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import "@testing-library/jest-dom";
-import type { ImageInfo, ImageData as AppImageData } from "../../types";
+
 import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../../constants/timing";
+import type { ImageInfo, ImageData as AppImageData } from "../../types";
 
 // Mock ResizeObserver before component imports
 class MockResizeObserver {

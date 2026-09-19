@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+
 import App from "./App";
 import { perfMark } from "./utils/perf";
 import { installTestHooks } from "./utils/testHooks";

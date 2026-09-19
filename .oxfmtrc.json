@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  // oxfmt の既定は 100。80 は `oxfmt --migrate=biome` が出力した値で、Biome 時代の
+  // 整形結果と 1 バイトも変わらない。移行 PR を設定差分だけに保つため据え置く。
+  "printWidth": 80,
+  // Biome の assist `organizeImports` の後継。oxfmt では既定 off なので明示する。
+  "sortImports": {}
+}

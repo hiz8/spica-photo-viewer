@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { RAPID_NAVIGATION_THRESHOLD_MS } from "../../constants/timing";
 import { clearBitmaps, setBitmap } from "../../utils/bitmapCache";
 import { _setPerfEnabledForTests } from "../../utils/perf";
@@ -15,6 +16,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
+
 import { useAppStore } from "../index";
 
 const mockInvoke = vi.mocked(invoke);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { displayTierOf } from "../displayTier";
 import { mockImageData } from "../testUtils";
 

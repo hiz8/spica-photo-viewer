@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect } from "react";
+
 import { useAppStore } from "../store";
 import type { WindowState } from "../types";
 

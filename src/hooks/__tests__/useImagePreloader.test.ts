@@ -1,6 +1,7 @@
 /** Spec: docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md */
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import type { ImageData, ImageInfo } from "../../types";
 import {
   clearBitmaps,

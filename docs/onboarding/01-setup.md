@@ -107,7 +107,7 @@ npm install
 
 これで以下が自動的に行われます。
 
-- `package.json` で宣言された Node のパッケージ (React, Tauri JS API, Vite, vitest, Biome 等) が `node_modules/` にインストールされる
+- `package.json` で宣言された Node のパッケージ (React, Tauri JS API, Vite, vitest, oxlint, oxfmt 等) が `node_modules/` にインストールされる
 - `src-tauri/Cargo.toml` で宣言された Rust 依存はこの段階ではまだ取得されません。次の `tauri dev` で初めてダウンロード・コンパイルされます
 
 ---
@@ -187,9 +187,9 @@ npm run tauri dev
 
 VS Code を使う場合は `rust-analyzer` 拡張をインストールしておくと、`src-tauri/` 配下の開発体験が大きく向上します。
 
-### Biome 拡張
+### Oxc 拡張
 
-フロントエンドのフォーマットは Biome を使っています (`biome.json`)。VS Code なら Biome 公式拡張を入れると、保存時の自動整形に対応できます。とはいえ本リポジトリでは保存時整形は Claude Code の hook (`.claude/hooks/format.mjs`) でも実行されるため、必須ではありません。
+フロントエンドの lint は oxlint (`.oxlintrc.json`)、フォーマットは oxfmt (`.oxfmtrc.json`) を使っています。VS Code なら Oxc 公式拡張 (`oxc.oxc-vscode`) を入れると、保存時の自動整形に対応できます。とはいえ本リポジトリでは保存時整形は Claude Code の hook (`.claude/hooks/format.mjs`) でも実行されるため、必須ではありません。
 
 ---
 

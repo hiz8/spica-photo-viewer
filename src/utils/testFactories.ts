@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+
 import type { ImageData, ImageInfo } from "../types";
 
 export const createImageData = (

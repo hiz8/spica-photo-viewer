@@ -1,12 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import type { ImageInfo } from "../../types";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
 import {
   THUMBNAIL_GENERATION_DEBOUNCE_MS,
   THUMBNAIL_GENERATION_INITIAL_RANGE,
   THUMBNAIL_SIZE,
   MAX_CONCURRENT_LOADS,
 } from "../../constants/timing";
+import type { ImageInfo } from "../../types";
 
 const createMockImageInfo = (
   index: number,
@@ -63,8 +64,9 @@ vi.mock("../../store", () => {
   };
 });
 
-import { useThumbnailGenerator } from "../useThumbnailGenerator";
 import { invoke } from "@tauri-apps/api/core";
+
+import { useThumbnailGenerator } from "../useThumbnailGenerator";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -249,10 +251,8 @@ describe("useThumbnailGenerator", () => {
       mockStore.folder.images = images;
       mockStore.currentImage.index = 15;
 
-      let generateCount = 0;
       mockInvoke.mockImplementation(async (cmd) => {
         if (cmd === "generate_thumbnail_with_dimensions") {
-          generateCount++;
           return {
             thumbnail_base64: "base64data",
             original_width: 800,

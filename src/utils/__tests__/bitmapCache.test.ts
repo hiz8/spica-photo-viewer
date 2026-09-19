@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import {
   bitmapBytes,
   bitmapPaths,
@@ -74,7 +75,7 @@ describe("bitmapCache", () => {
   it("lists cached paths", () => {
     setBitmap("/a.jpg", fakeBitmap(1, 1));
     setBitmap("/b.jpg", fakeBitmap(1, 1));
-    expect(bitmapPaths().sort()).toEqual(["/a.jpg", "/b.jpg"]);
+    expect(bitmapPaths().toSorted()).toEqual(["/a.jpg", "/b.jpg"]);
   });
 
   it("defaults the tier to full when omitted (backward compat)", () => {
@@ -159,7 +160,7 @@ describe("bitmapCache", () => {
   it("bitmapPaths lists paths with either tier", () => {
     setBitmap("/a.jpg", fakeBitmap(1, 1), "preview");
     setBitmap("/b.jpg", fakeBitmap(1, 1), "full");
-    expect(bitmapPaths().sort()).toEqual(["/a.jpg", "/b.jpg"]);
+    expect(bitmapPaths().toSorted()).toEqual(["/a.jpg", "/b.jpg"]);
   });
 
   it("fullBitmapPaths lists only paths that hold a full bitmap", () => {
@@ -167,7 +168,7 @@ describe("bitmapCache", () => {
     setBitmap("/b.jpg", fakeBitmap(1, 1), "full");
     setBitmap("/c.jpg", fakeBitmap(1, 1), "preview");
     setBitmap("/c.jpg", fakeBitmap(1, 1), "full");
-    expect(fullBitmapPaths().sort()).toEqual(["/b.jpg", "/c.jpg"]);
+    expect(fullBitmapPaths().toSorted()).toEqual(["/b.jpg", "/c.jpg"]);
   });
 
   it("hasBitmap without a tier is true when either tier is present", () => {

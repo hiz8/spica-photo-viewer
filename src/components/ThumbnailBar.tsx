@@ -1,12 +1,13 @@
 import type React from "react";
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
-import { useAppStore } from "../store";
-import type { ImageInfo } from "../types";
+
 import {
   THUMBNAIL_ITEM_PITCH_PX,
   THUMBNAIL_RENDER_MARGIN,
 } from "../constants/memory";
 import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
+import { useAppStore } from "../store";
+import type { ImageInfo } from "../types";
 import { isPerfEnabled, perfMark } from "../utils/perf";
 import { visibleThumbnailRadius } from "../utils/preloadWindow";
 
@@ -206,6 +207,7 @@ const ThumbnailBar: React.FC = () => {
   const end = Math.min(count - 1, center + radius);
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- hover reveal and wheel scrolling apply to the whole strip; each thumbnail inside is its own button
     <nav
       ref={thumbnailBarRef}
       aria-label="Thumbnail navigation"
