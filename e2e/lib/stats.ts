@@ -6,7 +6,7 @@
 
 export const median = (values: number[]): number => {
   if (values.length === 0) throw new Error("median of empty array");
-  const sorted = [...values].sort((a, b) => a - b);
+  const sorted = values.toSorted((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1
     ? sorted[mid]
@@ -16,7 +16,7 @@ export const median = (values: number[]): number => {
 /** Nearest-rank p95: the smallest value at or above the 95th percentile. */
 export const p95 = (values: number[]): number => {
   if (values.length === 0) throw new Error("p95 of empty array");
-  const sorted = [...values].sort((a, b) => a - b);
+  const sorted = values.toSorted((a, b) => a - b);
   const rank = Math.ceil(0.95 * sorted.length);
   return sorted[Math.min(rank, sorted.length) - 1];
 };

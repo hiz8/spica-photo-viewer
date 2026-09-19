@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { browser, expect } from "@wdio/globals";
 
 // import.meta.dirname is not reliably populated by wdio's TS loader, so derive
@@ -37,7 +38,7 @@ type PerfEntry = {
 const largeFiles = (): string[] =>
   readdirSync(join(CORPUS, "large"))
     .filter((f) => f.endsWith(".jpg"))
-    .sort()
+    .toSorted()
     .map((f) => join(CORPUS, "large", f));
 
 const openImage = (path: string): Promise<void> =>
@@ -120,7 +121,7 @@ const waitForNonThumbnailPaint = async (
 const paintsFor = (entries: PerfEntry[], path: string): PerfEntry[] =>
   entries
     .filter((e) => e.name === "paint:done" && e.detail?.path === path)
-    .sort((a, b) => a.ts - b.ts);
+    .toSorted((a, b) => a.ts - b.ts);
 
 /** open:request -> the first non-thumbnail paint:done for `path`, in ms. */
 const openToNonThumbnailPaint = (

@@ -13,6 +13,7 @@
 import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { browser } from "@wdio/globals";
 
 // import.meta.dirname is not reliably populated by wdio's TS loader (see the
@@ -83,7 +84,7 @@ export type Summary = {
 export const corpusFiles = (set: string): string[] =>
   readdirSync(join(CORPUS_DIR, set))
     .filter((f) => f.endsWith(".jpg"))
-    .sort()
+    .toSorted()
     .map((f) => join(CORPUS_DIR, set, f));
 
 export const getPerf = (): Promise<PerfEntry[]> =>

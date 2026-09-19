@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { browser, expect } from "@wdio/globals";
 import sharp from "sharp";
 
@@ -13,7 +14,7 @@ const SHOTS = join(here, "../screenshots");
 
 describe("visual gate", () => {
   it("renders a large image without blank output", async () => {
-    const files = readdirSync(join(CORPUS, "large")).sort();
+    const files = readdirSync(join(CORPUS, "large")).toSorted();
     const target = join(CORPUS, "large", files[0]);
 
     await browser.execute((p: string) => {

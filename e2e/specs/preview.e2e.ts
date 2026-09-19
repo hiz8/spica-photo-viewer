@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { browser, expect } from "@wdio/globals";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ describe("preview protocol", () => {
   it("serves a 20MP image fitted into the 1080p box with natural-size headers", async () => {
     const files = readdirSync(join(CORPUS, "large"))
       .filter((f) => f.endsWith(".jpg"))
-      .sort();
+      .toSorted();
     const probe = await probePreview(
       join(CORPUS, "large", files[0]),
       "1920x1080",
@@ -82,7 +83,7 @@ describe("preview protocol", () => {
   it("rejects unknown boxes and missing files", async () => {
     const files = readdirSync(join(CORPUS, "large"))
       .filter((f) => f.endsWith(".jpg"))
-      .sort();
+      .toSorted();
     const badBox = await probePreview(
       join(CORPUS, "large", files[0]),
       "1000x1000",

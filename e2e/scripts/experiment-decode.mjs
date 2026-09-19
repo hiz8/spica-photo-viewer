@@ -18,7 +18,7 @@ const PORT = 4473;
 if (!dir || !existsSync(dir)) throw new Error(`dir missing: ${dir}`);
 const files = readdirSync(dir)
   .filter((f) => /\.jpe?g$/i.test(f))
-  .sort()
+  .toSorted()
   .map((f) => join(dir, f));
 if (files.length < 8) throw new Error("need >= 8 jpgs");
 
@@ -42,11 +42,13 @@ const wd = async (method, path, body) => {
   const res = await fetch(`${base}${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const json = await res.json();
   if (!res.ok)
-    throw new Error(`${method} ${path} -> ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
+    throw new Error(
+      `${method} ${path} -> ${res.status}: ${JSON.stringify(json).slice(0, 300)}`,
+    );
   return json.value;
 };
 const executeAsync = (script, ...args) =>
@@ -122,7 +124,16 @@ try {
   });
   sessionId = session.sessionId;
 
-  const modes = ["full", "2:high", "2:low", "4:high", "4:pixelated", "img", "preview", "preview"];
+  const modes = [
+    "full",
+    "2:high",
+    "2:low",
+    "4:high",
+    "4:pixelated",
+    "img",
+    "preview",
+    "preview",
+  ];
   // Round-robin distinct files per variant, 3 samples each.
   const results = {};
   let fi = 0;
@@ -130,15 +141,21 @@ try {
     for (const mode of modes) {
       const f = files[fi++ % files.length];
       const r = await executeAsync(PAGE_SCRIPT, f, mode);
-      const key = mode === "preview" ? `preview(${sample === 0 && mode === "preview" ? "" : ""})` : mode;
       (results[mode] ??= []).push(r);
-      console.log(`${mode.padEnd(12)} ${f.split(/[\\/]/).pop()} ${JSON.stringify(r)}`);
+      console.log(
+        `${mode.padEnd(12)} ${f.split(/[\\/]/).pop()} ${JSON.stringify(r)}`,
+      );
     }
   }
   console.log("\nsummary (median total ms):");
   for (const [mode, arr] of Object.entries(results)) {
-    const ok = arr.filter((r) => !r.error).map((r) => r.total).sort((a, b) => a - b);
-    console.log(`${mode.padEnd(12)} ${ok.length ? ok[Math.floor(ok.length / 2)].toFixed(1) : "n/a"}  [${ok.map((v) => v.toFixed(0)).join(",")}]`);
+    const ok = arr
+      .filter((r) => !r.error)
+      .map((r) => r.total)
+      .toSorted((a, b) => a - b);
+    console.log(
+      `${mode.padEnd(12)} ${ok.length ? ok[Math.floor(ok.length / 2)].toFixed(1) : "n/a"}  [${ok.map((v) => v.toFixed(0)).join(",")}]`,
+    );
   }
 } finally {
   if (sessionId) {

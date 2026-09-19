@@ -12,16 +12,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 const exe = join(here, "../../src-tauri/target/release/spica-photo-viewer.exe");
 const largeDir = join(here, "../fixtures/corpus/large");
 
-if (!existsSync(exe)) throw new Error(`release binary missing: ${exe} — run: npm run bench:build`);
-if (!existsSync(largeDir)) throw new Error(`corpus missing: ${largeDir} — run: npm run bench:corpus`);
+if (!existsSync(exe))
+  throw new Error(`release binary missing: ${exe} — run: npm run bench:build`);
+if (!existsSync(largeDir))
+  throw new Error(`corpus missing: ${largeDir} — run: npm run bench:corpus`);
 
 const image = join(
   largeDir,
-  readdirSync(largeDir).filter((f) => f.endsWith(".jpg")).sort()[0],
+  readdirSync(largeDir)
+    .filter((f) => f.endsWith(".jpg"))
+    .toSorted()[0],
 );
 
 const CAPTURE_MS = 15000;
-console.log(`profiling ${exe}\n  image: ${image}\n  capturing stderr for ${CAPTURE_MS}ms...`);
+console.log(
+  `profiling ${exe}\n  image: ${image}\n  capturing stderr for ${CAPTURE_MS}ms...`,
+);
 
 const child = spawn(exe, [image], { env: { ...process.env, SPICA_PERF: "1" } });
 const samples = [];
@@ -52,7 +58,7 @@ setTimeout(() => {
   }
   console.log(`\ncaptured ${samples.length} samples:`);
   for (const [op, list] of byOp) {
-    const sorted = [...list].sort((a, b) => a - b);
+    const sorted = list.toSorted((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];
     console.log(
       `  ${op.padEnd(12)} n=${String(list.length).padStart(3)} median=${median.toFixed(1)}ms max=${Math.max(...list).toFixed(1)}ms`,
