@@ -36,6 +36,10 @@ pub struct ImageInfo {
     pub created_ns: u64,
 }
 
+// Explorer detection is the only producer of the keys other than Name, and it
+// is stubbed out off Windows (explorer_sort I4) — so there the variants are
+// matched but never constructed.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortKey {
     Name,
@@ -417,6 +421,9 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
 
     #[cfg(not(target_os = "windows"))]
     {
+        // The IPC signature is the same on every target, so the parameter has
+        // to stay even where nothing reads it.
+        let _ = path;
         Err("Open With dialog is only supported on Windows".to_string())
     }
 }
