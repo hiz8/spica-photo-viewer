@@ -196,6 +196,11 @@ pub fn store_thumbnail_entry(
         .map_err(|e| format!("Failed to write cache file: {e}"))
 }
 
+/// A cache hit: the thumbnail data URL, then the source image's width and
+/// height as recorded — absent for entries written before the cache carried
+/// dimensions.
+pub type ThumbnailHit = (String, Option<u32>, Option<u32>);
+
 /// Thumbnail lookup honoring I1: with a box requested, the matching preview
 /// (jpg + sidecar, fresh stamp) must be on disk — GIF excepted. Non-error
 /// entries without a source stamp (pre-2026-08 format) count as stale. An
@@ -209,7 +214,7 @@ pub fn lookup_thumbnail(
     path: &str,
     size: u32,
     preview_box: Option<&str>,
-) -> Option<(String, Option<u32>, Option<u32>)> {
+) -> Option<ThumbnailHit> {
     let entry = read_entry(cache_dir, path, size)?;
     let needs_stamp_check = entry.thumbnail != "error" || entry.source_mtime.is_some();
     if needs_stamp_check && !stamp_matches(path, entry.source_mtime, entry.source_size) {
@@ -235,7 +240,7 @@ pub fn lookup_thumbnails(
     paths: &[String],
     size: u32,
     preview_box: Option<&str>,
-) -> Vec<Option<(String, Option<u32>, Option<u32>)>> {
+) -> Vec<Option<ThumbnailHit>> {
     paths
         .iter()
         .map(|path| lookup_thumbnail(cache_dir, path, size, preview_box))
@@ -415,7 +420,7 @@ pub async fn get_cached_thumbnail(
     path: String,
     size: Option<u32>,
     preview_box: Option<String>,
-) -> Result<Option<(String, Option<u32>, Option<u32>)>, String> {
+) -> Result<Option<ThumbnailHit>, String> {
     let _t = crate::utils::perf::PerfTimer::start("thumb_lookup", &path);
     let cache_dir = get_cache_dir()?;
     Ok(lookup_thumbnail(
@@ -433,7 +438,7 @@ pub async fn get_cached_thumbnails(
     paths: Vec<String>,
     size: Option<u32>,
     preview_box: Option<String>,
-) -> Result<Vec<Option<(String, Option<u32>, Option<u32>)>>, String> {
+) -> Result<Vec<Option<ThumbnailHit>>, String> {
     let cache_dir = get_cache_dir()?;
     // A few small file reads per path, off the async runtime's core threads.
     tauri::async_runtime::spawn_blocking(move || {
