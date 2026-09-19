@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
+
 import { useAppStore } from "../../store";
 import { useWindowState } from "../useWindowState";
 

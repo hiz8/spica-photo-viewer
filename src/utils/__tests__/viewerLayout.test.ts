@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { centeredPosition, fitZoom, viewerLayoutArea } from "../viewerLayout";
 
 describe("viewerLayoutArea", () => {

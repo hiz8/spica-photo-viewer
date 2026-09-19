@@ -1,11 +1,12 @@
-import type React from "react";
 import {
   render,
   type RenderOptions,
   type RenderResult,
   act,
 } from "@testing-library/react";
+import type React from "react";
 import { vi } from "vitest";
+
 import type { ImageData, ImageInfo } from "../types";
 
 export const mockImageData: ImageData = {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { computeVisibleWindow, visibleThumbnailRadius } from "../preloadWindow";
 
 describe("visibleThumbnailRadius", () => {

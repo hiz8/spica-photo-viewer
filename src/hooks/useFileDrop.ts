@@ -1,6 +1,7 @@
-import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { useEffect } from "react";
+
 import { useAppStore } from "../store";
 import type { ImageInfo } from "../types";
 import { getFolderPath } from "../utils/path";

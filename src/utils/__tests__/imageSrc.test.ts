@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { imageFormat, imageSrc, previewSrc } from "../imageSrc";
 
 describe("imageSrc", () => {

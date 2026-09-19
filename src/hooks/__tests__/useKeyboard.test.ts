@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
 import { createKeyboardEvent } from "../../utils/testUtils";
 
 const mockWindow = {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { windowedClientBox } from "../windowedGeometry";
 
 // Natural 2000x1000 laid out at the origin; each case overrides what it needs.

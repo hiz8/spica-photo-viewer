@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import "@testing-library/jest-dom";
-import { mockImageData } from "../../utils/testUtils";
-import type { ImageData as AppImageData } from "../../types";
-import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
+
 import { FULL_UPGRADE_DEBOUNCE_MS } from "../../constants/memory";
+import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
+import type { ImageData as AppImageData } from "../../types";
+import { mockImageData } from "../../utils/testUtils";
 
 // Mock the invoke function (ImageViewer no longer calls it directly, but the
 // mock keeps any transitive Tauri IPC out of jsdom).
@@ -129,15 +130,15 @@ vi.mock("../../store", () => {
   };
 });
 
-import ImageViewer from "../ImageViewer";
-import { loadImageViaProtocol } from "../../utils/protocolLoader";
-import { drawBitmapToCanvas } from "../../utils/canvasDraw";
 import { clearBitmaps, getRetained, setBitmap } from "../../utils/bitmapCache";
 import {
   loadBitmapViaProtocol,
   loadPreviewBitmap,
 } from "../../utils/bitmapLoader";
+import { drawBitmapToCanvas } from "../../utils/canvasDraw";
 import { _setPerfEnabledForTests } from "../../utils/perf";
+import { loadImageViaProtocol } from "../../utils/protocolLoader";
+import ImageViewer from "../ImageViewer";
 
 const mockLoadImageViaProtocol = vi.mocked(loadImageViaProtocol);
 const mockLoadPreviewBitmap = vi.mocked(loadPreviewBitmap);

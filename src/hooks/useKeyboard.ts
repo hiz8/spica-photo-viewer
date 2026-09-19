@@ -1,5 +1,6 @@
-import { useEffect, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useCallback } from "react";
+
 import { useAppStore } from "../store";
 
 export const useKeyboard = () => {
