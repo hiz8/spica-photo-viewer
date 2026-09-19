@@ -557,6 +557,71 @@ describe("useThumbnailGenerator", () => {
 
       consoleWarnSpy.mockRestore();
     });
+
+    it("logs a failure of the initial batch instead of leaving it unhandled", async () => {
+      mockStore.folder.images = [createMockImageInfo(0)];
+      mockStore.currentImage.index = 0;
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      mockStore.setThumbnailGeneration.mockImplementationOnce(() => {
+        throw new Error("store update failed");
+      });
+
+      renderHook(() => useThumbnailGenerator());
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Thumbnail generation failed"),
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("logs a failure of the progressive expansion instead of leaving it unhandled", async () => {
+      const images = Array.from({ length: 5 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+      mockStore.folder.images = images;
+      mockStore.currentImage.index = 2;
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      mockInvoke.mockImplementation(async (cmd) => {
+        if (cmd === "get_cached_thumbnails") {
+          return images.map(() => null);
+        }
+        if (cmd === "generate_thumbnail_with_dimensions") {
+          // Shrinking the folder mid-batch makes the expansion's queue build
+          // read past the end: the failure comes from the chained step.
+          mockStore.folder.images = images.slice(0, 1);
+          return {
+            thumbnail_base64: "base64data",
+            original_width: 800,
+            original_height: 600,
+            preview_available: true,
+          };
+        }
+        return null;
+      });
+
+      renderHook(() => useThumbnailGenerator());
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Thumbnail generation failed"),
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
   });
 
   describe("abort controller handling", () => {

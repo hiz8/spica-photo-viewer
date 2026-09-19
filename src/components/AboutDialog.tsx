@@ -20,7 +20,7 @@ const AboutDialog: React.FC = () => {
       }
     };
 
-    loadVersion();
+    void loadVersion();
   }, []);
 
   if (!ui.showAbout) {

@@ -57,7 +57,7 @@ const App: React.FC = () => {
       }
     };
 
-    checkStartupFile();
+    void checkStartupFile();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- setCheckingStartupFile IS read (in the finally above); oxlint 1.83 does not count reads inside try/finally, so it calls the dependency unnecessary
   }, [openImageFromPath, setCachedThumbnail, setCheckingStartupFile]);
 

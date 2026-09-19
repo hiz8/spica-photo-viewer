@@ -339,9 +339,13 @@ export const useThumbnailGenerator = () => {
 
     debounceTimeoutRef.current = setTimeout(
       () => {
-        processQueue().then(() => {
-          expandQueueProgressively();
-        });
+        // processQueue lets failures propagate (try/finally, no catch) and
+        // nothing above this timer can catch them.
+        processQueue()
+          .then(() => expandQueueProgressively())
+          .catch((error) => {
+            console.error("Thumbnail generation failed:", error);
+          });
       },
       isRapid ? THUMBNAIL_GENERATION_DEBOUNCE_MS : 0,
     );
