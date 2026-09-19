@@ -195,12 +195,11 @@ if (cachedImage && cachedImage.format !== "error") {
 
 ### `useCacheManager` (`src/hooks/useCacheManager.ts`)
 
-2 つの `useEffect` を持ちます。
+`useEffect` は 1 つだけで、マウントの 5 秒後に `invoke("clear_old_cache")` を 1 回呼んでディスクキャッシュを掃除します（起動直後は起動画像の読み込みとフォルダスキャンがディスクを使うので、その後に回す）。
 
-1. **マウント時 (10-26 行)**: `invoke("clear_old_cache")` と `invoke("get_cache_stats")` をコールしてコンソールにログ
-2. **30 秒ごと (28-54 行)**: メモリ上の `cache.preloaded` (上限 20)、`cache.thumbnails` (上限 100) が超過してたら古い順に削除
+メモリ上の `cache.thumbnails` / `cache.preloaded` に対する周期的な件数上限の掃除は**意図的にありません**。かつて 30 秒ごとに「古い順に上限超過分を削除」していましたが、サムネイルは現在画像に近い順に挿入されるため、古い順の削除は可視範囲のサムネイルをまとめて消してしまい、百枚以上のフォルダでバーが突然空になる不具合の原因でした。`cache.preloaded` の寿命は `useImagePreloader` が窓外退避とバイト予算で管理しており（I3）、別の掃除がエントリだけ消すとビットマップが残ったまま hit を取りこぼします。両 Map はフォルダ単位で有界です: `setFolderImages` はフォルダ変更時に Map を作り直し、`openImageFromPath` は新フォルダに属さないサムネイルだけを落とします（起動ファイルのサムネイルはフォルダを開く前に seed されるため、全消しはしない）。
 
-削除はストアのバルクアクション (`removePreloadedImages` / `removeCachedThumbnails`) で 1 回の `set()` にまとめて行います。1 件ずつ単発アクションを呼ぶと、削除件数分だけ Map を再生成して store 更新が走り、`ThumbnailBar` 等の購読コンポーネントが連続再レンダリングしてしまうためです。イミュータブル更新自体は [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) で必須とされている書き方で、Map を直接 `delete()` すると React の再レンダリングが発火せずに stale 表示の原因になるので避けてください。
+ストアの Map を更新するときは [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) のとおりイミュータブルに行い、複数件はバルクアクション (`removePreloadedImages` / `removeCachedThumbnails` / `setCachedThumbnails`) で 1 回の `set()` にまとめます。Map を直接 `delete()` すると React の再レンダリングが発火せず stale 表示の原因になります。
 
 ### `useThumbnailGenerator` (`src/hooks/useThumbnailGenerator.ts`)
 

@@ -124,6 +124,24 @@ export const thumbnailToImageData = (
   format: "jpeg",
 });
 
+// Nothing else bounds the thumbnail map (there is deliberately no count
+// cap, see useCacheManager), so leaving a folder is when its entries go.
+// Filter rather than reset: the startup file's thumbnail is seeded before
+// its folder is opened (App.tsx, I1) and must survive the switch.
+const thumbnailsForFolder = (
+  state: AppState,
+  folderPath: string,
+  images: ImageInfo[],
+): AppState["cache"]["thumbnails"] => {
+  if (state.folder.path === folderPath) {
+    return state.cache.thumbnails;
+  }
+  const inFolder = new Set(images.map((img) => img.path));
+  return new Map(
+    [...state.cache.thumbnails].filter(([path]) => inFolder.has(path)),
+  );
+};
+
 interface AppActions {
   setCurrentImage: (path: string, index: number) => void;
   setImageData: (data: ImageData | null) => void;
@@ -701,6 +719,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           cache: {
             ...state.cache,
+            thumbnails: thumbnailsForFolder(state, folderPath, images),
             imageViewStates:
               state.folder.path !== folderPath
                 ? new Map()
@@ -730,6 +749,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
             zoom: 100,
             panX: 0,
             panY: 0,
+          },
+          cache: {
+            ...state.cache,
+            thumbnails: thumbnailsForFolder(state, folderPath, images),
           },
           ui: {
             ...state.ui,
