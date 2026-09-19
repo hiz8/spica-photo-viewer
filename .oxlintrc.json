@@ -23,7 +23,25 @@
     "builtin": true,
     "browser": true
   },
+  // 型認識は prefer-optional-chain 1 つのためだけに有効化している。これは
+  // Biome recommended の useOptionalChain 相当で、oxlint では tsgolint 無しに
+  // 1 件も検出できない（カテゴリ指定にも `rules` への明示にも反応しない）。
+  // 同時に起動する他の型認識ルールは下で個別に off にしてある。
+  "options": {
+    "typeAware": true
+  },
   "rules": {
+    "typescript/prefer-optional-chain": "error",
+    // 以下 7 つは typeAware を入れた副作用で起動するもので、Biome には対応物が
+    // 無い。導入すると src/ に 87 件出て、no-floating-promises はプリローダー
+    // などホットパスの挙動にも触れる。リンタ移行の範囲を超えるので今回は入れない。
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/unbound-method": "off",
+    "typescript/no-floating-promises": "off",
+    "typescript/consistent-return": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/no-unnecessary-type-assertion": "off",
+    "typescript/no-unnecessary-type-arguments": "off",
     // tsconfig.json の jsx は react-jsx（自動 JSX ランタイム）。React を
     // スコープに入れる必要はない。
     "react/react-in-jsx-scope": "off",

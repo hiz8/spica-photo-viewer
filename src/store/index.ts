@@ -495,7 +495,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const cachedImage = state.cache.preloaded.get(
         state.folder.images[nextIndex].path,
       );
-      if (!cachedImage || cachedImage.format !== "error") {
+      if (cachedImage?.format !== "error") {
         get().navigateToImage(nextIndex);
         return;
       }
@@ -516,7 +516,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const cachedImage = state.cache.preloaded.get(
         state.folder.images[prevIndex].path,
       );
-      if (!cachedImage || cachedImage.format !== "error") {
+      if (cachedImage?.format !== "error") {
         get().navigateToImage(prevIndex);
         return;
       }

@@ -44,7 +44,7 @@ npm run type-check:test    # テストファイルも含めた型チェック (t
 
 このプロジェクトでは [oxlint](https://oxc.rs/docs/guide/usage/linter.html) と [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) を採用しています (ESLint と Prettier ではない点に注意)。設定は `.oxlintrc.json` と `.oxfmtrc.json`。
 
-lint は oxlint の既定 (`correctness` のみ) では Biome の recommended より緩くなるため、`suspicious` カテゴリと react / jsx-a11y / import / promise プラグインまで広げてあります。個別に切ったルールは `.oxlintrc.json` 内に理由付きで書いてあります。format は oxfmt の既定をそのまま使い、`printWidth` だけ 80 (oxfmt の既定は 100) に据え置いています — Biome 時代の整形結果と一致する値で、移行時にソースの再整形差分をゼロにするためです。
+lint は oxlint の既定 (`correctness` のみ) では Biome の recommended より緩くなるため、`suspicious` カテゴリと react / jsx-a11y / import / promise プラグインまで広げてあります。加えて `options.typeAware` を有効にしていますが、これは Biome の `useOptionalChain` 相当である `typescript/prefer-optional-chain` を動かすためだけのもので (oxlint では型情報が無いと 1 件も検出できません)、同時に起動する他の型認識ルールは `.oxlintrc.json` で個別に off にしてあります。型認識には `oxlint-tsgolint` が要るため devDependency に入っており、lint は 100ms 弱から 300ms 程度に伸びます。個別に切ったルールは `.oxlintrc.json` 内に理由付きで書いてあります。format は oxfmt の既定をそのまま使い、`printWidth` だけ 80 (oxfmt の既定は 100) に据え置いています — Biome 時代の整形結果と一致する値で、移行時にソースの再整形差分をゼロにするためです。
 
 ```bash
 npm run lint               # lint チェック (修正なし)

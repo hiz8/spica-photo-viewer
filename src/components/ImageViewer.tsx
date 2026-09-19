@@ -214,8 +214,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
 
         const hasFullResolution =
           current.path === path &&
-          current.data &&
-          current.data.path === path &&
+          current.data?.path === path &&
           current.data.width > 0 &&
           !currentUi.thumbnailDisplayed;
 
