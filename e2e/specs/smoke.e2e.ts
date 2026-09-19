@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { browser, expect } from "@wdio/globals";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -110,16 +111,14 @@ describe("smoke", () => {
       ) => {
         fetch(url)
           .then((r) =>
-            r
-              .blob()
-              .then((b) =>
-                done({
-                  ok: r.ok,
-                  status: r.status,
-                  size: b.size,
-                  type: b.type,
-                }),
-              ),
+            r.blob().then((b) =>
+              done({
+                ok: r.ok,
+                status: r.status,
+                size: b.size,
+                type: b.type,
+              }),
+            ),
           )
           .catch(() =>
             done({ ok: false, status: -1, size: 0, type: "fetch-error" }),

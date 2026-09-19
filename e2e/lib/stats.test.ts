@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { median, p95 } from "./stats";
 
 describe("stats", () => {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+
 import {
   classifyRustDiff,
   classifyTsFileChange,
@@ -8,8 +9,10 @@ import {
 } from "../verify-comment-only.mjs";
 
 test("a comment-only rewrite is equivalent", () => {
-  const before = "/**\n * Debounce delay for image loading\n * Prevents intermediate loads\n */\nexport const N = 50;\n";
-  const after = "/** Prevents intermediate loads during rapid navigation. */\nexport const N = 50;\n";
+  const before =
+    "/**\n * Debounce delay for image loading\n * Prevents intermediate loads\n */\nexport const N = 50;\n";
+  const after =
+    "/** Prevents intermediate loads during rapid navigation. */\nexport const N = 50;\n";
   assert.equal(tsCodeEquivalent(before, after, "ts"), true);
 });
 
@@ -29,14 +32,22 @@ test("a removed trailing comment is equivalent", () => {
 
 test("a legal comment is stripped rather than preserved", () => {
   assert.equal(
-    tsCodeEquivalent("/** @license MIT */\nconst a = 1;\n", "const a = 1;\n", "ts"),
+    tsCodeEquivalent(
+      "/** @license MIT */\nconst a = 1;\n",
+      "const a = 1;\n",
+      "ts",
+    ),
     true,
   );
 });
 
 test("tsx is handled", () => {
   assert.equal(
-    tsCodeEquivalent("// c\nexport const C = () => <div />;\n", "export const C = () => <div />;\n", "tsx"),
+    tsCodeEquivalent(
+      "// c\nexport const C = () => <div />;\n",
+      "export const C = () => <div />;\n",
+      "tsx",
+    ),
     true,
   );
 });
@@ -61,13 +72,26 @@ test("a changed string literal containing // is not equivalent (not mistaken for
 
 test("a renamed identifier is not equivalent", () => {
   assert.equal(
-    tsCodeEquivalent("const a = 1;\nexport { a };\n", "const b = 1;\nexport { b as a };\n", "ts"),
+    tsCodeEquivalent(
+      "const a = 1;\nexport { a };\n",
+      "const b = 1;\nexport { b as a };\n",
+      "ts",
+    ),
     false,
   );
 });
 
 test("isCommentOrBlank accepts comment and blank lines", () => {
-  for (const line of ["", "   ", "// x", "  /// doc", "//! module", "/* open", "  * cont", "  */"]) {
+  for (const line of [
+    "",
+    "   ",
+    "// x",
+    "  /// doc",
+    "//! module",
+    "/* open",
+    "  * cont",
+    "  */",
+  ]) {
     assert.equal(isCommentOrBlank(line), true, line);
   }
 });

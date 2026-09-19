@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+
 import sharp from "sharp";
 
 // 16 は詳細/一覧/小アイコン表示が、256 は拡大アイコン表示が使う。
@@ -29,7 +30,11 @@ export function buildIco(images) {
     offset += image.png.length;
   });
 
-  return Buffer.concat([header, directory, ...images.map((image) => image.png)]);
+  return Buffer.concat([
+    header,
+    directory,
+    ...images.map((image) => image.png),
+  ]);
 }
 
 export async function renderIco(svgPath, icoPath) {
@@ -38,7 +43,10 @@ export async function renderIco(svgPath, icoPath) {
     ICON_SIZES.map(async (size) => ({
       size,
       png: await sharp(svg)
-        .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .resize(size, size, {
+          fit: "contain",
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
         .png({ compressionLevel: 9 })
         .toBuffer(),
     })),
@@ -50,7 +58,9 @@ export async function renderIco(svgPath, icoPath) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [input, output] = process.argv.slice(2);
   if (!input || !output) {
-    console.error("usage: node scripts/build-file-icon.mjs <input.svg> <output.ico>");
+    console.error(
+      "usage: node scripts/build-file-icon.mjs <input.svg> <output.ico>",
+    );
     process.exit(1);
   }
   const images = await renderIco(input, output);
