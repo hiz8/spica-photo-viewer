@@ -28,10 +28,10 @@ export const useWindowState = () => {
       }
     };
 
-    checkWindowState();
+    void checkWindowState();
 
     const handleResize = () => {
-      checkWindowState();
+      void checkWindowState();
     };
 
     // Use Tauri's window events for more accurate state tracking
@@ -73,7 +73,7 @@ export const useWindowState = () => {
     };
 
     let cleanup: (() => void) | undefined;
-    setupWindowListeners().then((fn) => {
+    void setupWindowListeners().then((fn) => {
       cleanup = fn;
     });
 

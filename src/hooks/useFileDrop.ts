@@ -69,7 +69,7 @@ export const useFileDrop = () => {
       }
     };
 
-    setupListeners();
+    void setupListeners();
 
     return () => {
       if (unlistenFileDrop) unlistenFileDrop();

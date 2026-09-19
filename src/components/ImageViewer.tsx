@@ -618,7 +618,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         !view.isFullscreen &&
         currentImage.data
       ) {
-        resizeToImage();
+        void resizeToImage();
       }
     },
     [view.isMaximized, view.isFullscreen, currentImage.data, resizeToImage],
@@ -629,7 +629,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         if (view.isMaximized && !view.isFullscreen && currentImage.data) {
-          resizeToImage();
+          void resizeToImage();
         }
       }
     },

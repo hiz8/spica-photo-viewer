@@ -37,10 +37,11 @@
     "typescript/unbound-method": "error",
     "typescript/no-unnecessary-type-assertion": "error",
     "typescript/no-unnecessary-type-arguments": "error",
-    // 残る 4 つ。no-floating-promises（本体 15 件）はフックとイベントハンドラ
-    // 全体に散っていて、void を付けるだけの箇所と本当に catch すべき箇所が
-    // 混ざるため単独で扱う。他の 3 つも本体に指摘が残っているので同様。
-    "typescript/no-floating-promises": "off",
+    // 未処理の Promise 拒否を捕まえる、typeAware の中で最も correctness 寄りの
+    // ルール。呼び先が自前で catch していれば void で意図を明示し、していなければ
+    // 呼び元で .catch() する。
+    "typescript/no-floating-promises": "error",
+    // 残る 3 つは本体に指摘が残っており、それぞれ別に採否を決める。
     "typescript/consistent-return": "off",
     "typescript/no-unsafe-type-assertion": "off",
     "typescript/restrict-template-expressions": "off",
@@ -92,6 +93,15 @@
         // 結果を返す手段が done コールバックしかなく、fetch の then から呼ぶ
         // 以外の書き方が存在しない。
         "promise/no-callback-in-promise": "off"
+      }
+    },
+    {
+      // node:test の test() は Promise を返すが、その完了はランナーが待つ。
+      // await しないのが正しい使い方なので、この規約のファイルだけ外す
+      // （vitest の spec と e2e では await 漏れが本物のバグなので対象外）。
+      "files": ["scripts/__tests__/**"],
+      "rules": {
+        "typescript/no-floating-promises": "off"
       }
     }
   ]
