@@ -268,3 +268,36 @@ left/top（トランジション対象外）だけを動かす。IPC 失敗時�
 `src/utils/viewerLayout.ts`（`viewerLayoutArea`）、
 `src/store/index.ts`（`resizeToImage` / `leaveWindowedView`）、
 `src-tauri/src/commands/window.rs`（`resize_window_to_image` / `restore_onto`）
+
+## W2
+
+**起動直後の前面再主張: 起動ファイルありの起動に限り、`run_start` から 1500ms 以内・最大 2 回**
+
+エクスプローラーから起動されたプロセスは前面化権を持つが、ダブルクリック直後の
+追加入力やエクスプローラー側の再前面化で、最初の `ShowWindow` によるアクティブ化が
+取り消されることがある（2026-09-20 報告: Spica がエクスプローラーの背面に出る）。
+ウインドウを最初から最大化で生成する前（PR #310 以前）は、フロントが起動 ~500ms 後に
+呼ぶ `maximize_window` が `ShowWindow(SW_MAXIMIZE)` になり、この取り消しを事実上
+やり直していた。最大化生成後は同じ呼び出しが tao の `apply_diff` でフラグ差分なしと
+判定され no-op になり、やり直しが消えた（`tao-0.35.3/src/platform_impl/windows/window_state.rs`
+`apply_diff` の `diff == empty` 早期 return）。
+
+その代替として `SetForegroundWindow` を、`window_created` / `page_load_finished` /
+`Focused(false)` の各契機で、前面が自ウインドウでないときだけ呼ぶ。前面化権が失効して
+いれば OS が拒否するので、ユーザーが意図して他ウインドウへ移った場合は奪えない
+（奪わない）。1500ms は起動タイムライン（`page_load_finished` ~330ms、旧
+`maximize_window` ~500ms）を余裕を持って含み、かつユーザーが次の操作に移る前に収まる
+値。2 回は「最初から取れなかった」と「取れた後に戻された」の両方を 1 回ずつ拾える最小値。
+
+`Focused(false)` は WebView2 子ウインドウがキーボードフォーカスを取るときにも毎回発火する
+（tao は `WM_KILLFOCUS` で出す）が、そのとき `GetForegroundWindow()` はトップレベルの
+自ウインドウのままなので `is_ours` で弾かれる。
+
+**採らない案**: tao の `set_focus()` は前面化に失敗すると合成 ALT キーを前面アプリへ送り
+（`force_window_active`）、エクスプローラーをメニューモードに落とす。`maximize_window` を
+非最大化生成に戻して旧挙動を再現する案は、起動時の 800×600 → 最大化のジャンプを
+復活させる。
+
+参照元: `src-tauri/src/commands/window.rs`（`reassert_startup_foreground`）、
+`src-tauri/src/lib.rs`（`window_created` / `on_page_load` / `on_window_event`）、
+`docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1.4

@@ -18,9 +18,22 @@ use commands::file::{
 use commands::window::{
     get_window_position, get_window_state, maximize_window, resize_window_to_image,
 };
+use std::sync::atomic::AtomicU32;
+use std::sync::OnceLock;
+use std::time::Instant;
+use tauri::Manager;
+
+/// Startup foreground reasserts made so far (W2).
+static REASSERTS: AtomicU32 = AtomicU32::new(0);
+static LAUNCHED_WITH_FILE: OnceLock<bool> = OnceLock::new();
+
+fn launched_with_file() -> bool {
+    LAUNCHED_WITH_FILE.get().copied().unwrap_or(false)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let started = Instant::now();
     crate::utils::perf::phase("run_start", "");
     // Stash the launcher's foreground window before Tauri creates ours and
     // takes focus (§6.3: picks among multiple Explorer windows).
@@ -29,7 +42,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
             crate::utils::perf::phase("setup", "");
             // The main window is created here (config `create: false`) so it
             // can be born maximized when launched with a file. A config
@@ -37,6 +50,7 @@ pub fn run() {
             // frontend calls maximize_window ~500ms later (after WebView2
             // init + page load + React mount).
             let startup_file = commands::file::startup_file_from_args();
+            let _ = LAUNCHED_WITH_FILE.set(startup_file.is_some());
             if let Some(path) = &startup_file {
                 // Overlaps the WebView2 init that window creation blocks on.
                 let screen = app
@@ -56,7 +70,7 @@ pub fn run() {
                 .find(|w| w.label == "main")
                 .cloned()
                 .ok_or("missing main window config")?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .maximized(maximized)
                 .max_inner_size(
                     commands::window::MAX_TRACK_LOGICAL_PX,
@@ -64,14 +78,47 @@ pub fn run() {
                 )
                 .build()?;
             crate::utils::perf::phase("window_created", "");
+            commands::window::reassert_startup_foreground(
+                &window,
+                maximized,
+                started,
+                &REASSERTS,
+                "window_created",
+            );
             Ok(())
         })
-        .on_page_load(|_webview, payload| {
+        .on_page_load(move |webview, payload| {
             let name = match payload.event() {
                 tauri::webview::PageLoadEvent::Started => "page_load_started",
                 tauri::webview::PageLoadEvent::Finished => "page_load_finished",
             };
             crate::utils::perf::phase(name, "");
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                if let Some(window) = webview.get_webview_window("main") {
+                    commands::window::reassert_startup_foreground(
+                        &window,
+                        launched_with_file(),
+                        started,
+                        &REASSERTS,
+                        "page_load_finished",
+                    );
+                }
+            }
+        })
+        // Focus lost inside the reassert window means Explorer took the
+        // foreground back (W2); the OS refuses the reassert if the user did.
+        .on_window_event(move |window, event| {
+            if let tauri::WindowEvent::Focused(false) = event {
+                if let Some(window) = window.get_webview_window("main") {
+                    commands::window::reassert_startup_foreground(
+                        &window,
+                        launched_with_file(),
+                        started,
+                        &REASSERTS,
+                        "focus_lost",
+                    );
+                }
+            }
         });
 
     // Custom `spica-img` scheme: serves image files straight to the WebView as
