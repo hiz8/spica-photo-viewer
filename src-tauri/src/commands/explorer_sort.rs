@@ -46,6 +46,19 @@ pub fn stash_foreground_window() {
     }
 }
 
+/// The launcher's foreground window as stashed by `stash_foreground_window`,
+/// for the startup perf trace. Non-Windows: None.
+pub fn foreground_at_launch() -> Option<isize> {
+    #[cfg(windows)]
+    {
+        FOREGROUND_AT_LAUNCH.get().copied()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 /// In-flight Explorer query started by `spawn_detect`.
 pub struct SortProbe {
     #[cfg(windows)]
@@ -302,17 +315,17 @@ mod imp {
                 .iter()
                 .map(|c| format!("{:?}/{}:{}", c.propkey.fmtid, c.propkey.pid, c.direction.0))
                 .collect();
-            eprintln!(
+            crate::utils::perf::emit(format!(
                 r#"{{"perf":"rust","op":"explorer_sort_columns","ms":0.00,"detail":{}}}"#,
                 serde_json::Value::String(all.join(";"))
-            );
+            ));
         }
         let mut key = PROPERTYKEY::default();
         let mut ascending = windows::core::BOOL(0);
         if unsafe { view.GetGroupBy(&mut key, Some(&mut ascending)) }.is_ok()
             && key.fmtid != windows::core::GUID::default()
         {
-            eprintln!(
+            crate::utils::perf::emit(format!(
                 r#"{{"perf":"rust","op":"explorer_group_by","ms":0.00,"detail":{}}}"#,
                 serde_json::Value::String(format!(
                     "{:?}/{}:asc={}",
@@ -320,7 +333,7 @@ mod imp {
                     key.pid,
                     ascending.as_bool()
                 ))
-            );
+            ));
         }
     }
 }

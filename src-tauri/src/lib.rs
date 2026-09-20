@@ -77,7 +77,16 @@ pub fn run() {
                     commands::window::MAX_TRACK_LOGICAL_PX,
                 )
                 .build()?;
-            crate::utils::perf::phase("window_created", "");
+            let fg = commands::window::foreground_state(&window);
+            crate::utils::perf::phase(
+                "window_created",
+                &format!(
+                    r#","foreground_is_ours":{},"foreground":{},"launcher":{}"#,
+                    fg.is_ours,
+                    fg.foreground,
+                    commands::explorer_sort::foreground_at_launch().unwrap_or(0)
+                ),
+            );
             commands::window::reassert_startup_foreground(
                 &window,
                 maximized,
@@ -108,7 +117,11 @@ pub fn run() {
         // Focus lost inside the reassert window means Explorer took the
         // foreground back (W2); the OS refuses the reassert if the user did.
         .on_window_event(move |window, event| {
-            if let tauri::WindowEvent::Focused(false) = event {
+            let tauri::WindowEvent::Focused(focused) = event else {
+                return;
+            };
+            crate::utils::perf::phase("focused", &format!(r#","focused":{focused}"#));
+            if !focused {
                 if let Some(window) = window.get_webview_window("main") {
                     commands::window::reassert_startup_foreground(
                         &window,

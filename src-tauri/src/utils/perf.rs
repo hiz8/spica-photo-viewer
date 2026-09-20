@@ -1,7 +1,10 @@
 //! Lightweight perf logging for bench runs. Enabled only when the process is
-//! launched with SPICA_PERF=1; completely silent otherwise. One JSON object
-//! per line on stderr so the bench harness (or a human) can grep/parse it.
+//! launched with SPICA_PERF=1 or SPICA_PERF_FILE=<path>; completely silent
+//! otherwise. One JSON object per line so the bench harness (or a human) can
+//! grep/parse it.
 
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -11,7 +14,38 @@ pub fn enabled() -> bool {
         std::env::var("SPICA_PERF")
             .map(|v| v == "1")
             .unwrap_or(false)
+            || file_sink().is_some()
     })
+}
+
+/// An Explorer launch has no stderr anyone can read, so SPICA_PERF_FILE
+/// redirects the log to a file for field diagnosis (W2 evidence).
+fn file_sink() -> Option<&'static PathBuf> {
+    static SINK: OnceLock<Option<PathBuf>> = OnceLock::new();
+    SINK.get_or_init(|| std::env::var_os("SPICA_PERF_FILE").map(PathBuf::from))
+        .as_ref()
+}
+
+/// Failures are swallowed: diagnostics must never take the app down.
+pub(crate) fn append_line(path: &Path, line: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
+/// Every perf line goes through here so the file sink covers all of them.
+pub fn emit(line: String) {
+    if !enabled() {
+        return;
+    }
+    match file_sink() {
+        Some(path) => append_line(path, &line),
+        None => eprintln!("{line}"),
+    }
 }
 
 /// Wall-clock ms since the UNIX epoch, on the same clock as the WebView's
@@ -30,12 +64,12 @@ pub fn phase(phase: &str, extra: &str) {
     if !enabled() {
         return;
     }
-    eprintln!(
+    emit(format!(
         r#"{{"perf":"rust","op":"startup","phase":{},"wall":{:.1}{}}}"#,
         serde_json::to_string(phase).unwrap_or_else(|_| "\"?\"".into()),
         wall_ms(),
         extra
-    );
+    ));
 }
 
 pub fn format_perf_line(op: &str, path: &str, ms: f64) -> String {
@@ -69,13 +103,28 @@ impl PerfTimer {
 impl Drop for PerfTimer {
     fn drop(&mut self) {
         let ms = self.start.elapsed().as_secs_f64() * 1000.0;
-        eprintln!("{}", format_perf_line(self.op, &self.path, ms));
+        emit(format_perf_line(self.op, &self.path, ms));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn append_line_creates_and_appends() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("perf.log");
+        append_line(&path, "{\"a\":1}");
+        append_line(&path, "{\"b\":2}");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text, "{\"a\":1}\n{\"b\":2}\n");
+    }
+
+    #[test]
+    fn append_line_ignores_unwritable_path() {
+        append_line(Path::new("Z:/no/such/dir/perf.log"), "x");
+    }
 
     #[test]
     fn test_format_perf_line_is_valid_json() {
