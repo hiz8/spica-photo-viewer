@@ -144,8 +144,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   removePreloadedImages: vi.fn(),
   setCachedThumbnail: vi.fn(),
   setCachedThumbnails: vi.fn(),
-  removeCachedThumbnail: vi.fn(),
-  removeCachedThumbnails: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
   openFileDialog: vi.fn(),

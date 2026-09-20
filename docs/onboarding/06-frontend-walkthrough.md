@@ -199,7 +199,7 @@ if (cachedImage && cachedImage.format !== "error") {
 
 メモリ上の `cache.thumbnails` / `cache.preloaded` に対する周期的な件数上限の掃除は**意図的にありません**。かつて 30 秒ごとに「古い順に上限超過分を削除」していましたが、サムネイルは現在画像に近い順に挿入されるため、古い順の削除は可視範囲のサムネイルをまとめて消してしまい、百枚以上のフォルダでバーが突然空になる不具合の原因でした。`cache.preloaded` の寿命は `useImagePreloader` が窓外退避とバイト予算で管理しており（I3）、別の掃除がエントリだけ消すとビットマップが残ったまま hit を取りこぼします。両 Map はフォルダ単位で有界です: `setFolderImages` はフォルダ変更時に Map を作り直し、`openImageFromPath` は新フォルダに属さないサムネイルだけを落とします（起動ファイルのサムネイルはフォルダを開く前に seed されるため、全消しはしない）。
 
-ストアの Map を更新するときは [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) のとおりイミュータブルに行い、複数件はバルクアクション (`removePreloadedImages` / `removeCachedThumbnails` / `setCachedThumbnails`) で 1 回の `set()` にまとめます。Map を直接 `delete()` すると React の再レンダリングが発火せず stale 表示の原因になります。
+ストアの Map を更新するときは [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) のとおりイミュータブルに行い、複数件はバルクアクション (`removePreloadedImages` / `setCachedThumbnails`) で 1 回の `set()` にまとめます。Map を直接 `delete()` すると React の再レンダリングが発火せず stale 表示の原因になります。
 
 ### `useThumbnailGenerator` (`src/hooks/useThumbnailGenerator.ts`)
 

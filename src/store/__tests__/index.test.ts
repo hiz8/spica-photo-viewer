@@ -1563,61 +1563,6 @@ describe("AppStore", () => {
       expect(useAppStore.getState().cache.thumbnails).toBe(before);
     });
 
-    it("should remove thumbnail from cache", () => {
-      const { setCachedThumbnail, removeCachedThumbnail } =
-        useAppStore.getState();
-
-      setCachedThumbnail("/test/image.jpg", {
-        base64: "thumbnailBase64",
-        width: 800,
-        height: 600,
-      });
-      expect(
-        useAppStore.getState().cache.thumbnails.has("/test/image.jpg"),
-      ).toBe(true);
-
-      removeCachedThumbnail("/test/image.jpg");
-      expect(
-        useAppStore.getState().cache.thumbnails.has("/test/image.jpg"),
-      ).toBe(false);
-    });
-
-    it("should remove multiple thumbnails in a single store update", () => {
-      const { setCachedThumbnail, removeCachedThumbnails } =
-        useAppStore.getState();
-
-      const thumb = { base64: "data", width: 800, height: 600 };
-      setCachedThumbnail("/test/a.jpg", thumb);
-      setCachedThumbnail("/test/b.jpg", thumb);
-      setCachedThumbnail("/test/c.jpg", thumb);
-
-      const before = useAppStore.getState().cache.thumbnails;
-
-      removeCachedThumbnails(["/test/a.jpg", "/test/b.jpg"]);
-
-      const after = useAppStore.getState().cache.thumbnails;
-      expect(after).not.toBe(before);
-      expect(after.has("/test/a.jpg")).toBe(false);
-      expect(after.has("/test/b.jpg")).toBe(false);
-      expect(after.has("/test/c.jpg")).toBe(true);
-    });
-
-    it("should be a no-op when removing zero thumbnails", () => {
-      const { setCachedThumbnail, removeCachedThumbnails } =
-        useAppStore.getState();
-
-      setCachedThumbnail("/test/a.jpg", {
-        base64: "data",
-        width: 800,
-        height: 600,
-      });
-      const before = useAppStore.getState().cache.thumbnails;
-
-      removeCachedThumbnails([]);
-
-      expect(useAppStore.getState().cache.thumbnails).toBe(before);
-    });
-
     it("should create immutable Map copy when setting thumbnail", () => {
       const { setCachedThumbnail } = useAppStore.getState();
 
