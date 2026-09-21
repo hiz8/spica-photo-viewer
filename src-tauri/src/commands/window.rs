@@ -59,6 +59,7 @@ pub(crate) struct Rect {
 
 impl Rect {
     /// Zero-area rects and rects that only share an edge do not overlap.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn intersects(&self, other: &Rect) -> bool {
         self.left < other.right
             && other.left < self.right
@@ -67,6 +68,7 @@ impl Rect {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ZWindow {
     pub hwnd: isize,
@@ -83,6 +85,7 @@ pub(crate) struct ZWindow {
 /// of ours (docs/code-rationale.md#W3): topmost windows are skipped because
 /// HWND_TOP cannot pass them, and the rect test keeps a window on another
 /// monitor from triggering a raise.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn covering_window(above: &[ZWindow], ours: Rect) -> Option<isize> {
     above
         .iter()
