@@ -39,8 +39,8 @@ Add-Type -Namespace Win32 -Name Probe -MemberDefinition @'
 
 $GWL_STYLE = -16; $GWL_EXSTYLE = -20
 $GW_HWNDNEXT = 2; $GW_OWNER = 4
-$WS_DISABLED = 0x08000000; $WS_POPUP = 0x80000000
-$WS_EX_TOPMOST = 0x8; $WS_EX_NOACTIVATE = 0x08000000; $WS_EX_TOOLWINDOW = 0x80; $WS_EX_LAYERED = 0x80000; $WS_EX_TRANSPARENT = 0x20
+$WS_DISABLED = 0x08000000
+$WS_EX_TOPMOST = 0x8; $WS_EX_NOACTIVATE = 0x08000000; $WS_EX_TOOLWINDOW = 0x80; $WS_EX_LAYERED = 0x80000
 $SMTO_ABORTIFHUNG = 0x2
 
 function Text($h) { $sb = New-Object System.Text.StringBuilder 256; [void][Win32.Probe]::GetWindowTextW($h, $sb, 256); $sb.ToString() }

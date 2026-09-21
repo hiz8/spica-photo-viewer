@@ -94,7 +94,7 @@ pub fn run() {
             );
             commands::window::raise_startup_z(
                 &window,
-                maximized,
+                launched_with_file(),
                 created_at,
                 &Z_RAISES,
                 "window_created",
