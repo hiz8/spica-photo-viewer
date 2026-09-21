@@ -27,13 +27,16 @@ fn file_sink() -> Option<&'static PathBuf> {
 }
 
 /// Failures are swallowed: diagnostics must never take the app down.
+/// One write per line: emitters on other threads append through their own
+/// handles, and a body write followed by a separate newline write lets two
+/// lines interleave into `{a}{b}` plus an empty line.
 pub(crate) fn append_line(path: &Path, line: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
     {
-        let _ = writeln!(f, "{line}");
+        let _ = f.write_all(format!("{line}\n").as_bytes());
     }
 }
 
@@ -119,6 +122,32 @@ mod tests {
         append_line(&path, "{\"b\":2}");
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(text, "{\"a\":1}\n{\"b\":2}\n");
+    }
+
+    #[test]
+    fn concurrent_appends_keep_one_object_per_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("perf.log");
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for i in 0..200 {
+                        append_line(&path, &format!(r#"{{"t":{t},"i":{i}}}"#));
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 8 * 200);
+        for line in lines {
+            serde_json::from_str::<serde_json::Value>(line)
+                .unwrap_or_else(|e| panic!("torn line {line:?}: {e}"));
+        }
     }
 
     #[test]
