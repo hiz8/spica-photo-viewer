@@ -580,20 +580,23 @@ git commit -m "perf(startup): keep the startup-file thumbnail wait off the main 
 **Files:**
 - Modify: `src-tauri/src/commands/startup.rs`（`start` をサムネイル部とフォルダ部に分割: `start_thumbnail(path, screen)` / `start_folder(path)`）
 - Modify: `src-tauri/src/lib.rs`（`start_folder` を `window_created` フェーズの後へ移す）
-- Test: `src-tauri/src/commands/startup.rs`（既存テストが通ること）
+- Modify: `docs/code-rationale.md`（W4）
+- Test: `src-tauri/src/commands/startup.rs`（新規 2 件、既存テストにはスロット用のテストロックを追加）
 
-- [ ] **Step 1: 分割と移動**
+（2026-09-21: 発動根拠は §3 の 6（§1.5 の実験 A/B）に置き換えた。根拠ラベルは `docs/code-rationale.md` W4。）
 
-`setup` 内で、ウインドウ生成前は `start_thumbnail` のみ、`.build()?` の後に `start_folder`。`take_folder` の契約（スロットが無ければ `None` → 通常走査）は変えない。
+- [x] **Step 1: 分割と移動**（テスト先行: `start_thumbnail` はフォルダ枠に触れない / `start_folder` は画像の親フォルダを先読みして `take_folder` が返す。変異チェック 2 件 = `start_thumbnail` から `start_folder` を呼ぶ・親でなく画像パスをキーにする、いずれも該当テストが落ちる）
 
-- [ ] **Step 2: 起動時間の影響を測る**
+`setup` 内で、ウインドウ生成前は `start_thumbnail` のみ、`.build()?` の後（W2/W3 の後）に `start_folder`。`take_folder` の契約（スロットが無ければ `None` → 通常走査）は変えない。
 
-Run: `node e2e/scripts/profile-startup.mjs --file e2e/fixtures/corpus/medium/img-000.jpg --runs 5`
-Expected: `folder:scanned` までの時間が `window_created` の分（本機で ~270ms）だけ遅れる。首枚の paint は `folder_scan` に依存しないので悪化しないこと（`paint:done` の中央値 ±20ms）。
+- [x] **Step 2: 起動時間の影響を測る**
 
-- [ ] **Step 3: 採否**
+Run: 直前のビルドの e2e exe と C3 の e2e exe で、`profile-startup.mjs --file e2e/fixtures/corpus/medium/img-000.jpg` を交互に 3 起動 × 3 ラウンド（それぞれ捨て起動 1 回の後）。
+結果: 走査開始は `window_created` +0〜2ms。起動から `window_created` までの時間は両 exe とも二峰性（~0.5 秒 / 0.9〜1.5 秒）なので、`window_created` 起点で比べた。`folder:scanned` は速い回で差なし（中央値 ~100ms 同士）、遅い回で +241 → +281ms（+40ms）。首枚の paint は変わらない。計画時の予想（~270ms 遅れ）より小さいのは、フロントが一覧を求めるのがページロードと React マウントの後で、走査の大半がその間に収まるため。NAS・大フォルダでは走査が長いので、遅れはウインドウ生成の分に近づく（W4）。
 
-再現条件（UNC フォルダ・大量枚数）で 1 週間程度運用し、`perf.log` の `foreground_reassert` 行が出なくなる（＝最初のアクティブ化が成立するようになる）なら採用。変わらなければ `git revert`。
+- [ ] **Step 3: 採否（実機、§3 の 6）**
+
+エクスプローラーから起動し、C3 のビルドと直前のビルド（対照）をブロックごとに交互に入れ替えて、それぞれ 30 起動以上。合格条件: C3 側で `window_created` の `z_above` が非 0 の起動が 0 件で、同時に取った対照側には起きていること（対照でも 0 件なら判定不能）。あわせて、一覧・サムネイルバーの出方に体感の悪化が無いこと。不合格なら `git revert`。
 
 - [ ] **Step 4: Commit**
 

@@ -4,7 +4,9 @@
 //! frontend can ask for anything, while the startup file is already known
 //! from argv. The two things the frontend asks for first — the current
 //! image's thumbnail + display-resolution preview, and the folder listing —
-//! are started here so they overlap that wait instead of following it.
+//! are started here so they do not wait for the frontend's request. The
+//! thumbnail overlaps the WebView2 wait; the listing starts once the window
+//! exists (W4) and overlaps page load and React mount instead.
 
 use crate::commands::cache;
 use crate::commands::file::{self, ImageInfo};
@@ -62,9 +64,10 @@ pub fn box_for_screen(width: u32, height: u32) -> PreviewBox {
     }
 }
 
-/// Starts both prefetches for `image_path`. `screen` is the primary
-/// monitor's physical size, used to pick the box the frontend will ask for.
-pub fn start(image_path: &str, screen: (u32, u32)) {
+/// Starts the thumbnail + preview prefetch for `image_path`. `screen` is the
+/// primary monitor's physical size, used to pick the box the frontend will
+/// ask for.
+pub fn start_thumbnail(image_path: &str, screen: (u32, u32)) {
     perf::phase("prefetch_start", "");
     let path = image_path.to_string();
     let bbox = box_for_screen(screen.0, screen.1);
@@ -82,7 +85,11 @@ pub fn start(image_path: &str, screen: (u32, u32)) {
         );
         let _ = thumb_tx.send(result);
     });
+}
 
+/// Starts the listing prefetch for `image_path`'s folder. Only after our
+/// window is created: the scan runs the Explorer sort probe (W4).
+pub fn start_folder(image_path: &str) {
     if let Some(folder) = Path::new(image_path).parent().map(Path::to_path_buf) {
         let (folder_tx, folder_rx) = mpsc::channel();
         let key = crate::commands::explorer_sort::normalize_path(&folder.to_string_lossy());
@@ -152,6 +159,43 @@ pub fn take_folder(folder: &Path) -> Option<Result<Vec<ImageInfo>, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::{create_temp_dir, create_test_jpeg};
+
+    /// THUMB / FOLDER are process-wide and tests run in parallel.
+    static SLOTS: Mutex<()> = Mutex::new(());
+
+    fn lock_slots() -> std::sync::MutexGuard<'static, ()> {
+        SLOTS.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn start_thumbnail_leaves_the_folder_scan_for_later() {
+        let _slots = lock_slots();
+        let dir = create_temp_dir();
+        // A missing file: a real image would be generated into the user's
+        // cache dir by the prefetch thread.
+        let img = dir.path().join("missing.jpg").to_string_lossy().to_string();
+        *FOLDER.lock().unwrap() = None;
+        start_thumbnail(&img, (1920, 1080));
+        assert_eq!(
+            THUMB.lock().unwrap().as_ref().map(|(p, _)| p.clone()),
+            Some(img)
+        );
+        assert!(FOLDER.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn start_folder_prefetches_the_images_parent_folder() {
+        let _slots = lock_slots();
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        start_folder(&img.to_string_lossy());
+        let listing = take_folder(dir.path())
+            .expect("prefetch armed for the parent folder")
+            .unwrap();
+        let names: Vec<&str> = listing.iter().map(|i| i.filename.as_str()).collect();
+        assert_eq!(names, ["a.jpg"]);
+    }
 
     #[test]
     fn box_for_screen_matches_frontend_buckets() {
@@ -165,6 +209,7 @@ mod tests {
 
     #[test]
     fn take_thumbnail_ignores_a_different_path() {
+        let _slots = lock_slots();
         let (tx, rx) = mpsc::channel();
         *THUMB.lock().unwrap() = Some(("a.jpg".to_string(), rx));
         tx.send(Some(PrefetchedThumbnail {
@@ -180,6 +225,7 @@ mod tests {
 
     #[test]
     fn take_folder_only_serves_the_prefetched_folder() {
+        let _slots = lock_slots();
         let (tx, rx) = mpsc::channel();
         *FOLDER.lock().unwrap() = Some((
             crate::commands::explorer_sort::normalize_path(r"C:\Photos\Trip"),

@@ -61,7 +61,7 @@ pub fn run() {
                     .flatten()
                     .map(|m| (m.size().width, m.size().height))
                     .unwrap_or((0, 0));
-                commands::startup::start(path, screen);
+                commands::startup::start_thumbnail(path, screen);
             }
             let maximized = startup_file.is_some();
             let config = app
@@ -104,6 +104,11 @@ pub fn run() {
                 &Z_RAISES,
                 "window_created",
             );
+            if let Some(path) = &startup_file {
+                // Not before the window: the scan's Explorer probe racing our
+                // first show lifts the launcher above us (W4).
+                commands::startup::start_folder(path);
+            }
             Ok(())
         })
         .on_page_load(move |webview, payload| {
