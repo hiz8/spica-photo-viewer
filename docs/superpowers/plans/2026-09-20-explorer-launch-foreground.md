@@ -72,7 +72,23 @@
 
 **(c) `get_startup_file` が同期コマンドになりメインスレッドで最大 150ms 待つ**（`startup.rs:29` `THUMB_WAIT`）。H3 の候補だが、§1.2 の実測ではメインスレッド応答は 0.1–0.3ms で、150ms の一時停止だけでは「クリックで前面化しない」を説明できない。C2 の対象（証拠が出た場合のみ）。
 
-**(a) が説明しないこと**: 「背面の Spica をクリックしても前面化しない／エクスプローラーを最小化→復元すると直る」。前面化の再試行が無いことは背面に**留まる**理由であって、クリックが効かない理由ではない。クリックが効かない機構は §2 の H2/H4/H5 のどれかで、再現時の採取（A1–A3）で決める。ただし C1 は最初の状態（背面に留まる）を解消するので、クリック不能状態に入ること自体を減らすと期待できる。
+**(a) が説明しないこと**: 「背面の Spica をクリックしても前面化しない／エクスプローラーを最小化→復元すると直る」。前面化の再試行が無いことは背面に**留まる**理由であって、クリックが効かない理由ではない。当初は §2 の H2/H4/H5 のどれかと見ていたが、2026-09-21 の実機再現（§1.5）で **どれでもない 1 状態** に決まった。
+
+### 1.5 実機再現で確定した状態（2026-09-21、C1 + A2 を含むビルド）
+
+15ms 周期の読み取り専用ウォッチャー（前面 HWND と可視トップレベル窓の z オーダーを変化時のみ記録）と `perf.log` を突き合わせた結果:
+
+| 時点（Spica の窓が現れてから） | 状態 |
+|---|---|
+| 0 ms（`run_start` +~35ms） | Spica の窓が z の**最上位**かつ**前面** |
+| +22〜31 ms | 起動元エクスプローラー窓（`perf.log` の `launcher` と同一 HWND、非最大化・非 topmost）が **前面は取らず z だけ** Spica の上へ。Spica は `is_foreground:true`、`gui_flags 0`、メッセージポンプ正常 |
+| +~500 ms | `window_created`（`foreground_is_ours:true`）。W2 の最初の契機だが、前面が自分なので何もしない |
+| フォーカスが他へ移るまで | 変化なし（19 秒の採取で不変） |
+
+- 通常起動（同セッション 9〜10 回）ではウォッチャー上ずっと `above=[]`。発生率はウォッチャー稼働中で約 2/12。ローカル・NAS どちらのフォルダでも発生し、フォルダ種別は判別条件にならない。
+- **「クリックしても前面化しない」の機構**: この状態では Spica が既にアクティブ（前面）ウインドウなので、クリックしてもアクティブ化が起きず、z も動かない。他アプリへ一度フォーカスを移してからクリックすると、アクティブ化が z も最上位へ戻す（3 回確認）。つまり「前面は自分・z だけエクスプローラーの下」の 1 状態が「背面に出る」と「クリックが効かない」の両方を説明する。
+- **未判別**: 誰がエクスプローラーを持ち上げたか（エクスプローラー/OS 自身か、+6〜100ms で重なる自前の `explorer_sort` COM 読み取り（IShellWindows、読み取りのみ）が誘発したか）。メモ帳での対照実験は後回し。対策 C4 は行為者に依存しない。
+- 旧 `maximize_window`（`ShowWindow(SW_MAXIMIZE)`）が z も直していた、というのは**推定**（確定した回帰機構 (a) とは別）。
 
 ## §2 仮説と判別条件
 
@@ -92,14 +108,15 @@
 2. **C3: 起動時ソートプローブの遅延**（§1.4(b)。A2 の `window_created` トレースで `foreground_is_ours:false` が再現時に観測され、かつ C1 の再主張が `ok:false` で拒否される場合のみ）。`startup::start` のフォルダ走査を `window_created` 後に開始する 1 コミットで検証し、`profile-startup.mjs` で起動時間の悪化幅を確認して採否を決める。
 3. **C2: メインスレッドの同期ブロック排除**（H3 の証拠が出た場合のみ）。
 4. H2 はアプリ側修正なし。証拠が出たら `docs/code-rationale.md` に記録し、`set_focus()` 禁止を規約に残す。
+5. **C4: 起動直後の z オーダー是正**（§1.5 で確定した「前面は自分・z だけ下」の状態。W2 と同じ枠内で、前面が自分かつ覆われているとき `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)`。根拠 `docs/code-rationale.md` W3）。C3（プローブ遅延）とは混ぜない（1 コミット 1 仮説）。
 
-実施順は **C1 → A1 → A2 → A3**（C1 は根拠が確定しており単独で価値があるので先に出す。A1–A3 は C1 で解消しない場合の切り分け用）。
+実施順は **C1 → A1 → A2 → A3 → C4**（C1 は根拠が確定しており単独で価値があるので先に出す。A1–A3 は C1 で解消しない場合の切り分け用。C4 は A1–A3 の採取結果から決まった）。
 
 ---
 
 ## §4 タスク
 
-進捗（2026-09-20）: C1 / A1 / A2 / A3 は実装・コミット済み（C1 Step 6 の手動チェックのみユーザー実施待ち）。C2 / C3 は条件付きのため未着手。
+進捗（2026-09-21）: C1 / A1 / A2 / A3 は実装・コミット済み。C1 Step 6 は項目 1 合格、項目 2 は手動では成立しない（窓生成が起動 ~0.2–0.5 秒後で、0.5 秒以内に別アプリをクリックできない）、項目 3 は C4 のビルドで併せて実施。実機再現（§1.5）を受けて C4 を実装済み（実機検証待ち）。C2 / C3 は条件付きのため未着手。
 
 ### Task A1: 診断スクリプトの整備とコミット
 
@@ -572,6 +589,31 @@ git add src-tauri/src/commands/startup.rs src-tauri/src/lib.rs
 git commit -m "fix(startup): start the folder prefetch after the window is shown"
 ```
 
+### Task C4: 起動直後の z オーダー是正（前面は自分・z だけ起動元の下）
+
+§1.5 の状態を、W2 と同じ時間枠・別カウンタで解消する。根拠は `docs/code-rationale.md` W3。
+
+**Files:**
+- Modify: `src-tauri/src/commands/window.rs`（`Rect::intersects` / `ZWindow` / `covering_window` / `should_raise_z` / `raise_startup_z` / `native::windows_above` / `native::raise_to_top`、`ForegroundState.z_above`）
+- Modify: `src-tauri/src/lib.rs`（`Z_RAISES`、`window_created` と `page_load_finished` で W2 の直後に呼ぶ、`window_created` 行に `z_above`）
+- Modify: `docs/code-rationale.md`（W3）
+- Test: `src-tauri/src/commands/window.rs`（`mod tests`）
+
+**Interfaces:**
+- Produces: `covering_window(above: &[ZWindow], ours: Rect) -> Option<isize>` — z 上位から順に、可視・非最小化・非 toolwindow・非 topmost・非 cloaked・非所有・矩形交差、をすべて満たす最初の HWND（純関数）。
+- Produces: `should_raise_z(launched_with_file, is_ours, covered, elapsed, attempts) -> bool` — `launched_with_file && is_ours && covered && elapsed <= 1500ms && attempts < 2`（純関数）。
+- Produces: `raise_startup_z(window, launched_with_file, started, attempts, phase)` — 条件を満たせば `SetWindowPos(HWND_TOP, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)`、perf ログ `z_raise`（`at` / `above` / `ok` / `err`）。
+- Produces: perf ログ `window_created` の `"z_above":<hwnd|0>`。
+
+- [x] **Step 1: 失敗するテストを書く**（各テストが名指しする本番変更: 除外条件 6 つ・別モニタ・辺接触・順序、`is_ours` 反転、1500ms ちょうど / 1501ms、回数上限）
+- [x] **Step 2: 赤を確認**（`ZWindow` / `covering_window` / `should_raise_z` / `Z_RAISE_MAX` 未定義でコンパイルエラー）
+- [x] **Step 3: 実装**
+- [x] **Step 4: 変異チェック**（回数上限 `<` → `<=`、topmost 除外の削除、矩形交差 `<` → `<=`、`is_ours` 反転: いずれも該当テストが落ちる）
+- [x] **Step 5: ゲート** `cargo fmt --check` / `cargo clippy --all-targets -- -D warnings` / `cargo test --lib`（130）/ `npm test`（413）
+- [ ] **Step 6: e2e** `npm run bench:build` → `npm run test:e2e` 2 回連続 green
+- [ ] **Step 7: 実機検証（ユーザー）** — インストーラを更新し、エクスプローラーから 30 回以上起動（ローカル・NAS）。合格条件: 「Spica が前面のまま、起動元エクスプローラーが `above` に 1 秒以上残る」起動が 0 件。`perf.log` の `z_raise ... ok:true` が症状の出た起動と対応していること。あわせて C1 Step 6 の項目 3（ウインドウ化・F11）を実施。
+- [ ] **Step 8: 不合格なら** `git revert` せず、ウォッチャーの記録（再度持ち上げられた時刻）を根拠に次の契機（遅延再確認など）を相談する。
+
 ---
 
 ## §5 完了条件
@@ -579,3 +621,4 @@ git commit -m "fix(startup): start the folder prefetch after the window is shown
 - C1 がマージされ、ユーザー環境で再現条件（UNC フォルダ・大量枚数）の運用で背面化が出なくなる。perf ログの `foreground_reassert` 行で「再主張が成功したか / OS が拒否したか」が読める。
 - A1–A3 がマージされ、C1 後も再現した場合に §2 の判定表で仮説が一意に決まる。
 - C1 後も再現し、採取結果で H2 または H4（Windows 側）と判定された場合は、`docs/code-rationale.md` に事象と回避策を記録して本件をクローズする。H1/H5 で C1 が `ok:false` なら C3 を実施し、H3 なら C2 を実施する。
+- （2026-09-21 追記）実機再現は §1.5 の状態だったので、C4 がマージされ、ウォッチャー付きの 30 回以上の起動で「前面は自分・z だけ下」が 1 秒以上残る起動が 0 件になれば本件をクローズする。C4 後にも 1500ms より後で持ち上げられる場合は、ウォッチャーの記録から契機を追加する（別 PR）。

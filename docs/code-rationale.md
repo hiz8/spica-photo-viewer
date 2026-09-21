@@ -301,3 +301,54 @@ left/top（トランジション対象外）だけを動かす。IPC 失敗時�
 参照元: `src-tauri/src/commands/window.rs`（`reassert_startup_foreground`）、
 `src-tauri/src/lib.rs`（`window_created` / `on_page_load` / `on_window_event`）、
 `docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1.4
+
+## W3
+
+**起動直後の z オーダー是正: 前面が自分なのに覆われているとき、W2 と同じ枠内で `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)`**
+
+W2 の実機検証（2026-09-21、15ms 周期の読み取り専用ウォッチャー）で、報告された症状は
+「前面が自分でない」状態ではなく **「前面は自分（`GetForegroundWindow()` == 自 HWND、
+`focused:true`）のまま、起動元エクスプローラー窓だけが z オーダーで自分の上に居る」**
+状態だと判った。Spica の窓は最上位・前面で現れ（`run_start` +~35ms）、その 22〜31ms 後に
+起動元エクスプローラー窓（非最大化・非 topmost）がアクティブ化を伴わずに z だけ上へ来る。
+これは W2 が観測できる最初の契機（`window_created`、+~500ms）より前に終わっており、
+W2 は前面が自分のとき何もしないので効かない。
+
+この 1 状態が元報告の両方を説明する: 「背面に出る」は z の話であり、「クリックしても
+前面化しない」は、既に前面（アクティブ）なウインドウをクリックしても OS は何もしない
+（アクティブ化が起きないので z も動かない）ため。他アプリへ一度フォーカスを移してから
+クリックすると、アクティブ化が z も最上位へ戻す（ウォッチャーで確認）。
+
+対策は、起動ファイルありの起動に限り、`window_created` / `page_load_finished` で
+「前面は自分 かつ 自分より上に覆っているウインドウがある」なら
+`SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)` を
+呼ぶ。時間枠は W2 と同じ `run_start` から 1500ms、回数は W2 と別カウンタで最大 2 回
+（両方が要る起動でそれぞれの回数を失わないため）。
+
+- **`SWP_NOACTIVATE` の理由**: 動かすのは z だけでよい。前面は既に自分なので
+  アクティブ化を再要求する必要が無く、要求すると OS の前面化判定をもう一度通ることになる
+  （拒否されれば無意味、通れば余計なフォーカスイベント）。前面が自分のときにしか動かない
+  ので、この呼び出しがユーザーからフォーカスを奪うことは無い。
+- **`HWND_TOP` は topmost を越えない**: `HWND_TOP` は非 topmost 帯の先頭に置くだけで、
+  `WS_EX_TOPMOST` のウインドウ（タスクバー、常に手前のツール）より上には行けない。
+  そのため「覆っているウインドウ」の判定から topmost を除き、topmost しか上に無い状態では
+  呼ばない（呼んでも変わらない）。
+- **「覆っている」の判定**: 自分より z が上で、可視・非最小化・`WS_EX_TOOLWINDOW` でない・
+  `WS_EX_TOPMOST` でない・DWM cloaked でない（別仮想デスクトップや UWP の休止窓）・
+  所有ウインドウでない（ツールチップ・ポップアップ）・矩形が自分の矩形と交差する（別モニタの
+  ウインドウで無駄に動かさない）、をすべて満たす最初の 1 枚。列挙は `GetTopWindow(NULL)` →
+  `GetWindow(GW_HWNDNEXT)` を自 HWND まで。自 HWND に到達せずに列挙が終わった場合は
+  何も言えないので動かない。
+- **誰がエクスプローラーを持ち上げたかは未判別**（エクスプローラー/OS 自身か、起動時の
+  `explorer_sort` COM 読み取りが誘発したのか）。対策は行為者に依存しない。旧
+  `maximize_window`（`ShowWindow(SW_MAXIMIZE)`）が z も直していた、というのは推定であり、
+  確定した回帰機構（W2）とは別扱い。
+
+トレース: 発動時に perf ログへ `z_raise`（`at` / `above` / `ok` / `err`）を 1 行。
+通常起動では出ない。`window_created` 行の `z_above`（覆っている HWND、無ければ 0）で
+外部ウォッチャー無しでもこの状態を読める。
+
+参照元: `src-tauri/src/commands/window.rs`（`covering_window` / `should_raise_z` /
+`raise_startup_z` / `native::windows_above` / `native::raise_to_top`）、
+`src-tauri/src/lib.rs`（`window_created` / `on_page_load`）、
+`docs/superpowers/specs/2026-09-20-explorer-launch-foreground-checklist.md` 判定表

@@ -1,7 +1,9 @@
 # Explorer 起動で背面化する事象の採取手順
 
 対象: エクスプローラーから画像をダブルクリックして起動した Spica がエクスプローラーの背面に出て、クリックしても前面化しない事象（2026-09-20 報告）。
-背景と仮説は `docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1–§2、修正 W2 は `docs/code-rationale.md`。
+背景と仮説は `docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1–§2、修正 W2 / W3 は `docs/code-rationale.md`。
+
+2026-09-21 の実機再現では、症状は「前面が自分でない」ではなく **「前面は Spica のまま、z オーダーだけ起動元エクスプローラーの下」** だった（判定表の最終行、対策 C4 = W3）。
 
 ## 準備（1 回）
 
@@ -27,6 +29,9 @@
 | `spica[].pump_ok:false` / `pump_ms` > 100 / `hung:true` | H3（メインスレッド応答停止） |
 | `spica[].gui_active` が Spica 自身で `is_foreground:false` | H5（キュー内 active の不整合） |
 | `fg-after-click` で `spica[].is_foreground:true` なのに前面に見えない | 描画側の問題（新規調査） |
+| perf.log の `window_created` が `foreground_is_ours:true` かつ `z_above` が起動元 `launcher` の HWND（または `fg-before` で `spica[].is_foreground:true` かつ `above` に起動元エクスプローラー） | **前面は Spica・z だけエクスプローラーの下**（2026-09-21 に実機で確定）。C4（W3）の対象。W2 は前面が自分なので動かない |
+
+「クリックしても前面化しない」の説明: 最終行の状態では Spica が既にアクティブ（前面）ウインドウなので、クリックしてもアクティブ化が起きず、z オーダーも動かない。他アプリへ一度フォーカスを移してから Spica をクリックすると、アクティブ化が z も最上位へ戻す。エクスプローラーの最小化→復元で直るのも同じ理由（覆っていたウインドウが無くなる／z が組み直される）。
 
 ## W2 の効き方の読み取り
 
@@ -37,3 +42,14 @@ perf.log の `foreground_reassert` 行（`at`: 契機、`ok`: `SetForegroundWind
 | 行が無い | 最初のアクティブ化が成立し、その後も奪われていない（通常） |
 | `ok:true` | 取り消された前面を W2 が取り戻した |
 | `ok:false` が 2 行 | OS が拒否した。ユーザーが他ウインドウへ入力した（正常）か、前面化権の失効（H1）。`fg-before` と合わせて判定表へ |
+
+## W3（C4）の効き方の読み取り
+
+perf.log の `z_raise` 行（`at`: 契機、`above`: 覆っていた HWND、`ok`: `SetWindowPos` の成否、`err`: 失敗時のメッセージ）と、`window_created` 行の `z_above`（覆っている HWND、無ければ 0）で判断する。
+
+| 観測 | 意味 |
+|---|---|
+| `z_above:0` で `z_raise` 行が無い | 起動元は Spica の上に来なかった（通常） |
+| `z_above` が `launcher` と同じで `z_raise ... ok:true` | 起動元がすぐ上に来ていたのを W3 が持ち上げた |
+| `z_raise ... ok:true` の後もエクスプローラーが上に居る | 1500ms より後に再度持ち上げられた。外部ウォッチャー（15ms ポーリング）で持ち上げの時刻を採り、契機の追加を検討する |
+| `z_above` が `launcher` 以外 | 別のウインドウ（前面が自分のまま覆っているもの）。同じ対策の対象だが、何のウインドウかを `diagnose-foreground.ps1` の `above` で確認する |
