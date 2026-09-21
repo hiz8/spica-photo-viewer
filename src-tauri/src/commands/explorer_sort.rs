@@ -74,6 +74,12 @@ pub fn spawn_detect(folder: PathBuf) -> SortProbe {
 
     let started = Instant::now();
     let (tx, rx) = std::sync::mpsc::channel();
+    // Field experiment for W3 (plan §1.5 experiment B): with the probe off, does
+    // the launcher still rise above our window? Same None fallback as below.
+    if std::env::var_os("SPICA_NO_SORT_PROBE").is_some() {
+        drop(tx);
+        return SortProbe { rx, started };
+    }
     // A healthy probe always finishes before the next folder open (join()
     // caps it at 300ms and opens are user-paced), so a probe still in flight
     // means the previous one is stuck in a hung Explorer. Don't stack
