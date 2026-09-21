@@ -268,3 +268,127 @@ left/top（トランジション対象外）だけを動かす。IPC 失敗時�
 `src/utils/viewerLayout.ts`（`viewerLayoutArea`）、
 `src/store/index.ts`（`resizeToImage` / `leaveWindowedView`）、
 `src-tauri/src/commands/window.rs`（`resize_window_to_image` / `restore_onto`）
+
+## W2
+
+**撤去: 起動直後の前面再主張（`SetForegroundWindow`、起動ファイルありの起動に限り `run_start` から 1500ms 以内・最大 2 回）**
+
+2026-09-21 に実装したが、同日のうちに撤去した。実機では前面が失われる状態が一度も起きなかった。
+エクスプローラーからの 260 起動すべてで `window_created` が `foreground_is_ours:true`、
+`foreground_reassert` の発動は 0 回だった。報告された症状は「前面は自分のまま z だけ起動元の下」
+で、それは W3 が扱う。前面が失われる状態は `window_created` の `foreground_is_ours:false` で
+今も検出できるので、観測されたら以下の設計で再導入を検討する。
+
+以下は実装時の根拠（撤去後も有効な事実を含む）。
+
+エクスプローラーから起動されたプロセスは前面化権を持つが、ダブルクリック直後の
+追加入力やエクスプローラー側の再前面化で、最初の `ShowWindow` によるアクティブ化が
+取り消されることがある（2026-09-20 報告: Spica がエクスプローラーの背面に出る）。
+ウインドウを最初から最大化で生成する前（PR #310 以前）は、フロントが起動 ~500ms 後に
+呼ぶ `maximize_window` が `ShowWindow(SW_MAXIMIZE)` になり、この取り消しを事実上
+やり直していた。最大化生成後は同じ呼び出しが tao の `apply_diff` でフラグ差分なしと
+判定され no-op になり、やり直しが消えた（`tao-0.35.3/src/platform_impl/windows/window_state.rs`
+`apply_diff` の `diff == empty` 早期 return）。
+
+その代替として `SetForegroundWindow` を、`window_created` / `page_load_finished` /
+`Focused(false)` の各契機で、前面が自ウインドウでないときだけ呼ぶ。前面化権が失効して
+いれば OS が拒否するので、ユーザーが意図して他ウインドウへ移った場合は奪えない
+（奪わない）。1500ms は起動タイムライン（`page_load_finished` ~330ms、旧
+`maximize_window` ~500ms）を余裕を持って含み、かつユーザーが次の操作に移る前に収まる
+値。2 回は「最初から取れなかった」と「取れた後に戻された」の両方を 1 回ずつ拾える最小値。
+
+`Focused(false)` は WebView2 子ウインドウがキーボードフォーカスを取るときにも毎回発火する
+（tao は `WM_KILLFOCUS` で出す）が、そのとき `GetForegroundWindow()` はトップレベルの
+自ウインドウのままなので `is_ours` で弾かれる。
+
+**採らない案**: tao の `set_focus()` は前面化に失敗すると合成 ALT キーを前面アプリへ送り
+（`force_window_active`）、エクスプローラーをメニューモードに落とす。`maximize_window` を
+非最大化生成に戻して旧挙動を再現する案は、起動時の 800×600 → 最大化のジャンプを
+復活させる。
+
+参照元: `src-tauri/src/commands/window.rs`（`raise_startup_z` の doc: 撤去の記録）、
+`docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1.4 / §1.5
+
+## W3
+
+**起動直後の z オーダー是正: 前面が自分なのに覆われているとき、起動ファイルありの起動に限り窓の生成から 1500ms 以内・最大 2 回 `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)`**
+
+実機検証（2026-09-21、15ms 周期の読み取り専用ウォッチャー）で、報告された症状は
+「前面が自分でない」状態ではなく **「前面は自分（`GetForegroundWindow()` == 自 HWND、
+`focused:true`）のまま、起動元エクスプローラー窓だけが z オーダーで自分の上に居る」**
+状態だと判った。Spica の窓は最上位・前面で現れ（`run_start` +~35ms）、その 22〜54ms 後に
+起動元エクスプローラー窓（非最大化・非 topmost）がアクティブ化を伴わずに z だけ上へ来る。
+Spica 側から観測できる最初の契機（`window_created`、+~500ms）より前に終わっている。
+前面を取り戻す W2（撤去）は、前面が自分のときは何もしないので、この状態には効かなかった。
+
+この 1 状態が元報告の両方を説明する: 「背面に出る」は z の話であり、「クリックしても
+前面化しない」は、既に前面（アクティブ）なウインドウをクリックしても OS は何もしない
+（アクティブ化が起きないので z も動かない）ため。他アプリへ一度フォーカスを移してから
+クリックすると、アクティブ化が z も最上位へ戻す（ウォッチャーで確認）。
+
+対策は、起動ファイルありの起動に限り、`window_created` / `page_load_finished` で
+「前面は自分 かつ 自分より上に覆っているウインドウがある」なら
+`SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)` を
+呼ぶ。1500ms は窓の生成（`.build()` の戻り = `window_created`）から数え、ユーザーが次の
+操作に移る前に収まる値。`run_start` から数えると、WebView2 が冷えている起動（インストール
+直後など。窓の生成まで 0.9〜2.5 秒を計測したことがある）では `window_created` の時点で枠を
+過ぎてしまう。持ち上げは窓の出現直後に起きるので、その起動では直されずに残る。実機 267 起動
+では `window_created` は `run_start` から最大 817ms、`page_load_finished` はその ~50〜150ms 後
+なので、どちらの契機も窓の生成からの枠に十分収まる。前面が自分のときしか動かないので、起点を
+後ろへずらしても前面を奪う危険は増えない。2 回は 2 つの契機に 1 回ずつ。
+実機では持ち上げは起動 1 回につき 1 度きりで、すべて `window_created` の 1 回で直り、
+再び覆われることは無かった（2026-09-21、`z_raise` 17 回すべて `ok:true`、覆われていた
+時間は 0.44〜0.49 秒）。旧 `maximize_window` の `SW_MAXIMIZE` も ~0.5 秒後に z を
+戻していたはずなので、見た目は #310 以前と同等になる。
+
+- **`SWP_NOACTIVATE` の理由**: 動かすのは z だけでよい。前面は既に自分なので
+  アクティブ化を再要求する必要が無く、要求すると OS の前面化判定をもう一度通ることになる
+  （拒否されれば無意味、通れば余計なフォーカスイベント）。前面が自分のときにしか動かない
+  ので、この呼び出しがユーザーからフォーカスを奪うことは無い。
+- **`HWND_TOP` は topmost を越えない**: `HWND_TOP` は非 topmost 帯の先頭に置くだけで、
+  `WS_EX_TOPMOST` のウインドウ（タスクバー、常に手前のツール）より上には行けない。
+  そのため「覆っているウインドウ」の判定から topmost を除き、topmost しか上に無い状態では
+  呼ばない（呼んでも変わらない）。
+- **「覆っている」の判定**: 自分より z が上で、可視・非最小化・`WS_EX_TOOLWINDOW` でない・
+  `WS_EX_TOPMOST` でない・DWM cloaked でない（別仮想デスクトップや UWP の休止窓）・
+  所有ウインドウでない（ツールチップ・ポップアップ）・矩形が自分の矩形と交差する（別モニタの
+  ウインドウで無駄に動かさない）、をすべて満たす最初の 1 枚。列挙は `GetTopWindow(NULL)` →
+  `GetWindow(GW_HWNDNEXT)` を自 HWND まで。自 HWND に到達せずに列挙が終わった場合は
+  何も言えないので動かない。
+- **Spica 固有だが、何が引き金かは未確定**（plan §1.5）。同じ窓・同じフォルダ・同じ手順で
+  Picasa Photo Viewer を起動しても、エクスプローラーは持ち上がらなかった（Picasa 0/40、
+  Spica 8/40）。発生は、エクスプローラーでフォルダを移動した直後の最初の起動に強く偏る
+  （その日まだ起動していない NAS フォルダで 6/18、同じフォルダを繰り返し起動すると 2/63）。起動時の `explorer_sort` COM プローブは引き金では
+  ない。走査とプローブをウインドウ生成の後へ遅らせたビルドでも、プローブが走る前に持ち上げが
+  起きた（W4、非採用）。この対策は行為者に依存しない。旧 `maximize_window`
+  （`ShowWindow(SW_MAXIMIZE)`）が z も直していた、というのは推定であり、確定した回帰機構（W2）
+  とは別扱い。
+
+トレース: 発動時に perf ログへ `z_raise`（`at` / `above` / `ok` / `err`）を 1 行。
+通常起動では出ない。`window_created` 行の `z_above`（覆っている HWND、無ければ 0）で
+外部ウォッチャー無しでもこの状態を読める。
+
+参照元: `src-tauri/src/commands/window.rs`（`covering_window` / `should_raise_z` /
+`raise_startup_z` / `native::windows_above` / `native::raise_to_top`）、
+`src-tauri/src/lib.rs`（`window_created` / `on_page_load`）、
+`docs/superpowers/specs/2026-09-20-explorer-launch-foreground-checklist.md` 判定表
+
+## W4
+
+**非採用: 起動時のフォルダ先読み（と Explorer ソートプローブ）をウインドウ生成の後へ遅らせる**
+
+W3 の状態（前面は自分・z だけ起動元エクスプローラーの下）の引き金として、起動時の
+`explorer_sort` COM プローブ（エクスプローラーの UI スレッドへの RPC）が最初のウインドウ表示と
+重なることを疑った。そこで、サムネイル先読みだけをウインドウ生成前に始め、フォルダ走査
+（プローブを含む）を `.build()` が返った後に始めるビルドを作った（2026-09-21、`835fd89`）。
+実機では、この版でも持ち上げが起きた。ウォッチャーでは窓が現れて +23ms、`window_created` の
+`z_above` も起動元だった。どちらもプローブが走る前なので、プローブは引き金ではない
+（plan §1.5）。事象を防げず、フォルダ一覧が遅れる代償だけが残るので revert した。
+
+- **代償の実測（参考）**: ローカル 30 枚、`e2e/scripts/profile-startup.mjs` で直前のビルドと
+  交互に 9 起動ずつ、`window_created` 起点。`folder:scanned` は、ウインドウ生成の速い回で差が
+  無く、遅い回で +40ms。首枚の paint は変わらない。走査の長い NAS・大フォルダでは、遅れが
+  ウインドウ生成の時間（~300〜500ms）に近づく。
+- 同じ理由で、プローブだけを遅らせる案も効かない。
+
+参照元: `src-tauri/src/commands/startup.rs`（モジュール doc）、plan §1.5 / Task C3

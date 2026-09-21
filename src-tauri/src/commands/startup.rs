@@ -5,6 +5,8 @@
 //! from argv. The two things the frontend asks for first — the current
 //! image's thumbnail + display-resolution preview, and the folder listing —
 //! are started here so they overlap that wait instead of following it.
+//! Moving the listing (and its Explorer sort probe) after window creation
+//! was tried and rejected: the launcher still rose above us (W4).
 
 use crate::commands::cache;
 use crate::commands::file::{self, ImageInfo};

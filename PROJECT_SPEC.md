@@ -542,6 +542,18 @@ npm run tauri build
 - [Image Processing in Rust](https://github.com/image-rs/image)
 - [Picasa Photo Viewer UI Reference](https://www.google.com/photos/about/)
 
+## Troubleshooting
+
+### Spica opens behind another window right after launch / clicking it does not bring it to front
+
+Run the following **while the symptom is on screen** and paste the output into an issue. The script is read-only: it never activates, moves or sends input to any window.
+
+    powershell -ExecutionPolicy Bypass -File scripts\diagnose-foreground.ps1 -Seconds 10
+
+What to look at: `foreground.proc` (the process that owns the foreground window), `foreground.gui_flags` (0x4 / 0x8 / 0x10 mean the foreground thread is in menu mode), `foreground.gui_capture` (non-zero means that thread holds the mouse capture), `spica[].pump_ms` (main-thread responsiveness), `spica[].gui_active` and `spica[].above` (windows above Spica in z-order while `is_foreground` is true). The decision table that maps these observations to causes is in `docs/superpowers/specs/2026-09-20-explorer-launch-foreground-checklist.md`.
+
+The case seen in the field so far is "Spica **is** the foreground window but the launching Explorer window sits above it in z-order" (a click does nothing because the window is already active). Spica corrects this itself right after launch (`docs/code-rationale.md` W3); with `SPICA_PERF_FILE` set, that launch shows `z_above` in the `window_created` line and a `z_raise` line in the log.
+
 ---
 
 ## PROJECT COMPLETION STATUS

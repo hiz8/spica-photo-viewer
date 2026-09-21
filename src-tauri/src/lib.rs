@@ -18,6 +18,21 @@ use commands::file::{
 use commands::window::{
     get_window_position, get_window_state, maximize_window, resize_window_to_image,
 };
+use std::sync::atomic::AtomicU32;
+use std::sync::OnceLock;
+use std::time::Instant;
+use tauri::Manager;
+
+/// Startup z-order raises made so far (W3).
+static Z_RAISES: AtomicU32 = AtomicU32::new(0);
+/// W3's time window starts here, not at run_start: a cold WebView2 can hold
+/// window creation past the whole window.
+static WINDOW_CREATED_AT: OnceLock<Instant> = OnceLock::new();
+static LAUNCHED_WITH_FILE: OnceLock<bool> = OnceLock::new();
+
+fn launched_with_file() -> bool {
+    LAUNCHED_WITH_FILE.get().copied().unwrap_or(false)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +52,7 @@ pub fn run() {
             // frontend calls maximize_window ~500ms later (after WebView2
             // init + page load + React mount).
             let startup_file = commands::file::startup_file_from_args();
+            let _ = LAUNCHED_WITH_FILE.set(startup_file.is_some());
             if let Some(path) = &startup_file {
                 // Overlaps the WebView2 init that window creation blocks on.
                 let screen = app
@@ -56,22 +72,61 @@ pub fn run() {
                 .find(|w| w.label == "main")
                 .cloned()
                 .ok_or("missing main window config")?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .maximized(maximized)
                 .max_inner_size(
                     commands::window::MAX_TRACK_LOGICAL_PX,
                     commands::window::MAX_TRACK_LOGICAL_PX,
                 )
                 .build()?;
-            crate::utils::perf::phase("window_created", "");
+            let created_at = Instant::now();
+            let _ = WINDOW_CREATED_AT.set(created_at);
+            let fg = commands::window::foreground_state(&window);
+            crate::utils::perf::phase(
+                "window_created",
+                &format!(
+                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{}"#,
+                    fg.is_ours,
+                    fg.foreground,
+                    commands::explorer_sort::foreground_at_launch().unwrap_or(0),
+                    fg.z_above
+                ),
+            );
+            commands::window::raise_startup_z(
+                &window,
+                launched_with_file(),
+                created_at,
+                &Z_RAISES,
+                "window_created",
+            );
             Ok(())
         })
-        .on_page_load(|_webview, payload| {
+        .on_page_load(|webview, payload| {
             let name = match payload.event() {
                 tauri::webview::PageLoadEvent::Started => "page_load_started",
                 tauri::webview::PageLoadEvent::Finished => "page_load_finished",
             };
             crate::utils::perf::phase(name, "");
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                if let (Some(window), Some(&created_at)) =
+                    (webview.get_webview_window("main"), WINDOW_CREATED_AT.get())
+                {
+                    commands::window::raise_startup_z(
+                        &window,
+                        launched_with_file(),
+                        created_at,
+                        &Z_RAISES,
+                        "page_load_finished",
+                    );
+                }
+            }
+        })
+        // Traced only: a focused:true -> focused:false flip right after launch
+        // is how the checklist tells a lost foreground apart from W3's state.
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                crate::utils::perf::phase("focused", &format!(r#","focused":{focused}"#));
+            }
         });
 
     // Custom `spica-img` scheme: serves image files straight to the WebView as

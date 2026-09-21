@@ -179,14 +179,14 @@ pub fn scan_folder(folder_path: &Path, path: &str) -> Result<Vec<ImageInfo>, Str
             Some(s) => ("explorer", format!("{:?}", s.key), s.descending),
             None => ("fallback", "Name".to_string(), false),
         };
-        eprintln!(
+        crate::utils::perf::emit(format!(
             r#"{{"perf":"rust","op":"explorer_sort","path":{},"ms":{:.2},"source":"{}","key":"{}","descending":{}}}"#,
             serde_json::to_string(&path).unwrap_or_else(|_| "\"?\"".into()),
             probe_ms,
             source,
             key,
             descending
-        );
+        ));
     }
     sort_images(&mut images, detected.unwrap_or_default());
     Ok(images)
