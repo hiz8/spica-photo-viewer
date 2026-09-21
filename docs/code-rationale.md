@@ -311,7 +311,7 @@ left/top（トランジション対象外）だけを動かす。IPC 失敗時�
 
 ## W3
 
-**起動直後の z オーダー是正: 前面が自分なのに覆われているとき、起動ファイルありの起動に限り `run_start` から 1500ms 以内・最大 2 回 `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)`**
+**起動直後の z オーダー是正: 前面が自分なのに覆われているとき、起動ファイルありの起動に限り窓の生成から 1500ms 以内・最大 2 回 `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)`**
 
 実機検証（2026-09-21、15ms 周期の読み取り専用ウォッチャー）で、報告された症状は
 「前面が自分でない」状態ではなく **「前面は自分（`GetForegroundWindow()` == 自 HWND、
@@ -329,8 +329,13 @@ Spica 側から観測できる最初の契機（`window_created`、+~500ms）よ
 対策は、起動ファイルありの起動に限り、`window_created` / `page_load_finished` で
 「前面は自分 かつ 自分より上に覆っているウインドウがある」なら
 `SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)` を
-呼ぶ。1500ms は起動タイムライン（`page_load_finished` ~330ms、旧 `maximize_window` ~500ms）
-を余裕を持って含み、かつユーザーが次の操作に移る前に収まる値。2 回は 2 つの契機に 1 回ずつ。
+呼ぶ。1500ms は窓の生成（`.build()` の戻り = `window_created`）から数え、ユーザーが次の
+操作に移る前に収まる値。`run_start` から数えると、WebView2 が冷えている起動（インストール
+直後など。窓の生成まで 0.9〜2.5 秒を計測したことがある）では `window_created` の時点で枠を
+過ぎてしまう。持ち上げは窓の出現直後に起きるので、その起動では直されずに残る。実機 267 起動
+では `window_created` は `run_start` から最大 817ms、`page_load_finished` はその ~50〜150ms 後
+なので、どちらの契機も窓の生成からの枠に十分収まる。前面が自分のときしか動かないので、起点を
+後ろへずらしても前面を奪う危険は増えない。2 回は 2 つの契機に 1 回ずつ。
 実機では持ち上げは起動 1 回につき 1 度きりで、すべて `window_created` の 1 回で直り、
 再び覆われることは無かった（2026-09-21、`z_raise` 17 回すべて `ok:true`、覆われていた
 時間は 0.44〜0.49 秒）。旧 `maximize_window` の `SW_MAXIMIZE` も ~0.5 秒後に z を

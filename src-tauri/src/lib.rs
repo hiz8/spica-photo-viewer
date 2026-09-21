@@ -25,6 +25,9 @@ use tauri::Manager;
 
 /// Startup z-order raises made so far (W3).
 static Z_RAISES: AtomicU32 = AtomicU32::new(0);
+/// W3's time window starts here, not at run_start: a cold WebView2 can hold
+/// window creation past the whole window.
+static WINDOW_CREATED_AT: OnceLock<Instant> = OnceLock::new();
 static LAUNCHED_WITH_FILE: OnceLock<bool> = OnceLock::new();
 
 fn launched_with_file() -> bool {
@@ -33,7 +36,6 @@ fn launched_with_file() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let started = Instant::now();
     crate::utils::perf::phase("run_start", "");
     // Stash the launcher's foreground window before Tauri creates ours and
     // takes focus (§6.3: picks among multiple Explorer windows).
@@ -42,7 +44,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(move |app| {
+        .setup(|app| {
             crate::utils::perf::phase("setup", "");
             // The main window is created here (config `create: false`) so it
             // can be born maximized when launched with a file. A config
@@ -77,6 +79,8 @@ pub fn run() {
                     commands::window::MAX_TRACK_LOGICAL_PX,
                 )
                 .build()?;
+            let created_at = Instant::now();
+            let _ = WINDOW_CREATED_AT.set(created_at);
             let fg = commands::window::foreground_state(&window);
             crate::utils::perf::phase(
                 "window_created",
@@ -91,24 +95,26 @@ pub fn run() {
             commands::window::raise_startup_z(
                 &window,
                 maximized,
-                started,
+                created_at,
                 &Z_RAISES,
                 "window_created",
             );
             Ok(())
         })
-        .on_page_load(move |webview, payload| {
+        .on_page_load(|webview, payload| {
             let name = match payload.event() {
                 tauri::webview::PageLoadEvent::Started => "page_load_started",
                 tauri::webview::PageLoadEvent::Finished => "page_load_finished",
             };
             crate::utils::perf::phase(name, "");
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                if let Some(window) = webview.get_webview_window("main") {
+                if let (Some(window), Some(&created_at)) =
+                    (webview.get_webview_window("main"), WINDOW_CREATED_AT.get())
+                {
                     commands::window::raise_startup_z(
                         &window,
                         launched_with_file(),
-                        started,
+                        created_at,
                         &Z_RAISES,
                         "page_load_finished",
                     );

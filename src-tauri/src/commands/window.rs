@@ -524,9 +524,10 @@ pub fn foreground_state(window: &tauri::WebviewWindow) -> ForegroundState {
     }
 }
 
-/// Bounds of the startup z raise (docs/code-rationale.md#W3): inside the
-/// double-click's own launch, never once the user has moved on. Two attempts
-/// cover its two triggers (window_created, page_load_finished).
+/// Bounds of the startup z raise (docs/code-rationale.md#W3), measured from
+/// our window's creation: inside the double-click's own launch, never once
+/// the user has moved on. Two attempts cover its two triggers
+/// (window_created, page_load_finished).
 pub const Z_RAISE_WINDOW: Duration = Duration::from_millis(1500);
 pub const Z_RAISE_MAX: u32 = 2;
 
@@ -557,7 +558,7 @@ fn raise_z(window: &tauri::WebviewWindow) -> Result<(), String> {
 pub fn raise_startup_z(
     window: &tauri::WebviewWindow,
     launched_with_file: bool,
-    started: Instant,
+    window_created_at: Instant,
     attempts: &AtomicU32,
     phase: &str,
 ) {
@@ -567,7 +568,7 @@ pub fn raise_startup_z(
         launched_with_file,
         state.is_ours,
         state.z_above != 0,
-        started.elapsed(),
+        window_created_at.elapsed(),
         n,
     ) {
         return;
