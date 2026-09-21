@@ -23,8 +23,6 @@ use std::sync::OnceLock;
 use std::time::Instant;
 use tauri::Manager;
 
-/// Startup foreground reasserts made so far (W2).
-static REASSERTS: AtomicU32 = AtomicU32::new(0);
 /// Startup z-order raises made so far (W3).
 static Z_RAISES: AtomicU32 = AtomicU32::new(0);
 static LAUNCHED_WITH_FILE: OnceLock<bool> = OnceLock::new();
@@ -90,13 +88,6 @@ pub fn run() {
                     fg.z_above
                 ),
             );
-            commands::window::reassert_startup_foreground(
-                &window,
-                maximized,
-                started,
-                &REASSERTS,
-                "window_created",
-            );
             commands::window::raise_startup_z(
                 &window,
                 maximized,
@@ -114,13 +105,6 @@ pub fn run() {
             crate::utils::perf::phase(name, "");
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 if let Some(window) = webview.get_webview_window("main") {
-                    commands::window::reassert_startup_foreground(
-                        &window,
-                        launched_with_file(),
-                        started,
-                        &REASSERTS,
-                        "page_load_finished",
-                    );
                     commands::window::raise_startup_z(
                         &window,
                         launched_with_file(),
@@ -131,23 +115,11 @@ pub fn run() {
                 }
             }
         })
-        // Focus lost inside the reassert window means Explorer took the
-        // foreground back (W2); the OS refuses the reassert if the user did.
-        .on_window_event(move |window, event| {
-            let tauri::WindowEvent::Focused(focused) = event else {
-                return;
-            };
-            crate::utils::perf::phase("focused", &format!(r#","focused":{focused}"#));
-            if !focused {
-                if let Some(window) = window.get_webview_window("main") {
-                    commands::window::reassert_startup_foreground(
-                        &window,
-                        launched_with_file(),
-                        started,
-                        &REASSERTS,
-                        "focus_lost",
-                    );
-                }
+        // Traced only: a focused:true -> focused:false flip right after launch
+        // is how the checklist tells a lost foreground apart from W3's state.
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                crate::utils::perf::phase("focused", &format!(r#","focused":{focused}"#));
             }
         });
 

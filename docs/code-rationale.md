@@ -271,7 +271,15 @@ left/top（トランジション対象外）だけを動かす。IPC 失敗時�
 
 ## W2
 
-**起動直後の前面再主張: 起動ファイルありの起動に限り、`run_start` から 1500ms 以内・最大 2 回**
+**撤去: 起動直後の前面再主張（`SetForegroundWindow`、起動ファイルありの起動に限り `run_start` から 1500ms 以内・最大 2 回）**
+
+2026-09-21 に実装したが、同日のうちに撤去した。実機では前面が失われる状態が一度も起きなかった。
+エクスプローラーからの 260 起動すべてで `window_created` が `foreground_is_ours:true`、
+`foreground_reassert` の発動は 0 回だった。報告された症状は「前面は自分のまま z だけ起動元の下」
+で、それは W3 が扱う。前面が失われる状態は `window_created` の `foreground_is_ours:false` で
+今も検出できるので、観測されたら以下の設計で再導入を検討する。
+
+以下は実装時の根拠（撤去後も有効な事実を含む）。
 
 エクスプローラーから起動されたプロセスは前面化権を持つが、ダブルクリック直後の
 追加入力やエクスプローラー側の再前面化で、最初の `ShowWindow` によるアクティブ化が
@@ -298,21 +306,20 @@ left/top（トランジション対象外）だけを動かす。IPC 失敗時�
 非最大化生成に戻して旧挙動を再現する案は、起動時の 800×600 → 最大化のジャンプを
 復活させる。
 
-参照元: `src-tauri/src/commands/window.rs`（`reassert_startup_foreground`）、
-`src-tauri/src/lib.rs`（`window_created` / `on_page_load` / `on_window_event`）、
-`docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1.4
+参照元: `src-tauri/src/commands/window.rs`（`raise_startup_z` の doc: 撤去の記録）、
+`docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1.4 / §1.5
 
 ## W3
 
-**起動直後の z オーダー是正: 前面が自分なのに覆われているとき、W2 と同じ枠内で `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)`**
+**起動直後の z オーダー是正: 前面が自分なのに覆われているとき、起動ファイルありの起動に限り `run_start` から 1500ms 以内・最大 2 回 `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)`**
 
-W2 の実機検証（2026-09-21、15ms 周期の読み取り専用ウォッチャー）で、報告された症状は
+実機検証（2026-09-21、15ms 周期の読み取り専用ウォッチャー）で、報告された症状は
 「前面が自分でない」状態ではなく **「前面は自分（`GetForegroundWindow()` == 自 HWND、
 `focused:true`）のまま、起動元エクスプローラー窓だけが z オーダーで自分の上に居る」**
-状態だと判った。Spica の窓は最上位・前面で現れ（`run_start` +~35ms）、その 22〜31ms 後に
+状態だと判った。Spica の窓は最上位・前面で現れ（`run_start` +~35ms）、その 22〜54ms 後に
 起動元エクスプローラー窓（非最大化・非 topmost）がアクティブ化を伴わずに z だけ上へ来る。
-これは W2 が観測できる最初の契機（`window_created`、+~500ms）より前に終わっており、
-W2 は前面が自分のとき何もしないので効かない。
+Spica 側から観測できる最初の契機（`window_created`、+~500ms）より前に終わっている。
+前面を取り戻す W2（撤去）は、前面が自分のときは何もしないので、この状態には効かなかった。
 
 この 1 状態が元報告の両方を説明する: 「背面に出る」は z の話であり、「クリックしても
 前面化しない」は、既に前面（アクティブ）なウインドウをクリックしても OS は何もしない
@@ -322,8 +329,12 @@ W2 は前面が自分のとき何もしないので効かない。
 対策は、起動ファイルありの起動に限り、`window_created` / `page_load_finished` で
 「前面は自分 かつ 自分より上に覆っているウインドウがある」なら
 `SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)` を
-呼ぶ。時間枠は W2 と同じ `run_start` から 1500ms、回数は W2 と別カウンタで最大 2 回
-（両方が要る起動でそれぞれの回数を失わないため）。
+呼ぶ。1500ms は起動タイムライン（`page_load_finished` ~330ms、旧 `maximize_window` ~500ms）
+を余裕を持って含み、かつユーザーが次の操作に移る前に収まる値。2 回は 2 つの契機に 1 回ずつ。
+実機では持ち上げは起動 1 回につき 1 度きりで、すべて `window_created` の 1 回で直り、
+再び覆われることは無かった（2026-09-21、`z_raise` 17 回すべて `ok:true`、覆われていた
+時間は 0.44〜0.49 秒）。旧 `maximize_window` の `SW_MAXIMIZE` も ~0.5 秒後に z を
+戻していたはずなので、見た目は #310 以前と同等になる。
 
 - **`SWP_NOACTIVATE` の理由**: 動かすのは z だけでよい。前面は既に自分なので
   アクティブ化を再要求する必要が無く、要求すると OS の前面化判定をもう一度通ることになる

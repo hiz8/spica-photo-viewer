@@ -19,7 +19,7 @@ pub fn enabled() -> bool {
 }
 
 /// An Explorer launch has no stderr anyone can read, so SPICA_PERF_FILE
-/// redirects the log to a file for field diagnosis (W2 evidence).
+/// redirects the log to a file for field diagnosis (W3 evidence).
 fn file_sink() -> Option<&'static PathBuf> {
     static SINK: OnceLock<Option<PathBuf>> = OnceLock::new();
     SINK.get_or_init(|| std::env::var_os("SPICA_PERF_FILE").map(PathBuf::from))

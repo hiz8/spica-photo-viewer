@@ -509,7 +509,8 @@ pub fn foreground_state(window: &tauri::WebviewWindow) -> ForegroundState {
     }
 }
 
-/// Non-Windows always reports "ours" so the reassert path is a no-op there.
+/// Non-Windows always reports "ours, uncovered" so the startup z raise is a
+/// no-op there.
 #[cfg(not(windows))]
 pub fn foreground_state(window: &tauri::WebviewWindow) -> ForegroundState {
     let _ = window;
@@ -520,69 +521,10 @@ pub fn foreground_state(window: &tauri::WebviewWindow) -> ForegroundState {
     }
 }
 
-/// (succeeded, GetLastError when not).
-#[cfg(windows)]
-fn set_foreground(window: &tauri::WebviewWindow) -> (bool, u32) {
-    use windows::Win32::Foundation::GetLastError;
-    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-    let Ok(hwnd) = native::hwnd_of(window) else {
-        return (false, 0);
-    };
-    let ok = unsafe { SetForegroundWindow(hwnd) }.as_bool();
-    (ok, if ok { 0 } else { unsafe { GetLastError() }.0 })
-}
-
-#[cfg(not(windows))]
-fn set_foreground(window: &tauri::WebviewWindow) -> (bool, u32) {
-    let _ = window;
-    (false, 0)
-}
-
-/// Bounds of the startup foreground reassert (docs/code-rationale.md#W2):
-/// inside the double-click's own launch, never once the user has moved on.
-pub const FOREGROUND_REASSERT_WINDOW: Duration = Duration::from_millis(1500);
-pub const FOREGROUND_REASSERT_MAX: u32 = 2;
-
-pub(crate) fn should_reassert_foreground(
-    launched_with_file: bool,
-    is_ours: bool,
-    elapsed: Duration,
-    attempts: u32,
-) -> bool {
-    launched_with_file
-        && !is_ours
-        && elapsed <= FOREGROUND_REASSERT_WINDOW
-        && attempts < FOREGROUND_REASSERT_MAX
-}
-
-/// Re-takes the foreground a file-association launch is entitled to when the
-/// first activation was undone (W2). Deliberately not tao's `set_focus()`: on
-/// failure it sends a synthetic ALT key to the foreground app, which drops
-/// Explorer into menu mode.
-pub fn reassert_startup_foreground(
-    window: &tauri::WebviewWindow,
-    launched_with_file: bool,
-    started: Instant,
-    attempts: &AtomicU32,
-    phase: &str,
-) {
-    let state = foreground_state(window);
-    let n = attempts.load(Ordering::Relaxed);
-    if !should_reassert_foreground(launched_with_file, state.is_ours, started.elapsed(), n) {
-        return;
-    }
-    attempts.fetch_add(1, Ordering::Relaxed);
-    let (ok, err) = set_foreground(window);
-    crate::utils::perf::phase(
-        "foreground_reassert",
-        &format!(
-            r#","at":"{phase}","ok":{ok},"err":{err},"was":{}"#,
-            state.foreground
-        ),
-    );
-}
-
-/// Separate from the W2 count so a launch that needed both keeps each one.
+/// Bounds of the startup z raise (docs/code-rationale.md#W3): inside the
+/// double-click's own launch, never once the user has moved on. Two attempts
+/// cover its two triggers (window_created, page_load_finished).
+pub const Z_RAISE_WINDOW: Duration = Duration::from_millis(1500);
 pub const Z_RAISE_MAX: u32 = 2;
 
 pub(crate) fn should_raise_z(
@@ -592,11 +534,7 @@ pub(crate) fn should_raise_z(
     elapsed: Duration,
     attempts: u32,
 ) -> bool {
-    launched_with_file
-        && is_ours
-        && covered
-        && elapsed <= FOREGROUND_REASSERT_WINDOW
-        && attempts < Z_RAISE_MAX
+    launched_with_file && is_ours && covered && elapsed <= Z_RAISE_WINDOW && attempts < Z_RAISE_MAX
 }
 
 #[cfg(windows)]
@@ -610,8 +548,9 @@ fn raise_z(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// The counterpart of W2 for the state W2 cannot see: the foreground is ours
-/// but the launcher sits above us in the z-order (W3). Same time window as W2.
+/// Puts our window back on top when the launcher rose above it while the
+/// foreground stayed ours (W3). Only the z-order is fixed: re-taking the
+/// foreground was removed, the field never needed it (W2).
 pub fn raise_startup_z(
     window: &tauri::WebviewWindow,
     launched_with_file: bool,
@@ -729,50 +668,6 @@ mod tests {
                 bottom: 903
             }
         );
-    }
-
-    #[test]
-    fn reasserts_only_for_file_launches_that_are_not_foreground() {
-        assert!(should_reassert_foreground(
-            true,
-            false,
-            Duration::from_millis(300),
-            0
-        ));
-        assert!(!should_reassert_foreground(
-            false,
-            false,
-            Duration::from_millis(300),
-            0
-        ));
-        assert!(!should_reassert_foreground(
-            true,
-            true,
-            Duration::from_millis(300),
-            0
-        ));
-    }
-
-    #[test]
-    fn reassert_is_bounded_in_time_and_count() {
-        assert!(should_reassert_foreground(
-            true,
-            false,
-            FOREGROUND_REASSERT_WINDOW,
-            1
-        ));
-        assert!(!should_reassert_foreground(
-            true,
-            false,
-            FOREGROUND_REASSERT_WINDOW + Duration::from_millis(1),
-            0
-        ));
-        assert!(!should_reassert_foreground(
-            true,
-            false,
-            Duration::from_millis(300),
-            FOREGROUND_REASSERT_MAX
-        ));
     }
 
     fn ours() -> Rect {
@@ -926,18 +821,12 @@ mod tests {
 
     #[test]
     fn z_raise_is_bounded_in_time_and_count() {
-        assert!(should_raise_z(
-            true,
-            true,
-            true,
-            FOREGROUND_REASSERT_WINDOW,
-            1
-        ));
+        assert!(should_raise_z(true, true, true, Z_RAISE_WINDOW, 1));
         assert!(!should_raise_z(
             true,
             true,
             true,
-            FOREGROUND_REASSERT_WINDOW + Duration::from_millis(1),
+            Z_RAISE_WINDOW + Duration::from_millis(1),
             0
         ));
         assert!(!should_raise_z(

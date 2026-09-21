@@ -1,7 +1,7 @@
 # Explorer 起動で背面化する事象の採取手順
 
 対象: エクスプローラーから画像をダブルクリックして起動した Spica がエクスプローラーの背面に出て、クリックしても前面化しない事象（2026-09-20 報告）。
-背景と仮説は `docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1–§2、修正 W2 / W3 は `docs/code-rationale.md`。
+背景と仮説は `docs/superpowers/plans/2026-09-20-explorer-launch-foreground.md` §1–§2、修正 W3 は `docs/code-rationale.md`（前面を取り戻す W2 は、実機で一度も要らなかったので撤去した）。
 
 2026-09-21 の実機再現では、症状は「前面が自分でない」ではなく **「前面は Spica のまま、z オーダーだけ起動元エクスプローラーの下」** だった（判定表の最終行、対策 C4 = W3）。
 
@@ -9,7 +9,7 @@
 
 1. `setx SPICA_PERF_FILE %LOCALAPPDATA%\SpicaPhotoViewer\perf.log`
    エクスプローラーは `WM_SETTINGCHANGE` で環境変数を取り直すので再ログインは不要。反映されない場合はエクスプローラーを再起動する。
-2. 発生しやすい条件で使う: 画像の多いフォルダ、ネットワーク（UNC）フォルダ、エクスプローラーがサムネイル生成中。
+2. 発生しやすい条件で使う: エクスプローラーでまだ開いていないフォルダ（特に NAS）へ移動した直後の最初の起動。2026-09-21 の集計では、この条件で ~30%、同じフォルダを繰り返し起動すると ~3%（plan §1.5）。
 
 ## 発生したら（この順で、ウインドウを触る前に）
 
@@ -29,19 +29,11 @@
 | `spica[].pump_ok:false` / `pump_ms` > 100 / `hung:true` | H3（メインスレッド応答停止） |
 | `spica[].gui_active` が Spica 自身で `is_foreground:false` | H5（キュー内 active の不整合） |
 | `fg-after-click` で `spica[].is_foreground:true` なのに前面に見えない | 描画側の問題（新規調査） |
-| perf.log の `window_created` が `foreground_is_ours:true` かつ `z_above` が起動元 `launcher` の HWND（または `fg-before` で `spica[].is_foreground:true` かつ `above` に起動元エクスプローラー） | **前面は Spica・z だけエクスプローラーの下**（2026-09-21 に実機で確定）。C4（W3）の対象。W2 は前面が自分なので動かない |
+| perf.log の `window_created` が `foreground_is_ours:true` かつ `z_above` が起動元 `launcher` の HWND（または `fg-before` で `spica[].is_foreground:true` かつ `above` に起動元エクスプローラー） | **前面は Spica・z だけエクスプローラーの下**（2026-09-21 に実機で確定）。C4（W3）の対象で、W3 が起動直後に直す |
 
 「クリックしても前面化しない」の説明: 最終行の状態では Spica が既にアクティブ（前面）ウインドウなので、クリックしてもアクティブ化が起きず、z オーダーも動かない。他アプリへ一度フォーカスを移してから Spica をクリックすると、アクティブ化が z も最上位へ戻す。エクスプローラーの最小化→復元で直るのも同じ理由（覆っていたウインドウが無くなる／z が組み直される）。
 
-## W2 の効き方の読み取り
-
-perf.log の `foreground_reassert` 行（`at`: 契機、`ok`: `SetForegroundWindow` の成否、`err`: 失敗時の `GetLastError`、`was`: その時点の前面 HWND）で判断する。
-
-| 観測 | 意味 |
-|---|---|
-| 行が無い | 最初のアクティブ化が成立し、その後も奪われていない（通常） |
-| `ok:true` | 取り消された前面を W2 が取り戻した |
-| `ok:false` が 2 行 | OS が拒否した。ユーザーが他ウインドウへ入力した（正常）か、前面化権の失効（H1）。`fg-before` と合わせて判定表へ |
+H1 / H4 / H5（前面が Spica でない状態）は、2026-09-21 までの実機 260 起動で一度も観測されていない。前面を取り戻す W2 はそのため撤去した。観測されたら、判定表で仮説を決めてから W2 の再導入を検討する（`docs/code-rationale.md` W2 に設計が残っている）。
 
 ## W3（C4）の効き方の読み取り
 
