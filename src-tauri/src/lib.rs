@@ -106,7 +106,8 @@ pub fn run() {
             );
             if let Some(path) = &startup_file {
                 // Not before the window: the scan's Explorer probe racing our
-                // first show lifts the launcher above us (W4).
+                // first show is the suspected trigger of the launcher rising
+                // above us (W4).
                 commands::startup::start_folder(path);
             }
             Ok(())
