@@ -25,6 +25,8 @@ use tauri::Manager;
 
 /// Startup foreground reasserts made so far (W2).
 static REASSERTS: AtomicU32 = AtomicU32::new(0);
+/// Startup z-order raises made so far (W3).
+static Z_RAISES: AtomicU32 = AtomicU32::new(0);
 static LAUNCHED_WITH_FILE: OnceLock<bool> = OnceLock::new();
 
 fn launched_with_file() -> bool {
@@ -81,10 +83,11 @@ pub fn run() {
             crate::utils::perf::phase(
                 "window_created",
                 &format!(
-                    r#","foreground_is_ours":{},"foreground":{},"launcher":{}"#,
+                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{}"#,
                     fg.is_ours,
                     fg.foreground,
-                    commands::explorer_sort::foreground_at_launch().unwrap_or(0)
+                    commands::explorer_sort::foreground_at_launch().unwrap_or(0),
+                    fg.z_above
                 ),
             );
             commands::window::reassert_startup_foreground(
@@ -92,6 +95,13 @@ pub fn run() {
                 maximized,
                 started,
                 &REASSERTS,
+                "window_created",
+            );
+            commands::window::raise_startup_z(
+                &window,
+                maximized,
+                started,
+                &Z_RAISES,
                 "window_created",
             );
             Ok(())
@@ -109,6 +119,13 @@ pub fn run() {
                         launched_with_file(),
                         started,
                         &REASSERTS,
+                        "page_load_finished",
+                    );
+                    commands::window::raise_startup_z(
+                        &window,
+                        launched_with_file(),
+                        started,
+                        &Z_RAISES,
                         "page_load_finished",
                     );
                 }
