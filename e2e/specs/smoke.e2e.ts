@@ -94,6 +94,22 @@ describe("smoke", () => {
     expect(status?.path).toBe(imagePath);
   });
 
+  // Runs after the open-image test above, which leaves smoke-1x1.png open.
+  // WebDriver reads document.title, which the app keeps equal to the native
+  // title it sets through Tauri (useWindowTitle), so this is the closest an
+  // e2e can get to the title bar.
+  it("titles the window after the open file, Picasa-style", async () => {
+    await browser.waitUntil(
+      async () =>
+        (await browser.getTitle()) === "smoke-1x1.png - Spica Photo Viewer",
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg: `Unexpected title: ${await browser.getTitle()}`,
+      },
+    );
+  });
+
   it("serves image bytes over the spica-img protocol", async () => {
     // URL construction is inlined rather than imported from src/utils/imageSrc:
     // e2e specs deliberately do not import app source, so this doubles as an

@@ -60,6 +60,7 @@ export const createMockTauriApi = () => ({
   getCurrentWindow: vi.fn(() => ({
     isFullscreen: vi.fn(),
     setFullscreen: vi.fn(),
+    setTitle: vi.fn(() => Promise.resolve()),
     close: vi.fn(),
   })),
 });

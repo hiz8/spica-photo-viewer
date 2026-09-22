@@ -2,6 +2,18 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 
+/// Title the window is born with. The frontend (useWindowTitle) sets the same
+/// string again once React mounts; seeding it here keeps a file-association
+/// launch from flashing the bare app name for the ~500ms until then.
+/// Splits on both separators like the frontend's getFilename, rather than
+/// `Path::file_name`, so the two agree on every platform CI runs on.
+pub fn startup_title(app_name: &str, startup_file: Option<&str>) -> String {
+    match startup_file.and_then(|p| p.rsplit(['\\', '/']).next()) {
+        Some(file_name) if !file_name.is_empty() => format!("{file_name} - {app_name}"),
+        _ => app_name.to_string(),
+    }
+}
+
 #[tauri::command]
 pub async fn get_window_position(app_handle: AppHandle) -> Result<WindowPosition, String> {
     let window = app_handle
@@ -862,6 +874,26 @@ mod tests {
                 right: 1798,
                 bottom: 863
             }
+        );
+    }
+
+    #[test]
+    fn startup_title_prefixes_the_file_name_with_its_extension() {
+        assert_eq!(
+            startup_title("Spica Photo Viewer", Some(r"C:\photos\IMG_1439.JPG")),
+            "IMG_1439.JPG - Spica Photo Viewer"
+        );
+        assert_eq!(
+            startup_title("Spica Photo Viewer", Some("/photos/sunset.png")),
+            "sunset.png - Spica Photo Viewer"
+        );
+    }
+
+    #[test]
+    fn startup_title_is_the_app_name_alone_without_a_file() {
+        assert_eq!(
+            startup_title("Spica Photo Viewer", None),
+            "Spica Photo Viewer"
         );
     }
 }

@@ -72,7 +72,9 @@ pub fn run() {
                 .find(|w| w.label == "main")
                 .cloned()
                 .ok_or("missing main window config")?;
+            let title = commands::window::startup_title(&config.title, startup_file.as_deref());
             let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .title(title)
                 .maximized(maximized)
                 .max_inner_size(
                     commands::window::MAX_TRACK_LOGICAL_PX,
