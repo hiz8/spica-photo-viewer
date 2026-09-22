@@ -99,6 +99,7 @@ spica-photo-viewer/
   - Minimal size when opened standalone
   - No minimum size restrictions (the 544px figure under Mouse Controls is the size chosen on entering windowed mode, not a limit on manual resizing)
   - Windowed mode sized to the image after clicking outside it (see Mouse Controls)
+  - Title bar: `{filename} - Spica Photo Viewer` (extension included, like Picasa Photo Viewer), `Spica Photo Viewer` alone while no image is open. Set from the very first frame when launched with a file, then kept in sync with the current image by `useWindowTitle`
 
 - **Image Display Area** (90% of window):
 

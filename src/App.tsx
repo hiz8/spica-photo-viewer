@@ -10,6 +10,7 @@ import ThumbnailBar from "./components/ThumbnailBar";
 import { useCacheManager } from "./hooks/useCacheManager";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useWindowState } from "./hooks/useWindowState";
+import { useWindowTitle } from "./hooks/useWindowTitle";
 import { useAppStore } from "./store";
 import type { StartupFile } from "./types";
 import { perfMark } from "./utils/perf";
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   useKeyboard();
   useCacheManager();
   useWindowState();
+  useWindowTitle();
 
   // Check for startup file (from file association)
   useEffect(() => {
