@@ -283,6 +283,25 @@ describe("thumbnailBarGesture", () => {
       expect(s.shown).toBe(false);
     });
 
+    it("stays shown on a fast 200px upward flick while held", () => {
+      const held = stepBar(initialBarState(0), {
+        type: "hoverChange",
+        held: true,
+        t: 0,
+      });
+      const s = run(
+        held,
+        track(
+          [
+            [0, 500, 100],
+            [0, 300, 300],
+          ],
+          60,
+        ),
+      );
+      expect(s.shown).toBe(true);
+    });
+
     it("stays shown on a fast upward flick shorter than 150px", () => {
       const s = run(
         initialBarState(0),

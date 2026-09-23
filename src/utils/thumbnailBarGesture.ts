@@ -132,9 +132,9 @@ function move(s: BarState, e: Extract<BarEvent, { type: "move" }>): BarState {
     stroke.dir * (stroke.extremeY - stroke.originY) >= G.strokeDistancePx
   ) {
     if (stroke.dir === 1 && !next.shown) return show(next, e.t);
-    // Hides even while held/hovered: §4.4 carves no exception for the
-    // upward-flick transition.
-    if (stroke.dir === -1 && next.shown) return hide(next);
+    // A held bar ignores the flick: hover/focus already signal intent, and
+    // hiding here would strand the hold (§4.4).
+    if (stroke.dir === -1 && next.shown && !next.held) return hide(next);
   }
   return next;
 }

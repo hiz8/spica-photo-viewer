@@ -66,8 +66,11 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
 const ThumbnailBar: React.FC = () => {
   const { folder, currentImage, cache, navigateToImage } = useAppStore();
   const containerRef = useRef<HTMLDivElement>(null);
-  const thumbnailBarRef = useRef<HTMLDivElement>(null);
-  const { shown, barProps } = useThumbnailBarVisibility(folder.path);
+  const thumbnailBarRef = useRef<HTMLElement>(null);
+  const { shown, barProps } = useThumbnailBarVisibility(
+    folder.path,
+    thumbnailBarRef,
+  );
 
   const getThumbnailData = useCallback(
     (imagePath: string): string | null => {

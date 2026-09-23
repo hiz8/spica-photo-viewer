@@ -26,7 +26,10 @@ function isFocusVisible(el: Element): boolean {
 }
 
 /** Shown again whenever showKey changes, including on mount (D3). */
-export function useThumbnailBarVisibility(showKey: string): {
+export function useThumbnailBarVisibility(
+  showKey: string,
+  barRef: React.RefObject<HTMLElement | null>,
+): {
   shown: boolean;
   barProps: ThumbnailBarProps;
 } {
@@ -62,30 +65,6 @@ export function useThumbnailBarVisibility(showKey: string): {
     // oxlint-disable-next-line react/memo-dependencies -- the missing dep IS dispatch itself; a callback cannot list itself
   }, []);
 
-  useEffect(() => {
-    // timeStamp, not performance.now(): moves queued behind a long decode are
-    // delivered together and would read as a huge velocity.
-    const onMove = (e: PointerEvent) =>
-      dispatch({
-        type: "move",
-        x: e.clientX,
-        y: e.clientY,
-        t: e.timeStamp,
-        buttons: e.buttons,
-      });
-    window.addEventListener("pointermove", onMove, { passive: true });
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      clearTimeout(timerRef.current);
-      timerRef.current = undefined;
-    };
-  }, [dispatch]);
-
-  useEffect(() => {
-    dispatch({ type: "forceShow", t: performance.now() });
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- showKey is unread but IS the re-fire trigger (D3): a new image must force the bar shown
-  }, [showKey, dispatch]);
-
   const setHold = useCallback(
     (ref: { current: boolean }, value: boolean) => {
       ref.current = value;
@@ -96,6 +75,40 @@ export function useThumbnailBarVisibility(showKey: string): {
     },
     [dispatch],
   );
+
+  useEffect(() => {
+    // timeStamp, not performance.now(): moves queued behind a long decode are
+    // delivered together and would read as a huge velocity.
+    const onMove = (e: PointerEvent) => {
+      // ThumbnailBar windows its items, so ArrowRight past the edge or a
+      // folder change can unmount the focused thumbnail without firing
+      // onBlur, stranding the hold; any move is a cheap place to notice.
+      if (
+        focusRef.current &&
+        !barRef.current?.contains(document.activeElement)
+      ) {
+        setHold(focusRef, false);
+      }
+      dispatch({
+        type: "move",
+        x: e.clientX,
+        y: e.clientY,
+        t: e.timeStamp,
+        buttons: e.buttons,
+      });
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    };
+  }, [dispatch, setHold, barRef]);
+
+  useEffect(() => {
+    dispatch({ type: "forceShow", t: performance.now() });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- showKey is unread but IS the re-fire trigger (D3): a new folder must force the bar shown
+  }, [showKey, dispatch]);
 
   const barProps: ThumbnailBarProps = {
     onMouseEnter: () => setHold(hoverRef, true),
