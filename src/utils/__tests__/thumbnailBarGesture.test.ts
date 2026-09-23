@@ -155,22 +155,57 @@ describe("thumbnailBarGesture", () => {
       );
       expect(run(hidden(), [...first, ...second]).shown).toBe(false);
     });
-  });
 
-  it("tolerates a 3px step back within a stroke", () => {
-    const s = run(
-      hidden(),
-      track(
-        [
-          [0, 0, T],
-          [0, 120, T + 60],
-          [0, 117, T + 61],
-          [0, 177, T + 91],
-        ],
-        1000,
-      ),
-    );
-    expect(s.shown).toBe(true);
+    it("tolerates a 3px step back within a stroke", () => {
+      const s = run(
+        hidden(),
+        track(
+          [
+            [0, 0, T],
+            [0, 120, T + 60],
+            [0, 117, T + 61],
+            [0, 177, T + 91],
+          ],
+          hz,
+        ),
+      );
+      expect(s.shown).toBe(true);
+    });
+
+    // A break must reset accumulated distance to 0 (§4.3): down 100px, up
+    // past the 4px backtrack tolerance, then down again must not sum the two
+    // downward runs into one 150px+ stroke.
+    it("breaks the stroke on a reversal (20px up)", () => {
+      const s = run(
+        hidden(),
+        track(
+          [
+            [0, 0, T],
+            [0, 100, T + 40],
+            [0, 80, T + 48],
+            [0, 170, T + 84],
+          ],
+          hz,
+        ),
+      );
+      expect(s.shown).toBe(false);
+    });
+
+    it("breaks the stroke on a reversal (40px up)", () => {
+      const s = run(
+        hidden(),
+        track(
+          [
+            [0, 0, T],
+            [0, 100, T + 40],
+            [0, 60, T + 56],
+            [0, 150, T + 92],
+          ],
+          hz,
+        ),
+      );
+      expect(s.shown).toBe(false);
+    });
   });
 
   describe("while shown", () => {
@@ -272,6 +307,28 @@ describe("thumbnailBarGesture", () => {
       s = stepBar(s, { type: "hoverChange", held: false, t: T + 60_000 });
       expect(tick(s, T + 60_000 + DELAY - 1).shown).toBe(true);
       expect(tick(s, T + 60_000 + DELAY).shown).toBe(false);
+    });
+
+    // The hook feeds `move` events on event.timeStamp but `hoverChange` on
+    // performance.now(): the two clocks aren't guaranteed to interleave, so a
+    // keep-alive move can carry an earlier `t` than the hideAt it should
+    // extend. hideAt must never move earlier regardless (BarState invariant).
+    it("does not let an out-of-order keep-alive move earlier hideAt", () => {
+      let s = stepBar(hidden(), { type: "hoverChange", held: true, t: 500 });
+      s = stepBar(s, { type: "hoverChange", held: false, t: 1000 });
+      expect(s.hideAt).toBe(3000);
+
+      s = run(
+        s,
+        track(
+          [
+            [0, 0, 950],
+            [0, 20, 999],
+          ],
+          60,
+        ),
+      );
+      expect(s.hideAt).toBe(3000);
     });
   });
 

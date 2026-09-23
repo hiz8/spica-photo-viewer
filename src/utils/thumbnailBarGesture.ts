@@ -108,15 +108,32 @@ function move(s: BarState, e: Extract<BarEvent, { type: "move" }>): BarState {
   const fast = vertical && Math.abs(vy) >= G.activateSpeed;
   const stroke = nextStroke(s.stroke, fast, vy > 0 ? 1 : -1, base.y, e.y);
 
+  // A break (ended or flipped direction) is only trustworthy once the window
+  // no longer spans it: until then, base/vy still blend in samples from
+  // before the break, which would seed the next stroke's originY from there
+  // instead of the true reversal point (§4.3). Reset like the pause path so
+  // the next event starts a clean window.
+  if (s.stroke && (!stroke || stroke.dir !== s.stroke.dir)) {
+    return { ...s, samples: [sample], stroke: null };
+  }
+
   let next: BarState = { ...s, samples, stroke };
   if (next.shown && !next.held && vertical && vy >= G.keepAliveSpeed) {
-    next = { ...next, hideAt: e.t + THUMBNAIL_BAR_HIDE_DELAY_MS };
+    next = {
+      ...next,
+      hideAt: Math.max(
+        next.hideAt ?? -Infinity,
+        e.t + THUMBNAIL_BAR_HIDE_DELAY_MS,
+      ),
+    };
   }
   if (
     stroke &&
     stroke.dir * (stroke.extremeY - stroke.originY) >= G.strokeDistancePx
   ) {
     if (stroke.dir === 1 && !next.shown) return show(next, e.t);
+    // Hides even while held/hovered: §4.4 carves no exception for the
+    // upward-flick transition.
     if (stroke.dir === -1 && next.shown) return hide(next);
   }
   return next;
