@@ -1,11 +1,12 @@
 import type React from "react";
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { useEffect, useRef, useCallback, useMemo, memo } from "react";
 
 import {
   THUMBNAIL_ITEM_PITCH_PX,
   THUMBNAIL_RENDER_MARGIN,
 } from "../constants/memory";
 import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
+import { useThumbnailBarVisibility } from "../hooks/useThumbnailBarVisibility";
 import { useAppStore } from "../store";
 import type { ImageInfo } from "../types";
 import { isPerfEnabled, perfMark } from "../utils/perf";
@@ -66,7 +67,7 @@ const ThumbnailBar: React.FC = () => {
   const { folder, currentImage, cache, navigateToImage } = useAppStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const thumbnailBarRef = useRef<HTMLDivElement>(null);
-  const [isHovered, setIsHovered] = useState(false);
+  const { shown, barProps } = useThumbnailBarVisibility(folder.path);
 
   const getThumbnailData = useCallback(
     (imagePath: string): string | null => {
@@ -84,16 +85,17 @@ const ThumbnailBar: React.FC = () => {
 
   const handleThumbnailClick = useCallback(
     (index: number) => {
-      if (folder.images[index]) {
+      if (shown && folder.images[index]) {
         navigateToImage(index);
       }
     },
-    [folder.images, navigateToImage],
+    [shown, folder.images, navigateToImage],
   );
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
+      if (!shown) return;
       if (e.deltaY > 0) {
         const nextIndex = Math.min(
           currentImage.index + 1,
@@ -109,7 +111,7 @@ const ThumbnailBar: React.FC = () => {
         }
       }
     },
-    [currentImage.index, folder.images.length, navigateToImage],
+    [shown, currentImage.index, folder.images.length, navigateToImage],
   );
 
   const scrollToActiveItem = useCallback(() => {
@@ -207,13 +209,11 @@ const ThumbnailBar: React.FC = () => {
   const end = Math.min(count - 1, center + radius);
 
   return (
-    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- hover reveal and wheel scrolling apply to the whole strip; each thumbnail inside is its own button
     <nav
       ref={thumbnailBarRef}
       aria-label="Thumbnail navigation"
-      className={`thumbnail-bar ${isHovered ? "hovered" : ""}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      className={shown ? "thumbnail-bar shown" : "thumbnail-bar"}
+      {...barProps}
       onWheel={handleWheel}
     >
       <div className="thumbnail-container" ref={containerRef}>

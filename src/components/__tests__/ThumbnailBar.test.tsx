@@ -2,7 +2,10 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import "@testing-library/jest-dom";
 
-import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../../constants/timing";
+import {
+  THUMBNAIL_BAR_HIDE_DELAY_MS,
+  THUMBNAIL_SCROLL_DEBOUNCE_MS,
+} from "../../constants/timing";
 import type { ImageInfo, ImageData as AppImageData } from "../../types";
 
 // Mock ResizeObserver before component imports
@@ -30,6 +33,7 @@ const createMockImageInfo = (
 
 const createDefaultMockStore = () => ({
   folder: {
+    path: "/test",
     images: [] as ImageInfo[],
   },
   currentImage: {
@@ -222,34 +226,85 @@ describe("ThumbnailBar", () => {
     });
   });
 
-  describe("hover state", () => {
-    it("should apply hovered class on mouse enter", () => {
-      const images = [createMockImageInfo(0)];
-      mockStoreState.folder.images = images;
+  describe("auto-hide", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "performance"],
+      });
+      // jsdom has no Element.scrollTo; advancing past THUMBNAIL_BAR_HIDE_DELAY_MS
+      // also flushes the unrelated scroll-debounce timer inside act().
+      Element.prototype.scrollTo = vi.fn();
+      mockStoreState.folder.images = [
+        createMockImageInfo(0),
+        createMockImageInfo(1),
+      ];
       mockStoreState.currentImage.index = 0;
-
-      render(<ThumbnailBar />);
-
-      const nav = screen.getByRole("navigation");
-      expect(nav).not.toHaveClass("hovered");
-
-      fireEvent.mouseEnter(nav);
-      expect(nav).toHaveClass("hovered");
     });
 
-    it("should remove hovered class on mouse leave", () => {
-      const images = [createMockImageInfo(0)];
-      mockStoreState.folder.images = images;
-      mockStoreState.currentImage.index = 0;
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
+    const hideBar = () => {
+      act(() => {
+        vi.advanceTimersByTime(THUMBNAIL_BAR_HIDE_DELAY_MS);
+      });
+    };
+
+    it("is shown at mount and hidden after the delay", () => {
       render(<ThumbnailBar />);
-
       const nav = screen.getByRole("navigation");
+      expect(nav).toHaveClass("shown");
+
+      hideBar();
+      expect(nav).not.toHaveClass("shown");
+    });
+
+    it("shows while hovered and hides after leaving", () => {
+      render(<ThumbnailBar />);
+      const nav = screen.getByRole("navigation");
+      hideBar();
+
       fireEvent.mouseEnter(nav);
-      expect(nav).toHaveClass("hovered");
+      expect(nav).toHaveClass("shown");
+      act(() => {
+        vi.advanceTimersByTime(THUMBNAIL_BAR_HIDE_DELAY_MS * 5);
+      });
+      expect(nav).toHaveClass("shown");
 
       fireEvent.mouseLeave(nav);
-      expect(nav).not.toHaveClass("hovered");
+      hideBar();
+      expect(nav).not.toHaveClass("shown");
+    });
+
+    it("ignores thumbnail clicks while hidden (D4)", () => {
+      render(<ThumbnailBar />);
+      hideBar();
+
+      fireEvent.click(screen.getByTitle("image1.jpg"));
+      expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
+    });
+
+    it("ignores the wheel while hidden (D4)", () => {
+      render(<ThumbnailBar />);
+      hideBar();
+
+      fireEvent.wheel(screen.getByRole("navigation"), { deltaY: 100 });
+      expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
+    });
+
+    it("shows again when the folder changes (D3)", () => {
+      const { rerender } = render(<ThumbnailBar />);
+      const nav = screen.getByRole("navigation");
+      hideBar();
+      expect(nav).not.toHaveClass("shown");
+
+      mockStoreState = {
+        ...mockStoreState,
+        folder: { ...mockStoreState.folder, path: "/other" },
+      };
+      rerender(<ThumbnailBar />);
+      expect(nav).toHaveClass("shown");
     });
   });
 
