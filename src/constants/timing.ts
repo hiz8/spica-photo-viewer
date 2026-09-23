@@ -48,3 +48,6 @@ export const THUMBNAIL_LOOKUP_BATCH = 100;
 
 /** Prevents visual stuttering when user navigates quickly between images. */
 export const SUPPRESS_TRANSITION_MS = 300;
+
+/** Spec: docs/superpowers/specs/2026-09-23-thumbnail-bar-auto-hide-design.md §4.5 */
+export const THUMBNAIL_BAR_HIDE_DELAY_MS = 2000;

@@ -107,11 +107,16 @@ spica-photo-viewer/
   - Black background
   - Maintains aspect ratio
 
-- **Thumbnail Bar** (10% of window, bottom):
+- **Thumbnail Bar** (bottom, 80px, over the image area; auto-hides like Picasa Photo Viewer — see `docs/superpowers/specs/2026-09-23-thumbnail-bar-auto-hide-design.md`):
 
-  - Height: ~40px (30px thumbnails + padding)
-  - 50% opacity when not hovered (mouse not over image or thumbnails)
-  - 100% opacity on hover
+  - Height: 80px (30px thumbnails, then the filename line)
+  - Hidden (opacity 0) when inactive; shows and hides with a 500ms fade (none with reduced motion)
+  - Shown by hovering it, or by a quick downward mouse flick (≥150px at ≥800px/s); slow movement never shows it however far it goes, and a short flick does not either
+  - Stays shown while hovered, keyboard-focused, or while the mouse keeps moving down at ≥150px/s; hides 2000ms after that stops, or at once on a quick upward flick (≥150px at ≥800px/s)
+  - Movement with a mouse button held (panning) is ignored
+  - Shown at startup and on folder change, then hides after 2000ms
+  - While hidden, thumbnail clicks and the mouse wheel are ignored (hovering still shows the bar)
+  - Showing or hiding never moves the image: maximized and fullscreen layouts reserve the bar's band either way
   - Current image always centered
   - Empty space for first/last images to maintain center position
   - Thumbnails not generated yet are blank (no icon, no background) like Picasa Photo Viewer; the slot keeps its size so layout, centering and the click target are unchanged. Only failed thumbnails show an error placeholder
@@ -120,7 +125,7 @@ spica-photo-viewer/
 
   - Format: `{filename} ({width} × {height})`
   - Small, unobtrusive font
-  - Same opacity behavior as thumbnail bar
+  - Part of the thumbnail bar: shown and hidden with it
 
 - **Drag & Drop Overlay** (when no image is loaded):
   - Visible only in standalone startup mode
@@ -151,7 +156,7 @@ spica-photo-viewer/
   - Client area = image size × current zoom, so a zoomed-in image yields a window larger than the screen
   - The image stays exactly where it was on screen (DPI-aware, title bar accounted for); no clamping to the screen — Windows re-aligns an off-screen top edge when a resize border is clicked
   - Minimum client width 544px; below it the window keeps the image's aspect ratio (2000×1000 → 544×272, 1000×2000 → 544×1088) and the image stays centered at its current zoom
-  - In this windowed mode the image is laid out over the whole client area with the thumbnail bar over its bottom; maximizing or fullscreen restores the normal layout
+  - In this windowed mode the image is laid out over the whole client area, and the auto-hiding thumbnail bar shows over its bottom; maximizing or fullscreen restores the normal layout
 - **Drag & Drop image file**: Open dropped image and switch to its folder
 
 ### Image Loading Strategy
@@ -381,7 +386,6 @@ interface AppState {
     panX: number; // Pan offset X
     panY: number; // Pan offset Y
     isFullscreen: boolean;
-    thumbnailOpacity: number; // 0.5 or 1.0
   };
 
   // Cache state

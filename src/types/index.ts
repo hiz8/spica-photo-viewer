@@ -77,7 +77,6 @@ export interface AppState {
     isFullscreen: boolean;
     isMaximized: boolean;
     windowed: boolean;
-    thumbnailOpacity: number;
     imageLeft?: number;
     imageTop?: number;
     imageWidth?: number;
@@ -116,7 +115,6 @@ export interface ViewState {
    * not set it, so the default layout never depends on async window state.
    */
   windowed: boolean;
-  thumbnailOpacity: number;
   imageLeft?: number;
   imageTop?: number;
   imageWidth?: number;

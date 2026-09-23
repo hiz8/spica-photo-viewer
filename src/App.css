@@ -282,7 +282,9 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* Thumbnail Bar */
+/* Thumbnail Bar
+   Auto-hides like Picasa (docs/superpowers/specs/2026-09-23-thumbnail-bar-auto-hide-design.md).
+   Hidden with opacity only: scrollToActiveItem needs a laid-out bar (§4.6). */
 .thumbnail-bar {
   position: fixed;
   bottom: 0;
@@ -292,13 +294,24 @@ body {
   height: 80px;
   display: flex;
   flex-direction: column;
-  transition: opacity 0.3s ease;
-  opacity: 0.5;
+  transition: opacity 500ms ease;
+  opacity: 0;
   z-index: 100;
 }
 
-.thumbnail-bar.hovered {
+.thumbnail-bar.shown {
   opacity: 1;
+}
+
+/* The <nav> itself still takes the hover that reveals the bar (D4). */
+.thumbnail-bar:not(.shown) .thumbnail-container {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumbnail-bar {
+    transition: none;
+  }
 }
 
 .thumbnail-container {

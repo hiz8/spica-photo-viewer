@@ -90,7 +90,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     isFullscreen: false,
     isMaximized: false,
     windowed: false,
-    thumbnailOpacity: 0.5,
   },
   cache: {
     thumbnails: new Map<
@@ -125,7 +124,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   setPan: vi.fn(),
   setFullscreen: vi.fn(),
   setMaximized: vi.fn(),
-  setThumbnailOpacity: vi.fn(),
   setLoading: vi.fn(),
   setDragOver: vi.fn(),
   setShowAbout: vi.fn(),

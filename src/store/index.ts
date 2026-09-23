@@ -152,7 +152,6 @@ interface AppActions {
   setPan: (panX: number, panY: number) => void;
   setFullscreen: (isFullscreen: boolean) => void;
   setMaximized: (isMaximized: boolean) => void;
-  setThumbnailOpacity: (opacity: number) => void;
   setLoading: (isLoading: boolean) => void;
   setDragOver: (isDragOver: boolean) => void;
   setShowAbout: (showAbout: boolean) => void;
@@ -217,7 +216,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     isFullscreen: false,
     isMaximized: false,
     windowed: false,
-    thumbnailOpacity: 0.5,
   },
   cache: {
     thumbnails: new Map(),
@@ -338,14 +336,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : { ...state.view, isMaximized },
       };
     }),
-
-  setThumbnailOpacity: (opacity) =>
-    set((state) => ({
-      view: {
-        ...state.view,
-        thumbnailOpacity: opacity,
-      },
-    })),
 
   setLoading: (isLoading) =>
     set((state) =>
