@@ -104,7 +104,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 {
   currentImage: { path, index, data, error },
   folder: { path, images, imagesByPath, sortOrder },
-  view: { zoom, panX, panY, isFullscreen, isMaximized, thumbnailOpacity, imageLeft?, imageTop?, imageWidth?, imageHeight? },
+  view: { zoom, panX, panY, isFullscreen, isMaximized, imageLeft?, imageTop?, imageWidth?, imageHeight? },
   cache: { thumbnails: Map, preloaded: Map, imageViewStates: Map, lastNavigationTime },
   thumbnailGeneration: { isGenerating, allGenerated, currentGeneratingPath },
   ui: { isLoading, showAbout, isDragOver, error, suppressTransition, suppressTransitionTimeoutId, thumbnailDisplayed?, isCheckingStartupFile },

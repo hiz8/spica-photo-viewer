@@ -21,7 +21,7 @@
 interface AppState {
   currentImage: { path: string; index: number; data: ImageData | null; error: Error | null };
   folder: { path: string; images: ImageInfo[]; sortOrder: "name" | "date" };
-  view: { zoom: number; panX: number; panY: number; isFullscreen: boolean; thumbnailOpacity: number };
+  view: { zoom: number; panX: number; panY: number; isFullscreen: boolean };
   cache: { thumbnails: Map<string, string>; preloaded: Map<string, ImageData> };
   ui: { isLoading: boolean; showAbout: boolean; isDragOver: boolean; error: Error | null };
 }
@@ -56,9 +56,9 @@ interface AppState {
 
 ### UI/UX Patterns
 
-#### Opacity Management
-- Thumbnail bar: 50% opacity when not hovered, 100% on hover
-- Image info overlay: Same opacity behavior as thumbnail bar
+#### Thumbnail Bar Auto-Hide
+- Hidden (opacity 0) by default; shows on hover or a quick downward flick, hides again after a timeout or an upward flick — Picasa-style, see `PROJECT_SPEC.md` §Thumbnail Bar
+- Image info overlay: shown and hidden together with the thumbnail bar
 
 #### Navigation Patterns
 - Keyboard: Arrow keys for navigation and zoom
