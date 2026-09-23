@@ -47,7 +47,6 @@ describe("AppStore", () => {
         isFullscreen: false,
         isMaximized: false,
         windowed: false,
-        thumbnailOpacity: 0.5,
       },
       cache: {
         thumbnails: new Map(),
@@ -84,7 +83,6 @@ describe("AppStore", () => {
       expect(state.view.panX).toBe(0);
       expect(state.view.panY).toBe(0);
       expect(state.view.isFullscreen).toBe(false);
-      expect(state.view.thumbnailOpacity).toBe(0.5);
     });
   });
 
@@ -1215,16 +1213,6 @@ describe("AppStore", () => {
 
       setCheckingStartupFile(true);
       expect(useAppStore.getState().ui.isCheckingStartupFile).toBe(true);
-    });
-
-    it("should set thumbnail opacity", () => {
-      const { setThumbnailOpacity } = useAppStore.getState();
-
-      setThumbnailOpacity(1.0);
-      expect(useAppStore.getState().view.thumbnailOpacity).toBe(1.0);
-
-      setThumbnailOpacity(0.3);
-      expect(useAppStore.getState().view.thumbnailOpacity).toBe(0.3);
     });
   });
 

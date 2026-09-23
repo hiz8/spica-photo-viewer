@@ -83,7 +83,6 @@ export const createImageViewerState = (
     panX: 0,
     panY: 0,
     isFullscreen: false,
-    thumbnailOpacity: 0.5,
   },
   cache: {
     thumbnails: new Map(),
@@ -115,7 +114,6 @@ export const createEmptyViewerState = () => ({
     panX: 0,
     panY: 0,
     isFullscreen: false,
-    thumbnailOpacity: 0.5,
   },
   cache: {
     thumbnails: new Map(),
