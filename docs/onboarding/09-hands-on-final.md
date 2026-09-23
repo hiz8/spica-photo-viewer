@@ -232,7 +232,7 @@ function formatFileSize(bytes: number): string {
 
 ### 5-5. JSX に表示を追加
 
-`ImageViewer.tsx:510` の `view.zoom !== 100 && (...)` ブロックのすぐ後ろ、`</section>` の **直前** に追加します。
+`ImageViewer.tsx` の `<ZoomIndicator ... />` のすぐ後ろ、`</section>` の **直前** に追加します。
 
 ```tsx
 {fileSize !== null && (
@@ -242,7 +242,7 @@ function formatFileSize(bytes: number): string {
 
 ### 5-6. CSS の追加 (任意)
 
-`src/App.css` (または該当する CSS ファイル) に、画面右下に表示するスタイルを追加します。プロジェクトに既存の `.zoom-indicator` クラスがあるはずなので、それを参考に揃えます。
+`src/App.css` (または該当する CSS ファイル) に、画面右下に表示するスタイルを追加します。既存の `.zoom-indicator` クラス（画面中央に操作時だけ表示）は配置が異なるので、色や余白だけ参考にします。
 
 ```css
 .file-size-indicator {

@@ -127,6 +127,12 @@ spica-photo-viewer/
   - Small, unobtrusive font
   - Part of the thumbnail bar: shown and hidden with it
 
+- **Zoom Indicator** (centre of the window, like Picasa Photo Viewer):
+
+  - Format: `{zoom}%`, white text on gray (`#65666c`)
+  - Hidden (opacity 0) until the user zooms: mouse wheel, ↑/↓, Ctrl+0 or double-click, including one that stays pinned at the 10%/2000% limit. The fit on image load, navigation or window resize never shows it
+  - Fades in over 100ms; 600ms after the last zoom it fades out over 400ms (no fades with reduced motion)
+
 - **Drag & Drop Overlay** (when no image is loaded):
   - Visible only in standalone startup mode
   - Dashed border with "Drop image here" message
