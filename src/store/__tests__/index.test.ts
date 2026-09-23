@@ -62,6 +62,7 @@ describe("AppStore", () => {
         suppressTransition: false,
         suppressTransitionTimeoutId: null,
         isCheckingStartupFile: true,
+        zoomOperation: 0,
       },
     });
     vi.clearAllMocks();
@@ -694,6 +695,58 @@ describe("AppStore", () => {
       zoomAtPoint(2.0, 100, 50); // Would be 3600, but clamped to 2000
 
       expect(useAppStore.getState().view.zoom).toBe(2000);
+    });
+  });
+
+  describe("zoomOperation", () => {
+    const zoomOperation = () => useAppStore.getState().ui.zoomOperation;
+
+    it.each([
+      ["zoomIn", () => useAppStore.getState().zoomIn()],
+      ["zoomOut", () => useAppStore.getState().zoomOut()],
+      ["zoomAtPoint", () => useAppStore.getState().zoomAtPoint(1.2, 0, 0)],
+      ["resetZoom", () => useAppStore.getState().resetZoom()],
+    ])("%s counts as a zoom operation", (_name, operate) => {
+      const before = zoomOperation();
+
+      operate();
+
+      expect(zoomOperation()).toBe(before + 1);
+    });
+
+    it.each([
+      ["zoomIn", 2000, () => useAppStore.getState().zoomIn()],
+      ["zoomOut", 10, () => useAppStore.getState().zoomOut()],
+      [
+        "zoomAtPoint",
+        2000,
+        () => useAppStore.getState().zoomAtPoint(1.2, 0, 0),
+      ],
+    ])(
+      "%s counts even when the zoom is pinned at its limit",
+      (_name, limit, operate) => {
+        useAppStore.getState().setZoom(limit);
+        const before = zoomOperation();
+
+        operate();
+
+        expect(useAppStore.getState().view.zoom).toBe(limit);
+        expect(zoomOperation()).toBe(before + 1);
+      },
+    );
+
+    it("does not count zoom changes the user did not ask for", () => {
+      const { setFolderImages, navigateToImage, fitToWindow, setImageData } =
+        useAppStore.getState();
+      setFolderImages("/test", mockImageList);
+      const before = zoomOperation();
+
+      navigateToImage(1);
+      setImageData(mockImageData);
+      fitToWindow(4000, 3000);
+      useAppStore.getState().setZoom(250);
+
+      expect(zoomOperation()).toBe(before);
     });
   });
 

@@ -30,6 +30,7 @@ import { getFilename } from "../utils/path";
 import { isPerfEnabled, perfMark } from "../utils/perf";
 import { currentPreviewBox } from "../utils/previewBox";
 import { loadImageViaProtocol } from "../utils/protocolLoader";
+import ZoomIndicator from "./ZoomIndicator";
 
 /**
  * Headroom before a display-resolution preview counts as too coarse: the
@@ -836,9 +837,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ className = "" }) => {
         </div>
       )}
 
-      {view.zoom !== 100 && (
-        <div className="zoom-indicator">{Math.round(view.zoom)}%</div>
-      )}
+      <ZoomIndicator zoom={view.zoom} zoomOperation={ui.zoomOperation} />
     </section>
   );
 };

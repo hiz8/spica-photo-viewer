@@ -114,6 +114,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     suppressTransitionTimeoutId: null,
     thumbnailDisplayed: false,
     isCheckingStartupFile: true,
+    zoomOperation: 0,
   },
   setCurrentImage: vi.fn(),
   setImageData: vi.fn(),
