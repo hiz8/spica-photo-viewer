@@ -1,7 +1,7 @@
 # サムネイルバーの自動表示・非表示（Picasa 準拠）設計
 
 - 日付: 2026-09-23
-- 状態: 設計承認済み。実装計画待ち
+- 状態: 実装済み
 - 関連: `PROJECT_SPEC.md` §Thumbnail Bar / §Image Info Overlay、`docs/code-rationale.md` Z1 / W1
 
 ## 1. 目的
@@ -83,6 +83,7 @@ Picasa Photo Viewer と同様に、サムネイルバーを普段は完全に非
 - 非表示中は `.thumbnail-container` に `pointer-events: none`、ホイールでのナビゲーションも無効（D4）。`<nav>` 自体はホバーを受ける。
 - `display: none` は使わない（`scrollToActiveItem` が `offsetLeft` / `offsetWidth` に依存し、非表示中に中央寄せが壊れるため）。
 - 既知の限界: ホバーで即時表示するため、バー上へのクリックは通常ホバーを経て届く。D4 が実際に効くのは、移動を伴わないクリック（フォーカス取得クリック、タップ）に限られる。
+- 起動時にフェードしないための修飾子は不要。バーは画像が揃った時点で shown 付きでマウントされ、CSS トランジションは初回スタイルを補間しない。フォルダ切替時の再表示は 500ms でフェードインする。
 
 ## 5. 実装構成
 
@@ -91,8 +92,8 @@ Picasa Photo Viewer と同様に、サムネイルバーを普段は完全に非
 | `src/utils/thumbnailBarGesture.ts`（新規） | 純粋な状態機械。`step(state, event) → state`。`event` は `move` / `tick` / `hoverChange` / `forceShow`、時刻は event に含める。DOM・タイマーを持たない。閾値は `THUMBNAIL_BAR_GESTURE` として export |
 | `src/hooks/useThumbnailBarVisibility.ts`（新規） | `window` の `pointermove` 購読と `hideAt` の `setTimeout`。状態は ref に持ち、`shown` が反転したときだけ `setState`（mousemove ごとの再レンダリングを避ける）。`{ shown, barProps }` を返す |
 | `src/components/ThumbnailBar.tsx` | `isHovered` をフックに置換、クラス名 `hovered` → `shown`、非表示中は `handleWheel` を早期 return、画像リスト変更で `forceShow` |
-| `src/App.css` | §4.6 のスタイル、`prefers-reduced-motion` 上書き、起動時の即時表示用の no-transition 修飾子 |
-| `src/constants/timing.ts` | `THUMBNAIL_BAR_HIDE_DELAY_MS = 2000`、`THUMBNAIL_BAR_FADE_MS = 500` |
+| `src/App.css` | §4.6 のスタイル、`prefers-reduced-motion` 上書き |
+| `src/constants/timing.ts` | `THUMBNAIL_BAR_HIDE_DELAY_MS = 2000`（フェード 500ms は CSS にのみ書く。TS から参照されない定数は置かない） |
 | store / types / testUtils / testFactories | D10 の削除 |
 | `PROJECT_SPEC.md` | §Thumbnail Bar / §Image Info Overlay の書き換え、windowed mode の記述、`thumbnailOpacity` の削除 |
 
