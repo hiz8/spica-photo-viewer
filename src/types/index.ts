@@ -48,6 +48,8 @@ export interface UIState {
   suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null;
   thumbnailDisplayed?: boolean;
   isCheckingStartupFile: boolean;
+  /** Bumped by each user zoom gesture; the zoom indicator shows on a change. */
+  zoomOperation: number;
 }
 
 export interface ImageViewState {

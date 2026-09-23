@@ -113,6 +113,12 @@ const leaveWindowedView = (
   return { ...view, windowed: false, ...centeredCurrentImage(state, false) };
 };
 
+// Only the user's zoom gestures count, including ones pinned at a limit: the
+// fits on load, navigation and resize must not flash the zoom indicator.
+const countZoomOperation = (state: AppState): Pick<AppState, "ui"> => ({
+  ui: { ...state.ui, zoomOperation: state.ui.zoomOperation + 1 },
+});
+
 export const thumbnailToImageData = (
   path: string,
   thumbnailCache: { base64: string; width: number; height: number },
@@ -237,6 +243,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     suppressTransitionTimeoutId: null,
     thumbnailDisplayed: false,
     isCheckingStartupFile: true,
+    zoomOperation: 0,
   },
 
   setCurrentImage: (path, index) =>
@@ -535,6 +542,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   resetZoom: () => {
+    set(countZoomOperation);
     const state = get();
     if (state.currentImage.data) {
       get().fitToWindow(
@@ -554,6 +562,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   zoomIn: () => {
+    set(countZoomOperation);
     const state = get();
     const newZoom = Math.min(2000, state.view.zoom * 1.2);
     perfMark("zoom:request", {
@@ -568,6 +577,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   zoomOut: () => {
+    set(countZoomOperation);
     const state = get();
     const newZoom = Math.max(10, state.view.zoom / 1.2);
     perfMark("zoom:request", {
@@ -582,6 +592,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   zoomAtPoint: (zoomFactor, pointX, pointY) => {
+    set(countZoomOperation);
     const state = get();
     const currentZoom = state.view.zoom;
     const newZoom = Math.max(10, Math.min(2000, currentZoom * zoomFactor));

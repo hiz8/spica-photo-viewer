@@ -92,6 +92,7 @@ const mockStore = {
     suppressTransition: false,
     suppressTransitionTimeoutId: null,
     thumbnailDisplayed: false,
+    zoomOperation: 0,
   },
   setImageData: vi.fn(),
   setImageError: vi.fn(),
@@ -190,6 +191,7 @@ describe("ImageViewer", () => {
     mockStore.cache.preloaded = new Map();
     mockStore.cache.imageViewStates = new Map();
     mockStore.ui.thumbnailDisplayed = false;
+    mockStore.ui.zoomOperation = 0;
     clearBitmaps();
     // Default: the preview route serves a downscaled display-resolution
     // decode. Individual tests override this (unscaled preview, 404, ...).
@@ -277,21 +279,22 @@ describe("ImageViewer", () => {
       });
     });
 
-    it("should show zoom indicator when zoom is not 100%", () => {
+    it("keeps the zoom indicator hidden while nobody has zoomed", () => {
       mockStore.view.zoom = 200;
 
       render(<ImageViewer />);
 
-      expect(screen.getByText("200%")).toBeInTheDocument();
-      expect(screen.getByText("200%")).toHaveClass("zoom-indicator");
+      expect(screen.getByText("200%")).not.toHaveClass("shown");
     });
 
-    it("should not show zoom indicator when zoom is 100%", () => {
+    it("shows the zoom indicator on a zoom operation, even at 100%", () => {
       mockStore.view.zoom = 100;
+      const { rerender } = render(<ImageViewer />);
 
-      render(<ImageViewer />);
+      mockStore.ui.zoomOperation = 1;
+      rerender(<ImageViewer />);
 
-      expect(screen.queryByText("100%")).not.toBeInTheDocument();
+      expect(screen.getByText("100%")).toHaveClass("zoom-indicator", "shown");
     });
 
     it("should apply cursor style based on dragging state", () => {

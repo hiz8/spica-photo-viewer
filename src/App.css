@@ -85,21 +85,6 @@ body {
   overflow: hidden;
 }
 
-.zoom-indicator {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  pointer-events: none;
-  z-index: 10;
-}
-
 /* Both display elements - <img> (bitmap-cache miss / thumbnail placeholder)
    and <canvas> (hit) - take their left/top from fitToWindow(), which only
    applies to a positioned box. */
@@ -131,19 +116,38 @@ body {
   padding: 2rem;
 }
 
-/* Zoom Indicator */
+/* Zoom Indicator
+   Picasa-like: centred in the window (not the image area above the bar) and
+   shown only around a zoom gesture. A transition takes the duration of the
+   state it enters, so fading in is 100ms and fading out 400ms; the wait
+   before the fade-out is ZOOM_INDICATOR_HIDE_DELAY_MS. */
 .zoom-indicator {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #65666c;
+  color: #fff;
   padding: 8px 12px;
   border-radius: 4px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-size: 14px;
   font-weight: 500;
   pointer-events: none;
   z-index: 10;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+
+.zoom-indicator.shown {
+  opacity: 1;
+  transition-duration: 100ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoom-indicator {
+    transition: none;
+  }
 }
 
 /* Loading indicator */
