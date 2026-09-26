@@ -63,17 +63,7 @@ pub fn run() {
                     .unwrap_or((0, 0));
                 commands::startup::start(path, screen);
             }
-            // EXPERIMENT (Issue #333, not for merge): SPICA_EXP_CREATE at
-            // compile time picks how a launch with a file creates the window.
-            // "windowed": 800x600 as before #310. "maxrect" (candidate B):
-            // restored, on the maximized client size. Either way the
-            // frontend's maximize_window maximizes it later.
-            let create = match (&startup_file, option_env!("SPICA_EXP_CREATE")) {
-                (None, _) => "none",
-                (Some(_), Some(v)) => v,
-                (Some(_), None) => "maximized",
-            };
-            let maximized = create == "maximized";
+            let maximized = startup_file.is_some();
             let config = app
                 .config()
                 .app
@@ -83,59 +73,25 @@ pub fn run() {
                 .cloned()
                 .ok_or("missing main window config")?;
             let title = commands::window::startup_title(&config.title, startup_file.as_deref());
-            let mut builder = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .title(title)
                 .maximized(maximized)
                 .max_inner_size(
                     commands::window::MAX_TRACK_LOGICAL_PX,
                     commands::window::MAX_TRACK_LOGICAL_PX,
-                );
-            // "early" (candidate F): maxrect, then maximized as soon as shown.
-            if create == "early" {
-                commands::window::spawn_early_maximize();
-            }
-            // "sync" (candidate G): maxrect, maximized synchronously on the
-            // first show. "quiet" (candidate H): sync with DWM transitions off
-            // until the window is built.
-            // "exact" (candidate I): sync, moved onto the maximized outer
-            // rect at WM_CREATE so the restored first show already has the
-            // maximized client area.
-            let hooked = create == "sync" || create == "quiet" || create == "exact";
-            if hooked {
-                let monitor = app.primary_monitor().ok().flatten();
-                commands::window::begin_first_show_maximize(
-                    create == "quiet",
-                    monitor.as_ref().filter(|_| create == "exact"),
-                );
-            }
-            if create == "maxrect" || create == "early" || hooked {
-                if let Some(((x, y), (w, h))) = app
-                    .primary_monitor()
-                    .ok()
-                    .flatten()
-                    .and_then(|m| commands::window::maximized_equivalent_geometry(&m))
-                {
-                    builder = builder.position(x, y).inner_size(w, h);
-                }
-            }
-            let window = builder.build();
-            if hooked {
-                commands::window::end_first_show_maximize();
-            }
-            let window = window?;
+                )
+                .build()?;
             let created_at = Instant::now();
             let _ = WINDOW_CREATED_AT.set(created_at);
             let fg = commands::window::foreground_state(&window);
             crate::utils::perf::phase(
                 "window_created",
                 &format!(
-                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{},"born_maximized":{},"create":"{}""#,
+                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{}"#,
                     fg.is_ours,
                     fg.foreground,
                     commands::explorer_sort::foreground_at_launch().unwrap_or(0),
-                    fg.z_above,
-                    maximized,
-                    create
+                    fg.z_above
                 ),
             );
             commands::window::raise_startup_z(

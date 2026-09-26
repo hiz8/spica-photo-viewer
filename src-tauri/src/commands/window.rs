@@ -178,33 +178,6 @@ pub(crate) fn restored_outer_rect(
     }
 }
 
-/// EXPERIMENT (Issue #333, candidate B): client size of a window maximized on
-/// `work`, so a restored window born with it only moves (never re-lays out)
-/// when maximize_window maximizes it. A maximized frame hangs its border
-/// outside the work area on every side; only the caption eats into it.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn maximized_client_size(work: Rect, frame: FrameInsets) -> PhysicalSize<u32> {
-    let caption = frame.top - frame.bottom;
-    PhysicalSize::new(
-        (work.right - work.left).max(1) as u32,
-        (work.bottom - work.top - caption).max(1) as u32,
-    )
-}
-
-/// EXPERIMENT (Issue #333, candidate I): the outer rect of a window maximized
-/// on `work`. Its frame border hangs outside the work area on every side, so a
-/// restored window on this rect has the maximized client area exactly.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn maximized_outer_rect(work: Rect, frame: FrameInsets) -> Rect {
-    let border = frame.bottom;
-    Rect {
-        left: work.left - border,
-        top: work.top - border,
-        right: work.right + border,
-        bottom: work.bottom + border,
-    }
-}
-
 /// `WINDOWPLACEMENT.rcNormalPosition` is in workspace coordinates, which
 /// differ from screen coordinates by the PRIMARY work area's origin on every
 /// monitor (a taskbar docked at the top or left shifts them); a secondary
@@ -225,26 +198,18 @@ mod native {
     use std::ffi::c_void;
     use tauri::PhysicalPosition;
     use windows::core::BOOL;
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+    use windows::Win32::Foundation::{HWND, RECT};
     use windows::Win32::Graphics::Dwm::{
         DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_CLOAKED,
         DWMWA_TRANSITIONS_FORCEDISABLED,
     };
-    use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
     use windows::Win32::UI::WindowsAndMessaging::{
-        AdjustWindowRectEx, EnumWindows, GetTopWindow, GetWindow, GetWindowLongPtrW,
-        GetWindowPlacement, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-        SetWindowPlacement, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE,
+        GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowPlacement, GetWindowRect, IsIconic,
+        IsWindowVisible, SetWindowPlacement, SetWindowPos, SystemParametersInfoW, GWL_EXSTYLE,
         GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HWND_TOP, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SW_MAXIMIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT,
-        WINDOW_EX_STYLE, WINDOW_STYLE, WS_CAPTION, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
-        WS_OVERLAPPEDWINDOW,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, CWPRETSTRUCT, HC_ACTION, HHOOK,
-        SWP_NOZORDER, SWP_SHOWWINDOW, WH_CALLWNDPROCRET, WINDOWPOS, WM_CREATE, WM_WINDOWPOSCHANGED,
-        WS_CHILD,
+        SWP_NOSIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE,
+        WINDOW_STYLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
     };
 
     fn window_rect(hwnd: HWND) -> Option<Rect> {
@@ -365,150 +330,6 @@ mod native {
             )
         }
         .map_err(|e| format!("Failed to compute the window frame: {}", e))?;
-        Ok(FrameInsets {
-            left: -rect.left,
-            top: -rect.top,
-            right: rect.right,
-            bottom: rect.bottom,
-        })
-    }
-
-    pub(super) fn own_visible_captioned_window() -> Option<HWND> {
-        unsafe extern "system" fn visit(hwnd: HWND, found: LPARAM) -> BOOL {
-            let mut pid = 0u32;
-            unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
-            let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
-            if pid == std::process::id()
-                && unsafe { IsWindowVisible(hwnd) }.as_bool()
-                && style & WS_CAPTION.0 == WS_CAPTION.0
-            {
-                unsafe { *(found.0 as *mut isize) = hwnd.0 as isize };
-                return BOOL(0);
-            }
-            BOOL(1)
-        }
-        let mut found: isize = 0;
-        let _ = unsafe { EnumWindows(Some(visit), LPARAM(&mut found as *mut isize as isize)) };
-        (found != 0).then_some(HWND(found as *mut c_void))
-    }
-
-    static FIRST_SHOW_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
-    static FIRST_SHOW_DONE: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
-
-    unsafe extern "system" fn first_show_proc(
-        code: i32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        use std::sync::atomic::Ordering;
-        if code == HC_ACTION as i32 && !FIRST_SHOW_DONE.load(Ordering::Relaxed) {
-            let msg = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
-            if msg.message == WM_CREATE {
-                let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
-                let exact = *EXACT_RECT.lock().unwrap_or_else(|e| e.into_inner());
-                if let (Some(r), true) = (
-                    exact,
-                    style & WS_CAPTION.0 == WS_CAPTION.0 && style & WS_CHILD.0 == 0,
-                ) {
-                    let ok = unsafe {
-                        SetWindowPos(
-                            msg.hwnd,
-                            None,
-                            r.left,
-                            r.top,
-                            r.right - r.left,
-                            r.bottom - r.top,
-                            SWP_NOZORDER | SWP_NOACTIVATE,
-                        )
-                    }
-                    .is_ok();
-                    crate::utils::perf::phase("exact_rect", &format!(r#","ok":{ok}"#));
-                }
-            }
-            if msg.message == WM_CREATE && NO_TRANSITIONS.load(Ordering::Relaxed) {
-                let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
-                if style & WS_CAPTION.0 == WS_CAPTION.0 && style & WS_CHILD.0 == 0 {
-                    let ok = set_transitions_disabled(msg.hwnd, true).is_ok();
-                    NO_TRANSITIONS_HWND.store(msg.hwnd.0 as isize, Ordering::Relaxed);
-                    crate::utils::perf::phase("transitions_off", &format!(r#","ok":{ok}"#));
-                }
-            }
-            if msg.message == WM_WINDOWPOSCHANGED {
-                let pos = unsafe { &*(msg.lParam.0 as *const WINDOWPOS) };
-                let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
-                if pos.flags.contains(SWP_SHOWWINDOW)
-                    && style & WS_CAPTION.0 == WS_CAPTION.0
-                    && style & WS_CHILD.0 == 0
-                {
-                    FIRST_SHOW_DONE.store(true, Ordering::Relaxed);
-                    crate::utils::perf::phase("first_show_maximize_start", "");
-                    let _ = unsafe { ShowWindow(msg.hwnd, SW_MAXIMIZE) };
-                    crate::utils::perf::phase("first_show_maximize_end", "");
-                }
-            }
-        }
-        unsafe { CallNextHookEx(None, code, wparam, lparam) }
-    }
-
-    static NO_TRANSITIONS: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
-    static NO_TRANSITIONS_HWND: std::sync::atomic::AtomicIsize =
-        std::sync::atomic::AtomicIsize::new(0);
-
-    /// Candidate H: DWM transitions stay off from WM_CREATE until the hook is
-    /// removed, so neither the restored open animation nor the maximize one plays.
-    pub(super) fn set_first_show_no_transitions(on: bool) {
-        NO_TRANSITIONS.store(on, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// Candidate I: the rect WM_CREATE moves the window to before its first
-    /// show (tao refuses a position above the monitor's top edge).
-    static EXACT_RECT: std::sync::Mutex<Option<Rect>> = std::sync::Mutex::new(None);
-
-    pub(super) fn set_first_show_exact_rect(rect: Option<Rect>) {
-        *EXACT_RECT.lock().unwrap_or_else(|e| e.into_inner()) = rect;
-    }
-
-    pub(super) fn install_first_show_hook() {
-        let hook = unsafe {
-            SetWindowsHookExW(
-                WH_CALLWNDPROCRET,
-                Some(first_show_proc),
-                None,
-                GetCurrentThreadId(),
-            )
-        };
-        match hook {
-            Ok(h) => FIRST_SHOW_HOOK.store(h.0 as isize, std::sync::atomic::Ordering::Relaxed),
-            Err(e) => crate::utils::perf::phase(
-                "first_show_hook_failed",
-                &format!(r#","error":{:?}"#, e.to_string()),
-            ),
-        }
-    }
-
-    pub(super) fn remove_first_show_hook() {
-        let raw = FIRST_SHOW_HOOK.swap(0, std::sync::atomic::Ordering::Relaxed);
-        if raw != 0 {
-            let _ = unsafe { UnhookWindowsHookEx(HHOOK(raw as *mut c_void)) };
-        }
-        let hwnd = NO_TRANSITIONS_HWND.swap(0, std::sync::atomic::Ordering::Relaxed);
-        if hwnd != 0 {
-            let ok = set_transitions_disabled(HWND(hwnd as *mut c_void), false).is_ok();
-            crate::utils::perf::phase("transitions_on", &format!(r#","ok":{ok}"#));
-        }
-    }
-
-    pub(super) fn show_maximized(hwnd: HWND) {
-        let _ = unsafe { ShowWindow(hwnd, SW_MAXIMIZE) };
-    }
-
-    /// Plain AdjustWindowRectEx (system DPI), as tao sizes a new window with it.
-    pub(super) fn overlapped_frame_insets() -> Result<FrameInsets, String> {
-        let mut rect = RECT::default();
-        unsafe { AdjustWindowRectEx(&mut rect, WS_OVERLAPPEDWINDOW, false, WINDOW_EX_STYLE(0)) }
-            .map_err(|e| format!("Failed to compute the window frame: {}", e))?;
         Ok(FrameInsets {
             left: -rect.left,
             top: -rect.top,
@@ -678,93 +499,6 @@ pub async fn maximize_window(app_handle: AppHandle) -> Result<(), String> {
     crate::utils::perf::phase("maximize_end", "");
 
     Ok(())
-}
-
-/// EXPERIMENT (Issue #333, candidate B): logical (position, inner size) for a
-/// restored window at the work area's top-left with the maximized client size.
-/// The maximized rect itself cannot be asked for: tao falls back to
-/// CW_USEDEFAULT for a position above the monitor's top edge.
-#[cfg(windows)]
-pub fn maximized_equivalent_geometry(monitor: &tauri::Monitor) -> Option<((f64, f64), (f64, f64))> {
-    let area = monitor.work_area();
-    let work = Rect {
-        left: area.position.x,
-        top: area.position.y,
-        right: area.position.x + area.size.width as i32,
-        bottom: area.position.y + area.size.height as i32,
-    };
-    let frame = native::overlapped_frame_insets().ok()?;
-    let size = maximized_client_size(work, frame);
-    let scale = monitor.scale_factor();
-    Some((
-        (work.left as f64 / scale, work.top as f64 / scale),
-        (size.width as f64 / scale, size.height as f64 / scale),
-    ))
-}
-
-/// EXPERIMENT (Issue #333, candidate F): maximizes our captioned top-level
-/// window as soon as it is visible, while `.build()` is still blocked in
-/// WebView2 init (which pumps messages, so the cross-thread ShowWindow runs).
-#[cfg(windows)]
-pub fn spawn_early_maximize() {
-    std::thread::spawn(|| {
-        let started = Instant::now();
-        while started.elapsed() < Duration::from_secs(3) {
-            if let Some(hwnd) = native::own_visible_captioned_window() {
-                crate::utils::perf::phase("early_maximize_start", "");
-                native::show_maximized(hwnd);
-                crate::utils::perf::phase("early_maximize_end", "");
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        crate::utils::perf::phase("early_maximize_timeout", "");
-    });
-}
-
-#[cfg(not(windows))]
-pub fn spawn_early_maximize() {}
-
-/// EXPERIMENT (Issue #333, candidate G): on the calling (main) thread, the
-/// first show of our captioned window is followed synchronously by
-/// SW_MAXIMIZE, before DWM composes a frame of the restored state. Call
-/// before `.build()` and pair with `end_first_show_maximize` after it.
-#[cfg(windows)]
-pub fn begin_first_show_maximize(no_transitions: bool, exact_on: Option<&tauri::Monitor>) {
-    native::set_first_show_no_transitions(no_transitions);
-    let exact = exact_on.and_then(|m| {
-        let area = m.work_area();
-        let work = Rect {
-            left: area.position.x,
-            top: area.position.y,
-            right: area.position.x + area.size.width as i32,
-            bottom: area.position.y + area.size.height as i32,
-        };
-        Some(maximized_outer_rect(
-            work,
-            native::overlapped_frame_insets().ok()?,
-        ))
-    });
-    native::set_first_show_exact_rect(exact);
-    native::install_first_show_hook();
-}
-
-#[cfg(windows)]
-pub fn end_first_show_maximize() {
-    native::remove_first_show_hook();
-}
-
-#[cfg(not(windows))]
-pub fn begin_first_show_maximize(_no_transitions: bool, _exact_on: Option<&tauri::Monitor>) {}
-
-#[cfg(not(windows))]
-pub fn end_first_show_maximize() {}
-
-#[cfg(not(windows))]
-pub fn maximized_equivalent_geometry(
-    _monitor: &tauri::Monitor,
-) -> Option<((f64, f64), (f64, f64))> {
-    None
 }
 
 pub struct ForegroundState {
@@ -959,41 +693,6 @@ mod tests {
             right: 2560,
             bottom: 1392,
         }
-    }
-
-    #[test]
-    fn maximized_client_size_keeps_the_work_width_and_drops_only_the_caption() {
-        // 100% DPI WS_OVERLAPPEDWINDOW: 8px border, 23px caption.
-        let frame = FrameInsets {
-            left: 8,
-            top: 31,
-            right: 8,
-            bottom: 8,
-        };
-        assert_eq!(
-            maximized_client_size(ours(), frame),
-            PhysicalSize::new(2560, 1392 - 23)
-        );
-    }
-
-    #[test]
-    fn maximized_outer_rect_matches_what_windows_reports_for_a_maximized_window() {
-        // Measured at 100% DPI on a 2560x1392 work area: (-8,-8,2568,1400).
-        let frame = FrameInsets {
-            left: 8,
-            top: 31,
-            right: 8,
-            bottom: 8,
-        };
-        assert_eq!(
-            maximized_outer_rect(ours(), frame),
-            Rect {
-                left: -8,
-                top: -8,
-                right: 2568,
-                bottom: 1400,
-            }
-        );
     }
 
     /// A launcher-like window that qualifies as covering ours.
