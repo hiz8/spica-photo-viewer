@@ -191,6 +191,20 @@ pub(crate) fn maximized_client_size(work: Rect, frame: FrameInsets) -> PhysicalS
     )
 }
 
+/// EXPERIMENT (Issue #333, candidate I): the outer rect of a window maximized
+/// on `work`. Its frame border hangs outside the work area on every side, so a
+/// restored window on this rect has the maximized client area exactly.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn maximized_outer_rect(work: Rect, frame: FrameInsets) -> Rect {
+    let border = frame.bottom;
+    Rect {
+        left: work.left - border,
+        top: work.top - border,
+        right: work.right + border,
+        bottom: work.bottom + border,
+    }
+}
+
 /// `WINDOWPLACEMENT.rcNormalPosition` is in workspace coordinates, which
 /// differ from screen coordinates by the PRIMARY work area's origin on every
 /// monitor (a taskbar docked at the top or left shifts them); a secondary
@@ -229,7 +243,8 @@ mod native {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, CWPRETSTRUCT, HC_ACTION, HHOOK,
-        SWP_SHOWWINDOW, WH_CALLWNDPROCRET, WINDOWPOS, WM_CREATE, WM_WINDOWPOSCHANGED, WS_CHILD,
+        SWP_NOZORDER, SWP_SHOWWINDOW, WH_CALLWNDPROCRET, WINDOWPOS, WM_CREATE, WM_WINDOWPOSCHANGED,
+        WS_CHILD,
     };
 
     fn window_rect(hwnd: HWND) -> Option<Rect> {
@@ -389,6 +404,28 @@ mod native {
         use std::sync::atomic::Ordering;
         if code == HC_ACTION as i32 && !FIRST_SHOW_DONE.load(Ordering::Relaxed) {
             let msg = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
+            if msg.message == WM_CREATE {
+                let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
+                let exact = *EXACT_RECT.lock().unwrap_or_else(|e| e.into_inner());
+                if let (Some(r), true) = (
+                    exact,
+                    style & WS_CAPTION.0 == WS_CAPTION.0 && style & WS_CHILD.0 == 0,
+                ) {
+                    let ok = unsafe {
+                        SetWindowPos(
+                            msg.hwnd,
+                            None,
+                            r.left,
+                            r.top,
+                            r.right - r.left,
+                            r.bottom - r.top,
+                            SWP_NOZORDER | SWP_NOACTIVATE,
+                        )
+                    }
+                    .is_ok();
+                    crate::utils::perf::phase("exact_rect", &format!(r#","ok":{ok}"#));
+                }
+            }
             if msg.message == WM_CREATE && NO_TRANSITIONS.load(Ordering::Relaxed) {
                 let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
                 if style & WS_CAPTION.0 == WS_CAPTION.0 && style & WS_CHILD.0 == 0 {
@@ -423,6 +460,14 @@ mod native {
     /// removed, so neither the restored open animation nor the maximize one plays.
     pub(super) fn set_first_show_no_transitions(on: bool) {
         NO_TRANSITIONS.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Candidate I: the rect WM_CREATE moves the window to before its first
+    /// show (tao refuses a position above the monitor's top edge).
+    static EXACT_RECT: std::sync::Mutex<Option<Rect>> = std::sync::Mutex::new(None);
+
+    pub(super) fn set_first_show_exact_rect(rect: Option<Rect>) {
+        *EXACT_RECT.lock().unwrap_or_else(|e| e.into_inner()) = rect;
     }
 
     pub(super) fn install_first_show_hook() {
@@ -685,8 +730,22 @@ pub fn spawn_early_maximize() {}
 /// SW_MAXIMIZE, before DWM composes a frame of the restored state. Call
 /// before `.build()` and pair with `end_first_show_maximize` after it.
 #[cfg(windows)]
-pub fn begin_first_show_maximize(no_transitions: bool) {
+pub fn begin_first_show_maximize(no_transitions: bool, exact_on: Option<&tauri::Monitor>) {
     native::set_first_show_no_transitions(no_transitions);
+    let exact = exact_on.and_then(|m| {
+        let area = m.work_area();
+        let work = Rect {
+            left: area.position.x,
+            top: area.position.y,
+            right: area.position.x + area.size.width as i32,
+            bottom: area.position.y + area.size.height as i32,
+        };
+        Some(maximized_outer_rect(
+            work,
+            native::overlapped_frame_insets().ok()?,
+        ))
+    });
+    native::set_first_show_exact_rect(exact);
     native::install_first_show_hook();
 }
 
@@ -696,7 +755,7 @@ pub fn end_first_show_maximize() {
 }
 
 #[cfg(not(windows))]
-pub fn begin_first_show_maximize(_no_transitions: bool) {}
+pub fn begin_first_show_maximize(_no_transitions: bool, _exact_on: Option<&tauri::Monitor>) {}
 
 #[cfg(not(windows))]
 pub fn end_first_show_maximize() {}
@@ -914,6 +973,26 @@ mod tests {
         assert_eq!(
             maximized_client_size(ours(), frame),
             PhysicalSize::new(2560, 1392 - 23)
+        );
+    }
+
+    #[test]
+    fn maximized_outer_rect_matches_what_windows_reports_for_a_maximized_window() {
+        // Measured at 100% DPI on a 2560x1392 work area: (-8,-8,2568,1400).
+        let frame = FrameInsets {
+            left: 8,
+            top: 31,
+            right: 8,
+            bottom: 8,
+        };
+        assert_eq!(
+            maximized_outer_rect(ours(), frame),
+            Rect {
+                left: -8,
+                top: -8,
+                right: 2568,
+                bottom: 1400,
+            }
         );
     }
 
