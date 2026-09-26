@@ -178,6 +178,19 @@ pub(crate) fn restored_outer_rect(
     }
 }
 
+/// EXPERIMENT (Issue #333, candidate B): client size of a window maximized on
+/// `work`, so a restored window born with it only moves (never re-lays out)
+/// when maximize_window maximizes it. A maximized frame hangs its border
+/// outside the work area on every side; only the caption eats into it.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn maximized_client_size(work: Rect, frame: FrameInsets) -> PhysicalSize<u32> {
+    let caption = frame.top - frame.bottom;
+    PhysicalSize::new(
+        (work.right - work.left).max(1) as u32,
+        (work.bottom - work.top - caption).max(1) as u32,
+    )
+}
+
 /// `WINDOWPLACEMENT.rcNormalPosition` is in workspace coordinates, which
 /// differ from screen coordinates by the PRIMARY work area's origin on every
 /// monitor (a taskbar docked at the top or left shifts them); a secondary
@@ -205,11 +218,12 @@ mod native {
     };
     use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowPlacement, GetWindowRect, IsIconic,
-        IsWindowVisible, SetWindowPlacement, SetWindowPos, SystemParametersInfoW, GWL_EXSTYLE,
-        GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HWND_TOP, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE,
-        WINDOW_STYLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
+        AdjustWindowRectEx, GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowPlacement,
+        GetWindowRect, IsIconic, IsWindowVisible, SetWindowPlacement, SetWindowPos,
+        SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HWND_TOP,
+        SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE,
+        WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE, WS_OVERLAPPEDWINDOW,
     };
 
     fn window_rect(hwnd: HWND) -> Option<Rect> {
@@ -330,6 +344,19 @@ mod native {
             )
         }
         .map_err(|e| format!("Failed to compute the window frame: {}", e))?;
+        Ok(FrameInsets {
+            left: -rect.left,
+            top: -rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+        })
+    }
+
+    /// Plain AdjustWindowRectEx (system DPI), as tao sizes a new window with it.
+    pub(super) fn overlapped_frame_insets() -> Result<FrameInsets, String> {
+        let mut rect = RECT::default();
+        unsafe { AdjustWindowRectEx(&mut rect, WS_OVERLAPPEDWINDOW, false, WINDOW_EX_STYLE(0)) }
+            .map_err(|e| format!("Failed to compute the window frame: {}", e))?;
         Ok(FrameInsets {
             left: -rect.left,
             top: -rect.top,
@@ -499,6 +526,35 @@ pub async fn maximize_window(app_handle: AppHandle) -> Result<(), String> {
     crate::utils::perf::phase("maximize_end", "");
 
     Ok(())
+}
+
+/// EXPERIMENT (Issue #333, candidate B): logical (position, inner size) for a
+/// restored window at the work area's top-left with the maximized client size.
+/// The maximized rect itself cannot be asked for: tao falls back to
+/// CW_USEDEFAULT for a position above the monitor's top edge.
+#[cfg(windows)]
+pub fn maximized_equivalent_geometry(monitor: &tauri::Monitor) -> Option<((f64, f64), (f64, f64))> {
+    let area = monitor.work_area();
+    let work = Rect {
+        left: area.position.x,
+        top: area.position.y,
+        right: area.position.x + area.size.width as i32,
+        bottom: area.position.y + area.size.height as i32,
+    };
+    let frame = native::overlapped_frame_insets().ok()?;
+    let size = maximized_client_size(work, frame);
+    let scale = monitor.scale_factor();
+    Some((
+        (work.left as f64 / scale, work.top as f64 / scale),
+        (size.width as f64 / scale, size.height as f64 / scale),
+    ))
+}
+
+#[cfg(not(windows))]
+pub fn maximized_equivalent_geometry(
+    _monitor: &tauri::Monitor,
+) -> Option<((f64, f64), (f64, f64))> {
+    None
 }
 
 pub struct ForegroundState {
@@ -693,6 +749,21 @@ mod tests {
             right: 2560,
             bottom: 1392,
         }
+    }
+
+    #[test]
+    fn maximized_client_size_keeps_the_work_width_and_drops_only_the_caption() {
+        // 100% DPI WS_OVERLAPPEDWINDOW: 8px border, 23px caption.
+        let frame = FrameInsets {
+            left: 8,
+            top: 31,
+            right: 8,
+            bottom: 8,
+        };
+        assert_eq!(
+            maximized_client_size(ours(), frame),
+            PhysicalSize::new(2560, 1392 - 23)
+        );
     }
 
     /// A launcher-like window that qualifies as covering ours.

@@ -63,11 +63,17 @@ pub fn run() {
                     .unwrap_or((0, 0));
                 commands::startup::start(path, screen);
             }
-            // EXPERIMENT (Issue #333, not for merge): a build with
-            // SPICA_EXP_WINDOWED_CREATE set at compile time is born 800x600
-            // as before #310, and the frontend's maximize_window maximizes it.
-            let maximized =
-                startup_file.is_some() && option_env!("SPICA_EXP_WINDOWED_CREATE").is_none();
+            // EXPERIMENT (Issue #333, not for merge): SPICA_EXP_CREATE at
+            // compile time picks how a launch with a file creates the window.
+            // "windowed": 800x600 as before #310. "maxrect" (candidate B):
+            // restored, on the maximized client size. Either way the
+            // frontend's maximize_window maximizes it later.
+            let create = match (&startup_file, option_env!("SPICA_EXP_CREATE")) {
+                (None, _) => "none",
+                (Some(_), Some(v)) => v,
+                (Some(_), None) => "maximized",
+            };
+            let maximized = create == "maximized";
             let config = app
                 .config()
                 .app
@@ -77,26 +83,37 @@ pub fn run() {
                 .cloned()
                 .ok_or("missing main window config")?;
             let title = commands::window::startup_title(&config.title, startup_file.as_deref());
-            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+            let mut builder = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .title(title)
                 .maximized(maximized)
                 .max_inner_size(
                     commands::window::MAX_TRACK_LOGICAL_PX,
                     commands::window::MAX_TRACK_LOGICAL_PX,
-                )
-                .build()?;
+                );
+            if create == "maxrect" {
+                if let Some(((x, y), (w, h))) = app
+                    .primary_monitor()
+                    .ok()
+                    .flatten()
+                    .and_then(|m| commands::window::maximized_equivalent_geometry(&m))
+                {
+                    builder = builder.position(x, y).inner_size(w, h);
+                }
+            }
+            let window = builder.build()?;
             let created_at = Instant::now();
             let _ = WINDOW_CREATED_AT.set(created_at);
             let fg = commands::window::foreground_state(&window);
             crate::utils::perf::phase(
                 "window_created",
                 &format!(
-                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{},"born_maximized":{}"#,
+                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{},"born_maximized":{},"create":"{}""#,
                     fg.is_ours,
                     fg.foreground,
                     commands::explorer_sort::foreground_at_launch().unwrap_or(0),
                     fg.z_above,
-                    maximized
+                    maximized,
+                    create
                 ),
             );
             commands::window::raise_startup_z(
