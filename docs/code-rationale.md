@@ -457,3 +457,53 @@ perf.log と 15ms ウォッチャー `scripts/zwatch.ps1` の結果が全ブロ�
 参照元: `src-tauri/src/commands/window.rs`（`FirstShowPlacement` / `maximize_born_window` /
 `maximized_outer_rect` / `centered_restored_rect` / `native::first_show_hook`）、
 `src-tauri/src/lib.rs`（`setup`）、Issue #333 のコメント（ブロックごとの計測）
+
+## W6
+
+**生成直後に WebView2 を隠し、ページのロード完了で表示する**
+
+ファイル付き起動で、最初の画像が出る直前に暗い灰色の矩形が一瞬（約 3 フレーム）見える
+（Issue #342）。矩形の色は録画で #131313、Chromium の about:blank をダーク配色で描いた色
+（#121212、Edge 153 の headless で実測）と一致する。仕組み:
+
+- wry（0.55）は `Navigate` の直後に WebView2 を可視化する。ナビゲーションが確定するまで
+  WebView2 は初期ページ about:blank を描いている。
+- tauri-runtime-wry は窓のテーマ（Windows の「アプリのモード」）を WebView2 プロファイルの
+  `PreferredColorScheme` に写す。ダークのとき Chromium は about:blank を #121212 の不透明な
+  キャンバスで描くので、設定の `backgroundColor: #000000`（`DefaultBackgroundColor` には届いて
+  いる）は透けない。
+- 窓は W1/W5 により生成時から見えているので、WebView2 の生成（`.build()` の戻り）から本アプリの
+  HTML の最初の描画までの間だけ about:blank が露出する。手元の 1 画素サンプリングでは、起動
+  743〜791ms が #121212、その前後は #000000（`scripts/startup-frames.ps1`）。
+
+実装:
+- `.build()` の直後に `Webview::hide()`（`hide_webview_until_loaded`）。wry は WebView2 を
+  `WRY_WEBVIEW` クラスの子 HWND に入れているので、隠れるのは WebView2 だけで、トップレベルの窓
+  （黒いブラシ）、W5 の配置、W3 の前面化は影響を受けない。`setup` はメインスレッドなので、
+  tauri-runtime-wry はメッセージを同期に処理する（Chromium がフレームを出す前に隠れる）。
+- `on_page_load` の `Finished`（`NavigationCompleted` ＝ document の load）で `show()` と
+  `set_focus()`（`reveal_webview`）。load の時点でレンダーブロッキングの CSS は適用済みなので、
+  表示後の最初のフレームは本アプリの黒になる。`Started`（`ContentLoading`）は CSS 適用前の
+  可能性があるので使わない。
+- 隠している間に動く本アプリの JS は、`main.tsx` の実行から load までの数 ms だけ
+  （`app:script_start` → `page_load_finished` は 3ms）。非表示ページのタイマー抑制や rAF 停止が
+  画像ロード（`open:request` 以降）に及ぶことはない。
+- 保険: `WEBVIEW_REVEAL_FALLBACK`（3 秒）後に別スレッドから `reveal_webview`。ページロードが
+  来ない（dev サーバー停止、ナビゲーション失敗）場合でも窓が黒いまま操作不能にならない。
+  どちらが先でも 1 回だけ作用する（`first_reveal`）。
+- ファイル付きかどうかによらず適用する。ウェルカム画面の起動でも同じ露出がある。
+
+**採らない案**:
+- 窓を非表示で生成し、ロード後に表示する（Tauri の定番）。W5 が避けた「最初の表示が
+  `SW_MAXIMIZE`」に戻るうえ、窓が出るのが WebView2 の初期化分（約 0.5 秒）遅れる。
+- WebView2 の配色を Light にする。about:blank が白になり、より目立つ。窓のテーマ（タイトルバー）
+  とも連動している。
+- 表示の引き金をフロント（最初の画像データの到着）にする。隠れている間に `setTimeout(0)` を
+  使う画像ロードが動くことになり、非表示ページのタイマー抑制で遅れる恐れがある。
+
+トレース: `webview_hidden`（`ok` / `err`）と `webview_shown`（`by`: `page_load_finished` /
+`fallback`、`ok` / `err`）。
+
+参照元: `src-tauri/src/commands/window.rs`（`hide_webview_until_loaded` / `reveal_webview` /
+`WEBVIEW_REVEAL_FALLBACK`）、`src-tauri/src/lib.rs`（`setup`、`on_page_load`）、
+`scripts/startup-frames.ps1`

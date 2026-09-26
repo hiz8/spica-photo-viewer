@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 
@@ -653,6 +653,57 @@ impl Drop for FirstShowPlacement {
     }
 }
 
+/// Set by the first `reveal_webview` (W6).
+static WEBVIEW_REVEALED: AtomicBool = AtomicBool::new(false);
+
+/// A page load that never finishes (dev server down, navigation error) must
+/// not leave the window a black, unusable rectangle: the WebView2 is shown
+/// anyway after this long (W6). Well past a warm launch's page load (~85ms
+/// after the build) so the fallback never wins on a normal launch.
+pub const WEBVIEW_REVEAL_FALLBACK: Duration = Duration::from_secs(3);
+
+/// Hides the freshly built WebView2 until `reveal_webview`. Between the build
+/// and the page's first paint the WebView2 shows Chromium's about:blank,
+/// which the dark theme paints #121212 for ~3 frames over the window's black
+/// (Issue #342, W6). Hidden, the window's own black brush shows instead.
+pub fn hide_webview_until_loaded(window: &tauri::WebviewWindow) {
+    let webview: &tauri::Webview = window.as_ref();
+    match webview.hide() {
+        Ok(()) => crate::utils::perf::phase("webview_hidden", r#","ok":true"#),
+        Err(e) => {
+            crate::utils::perf::phase("webview_hidden", &format!(r#","ok":false,"err":{:?}"#, e));
+            return;
+        }
+    }
+    let fallback = webview.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(WEBVIEW_REVEAL_FALLBACK);
+        reveal_webview(&fallback, "fallback");
+    });
+}
+
+/// Shows the WebView2 hidden by `hide_webview_until_loaded` and gives it the
+/// keyboard focus the hide took away. Only the first call acts (the page load
+/// and the fallback thread race for it); returns whether this call did.
+pub fn reveal_webview(webview: &tauri::Webview, by: &str) -> bool {
+    if !first_reveal(&WEBVIEW_REVEALED) {
+        return false;
+    }
+    let result = webview.show().and_then(|()| webview.set_focus());
+    crate::utils::perf::phase(
+        "webview_shown",
+        &match result {
+            Ok(()) => format!(r#","by":{:?},"ok":true"#, by),
+            Err(e) => format!(r#","by":{:?},"ok":false,"err":{:?}"#, by, e),
+        },
+    );
+    true
+}
+
+fn first_reveal(flag: &AtomicBool) -> bool {
+    !flag.swap(true, Ordering::SeqCst)
+}
+
 /// Maximizes the window born by `FirstShowPlacement` and points its restore
 /// rect at `restored` (logical px) centered on the monitor, which is where a
 /// maximized-born window restored to; otherwise Restore would keep the
@@ -791,6 +842,14 @@ pub fn raise_startup_z(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_reveal_acts_once_per_flag() {
+        let flag = AtomicBool::new(false);
+        assert!(first_reveal(&flag));
+        assert!(!first_reveal(&flag));
+        assert!(!first_reveal(&flag));
+    }
 
     fn client(left: f64, top: f64, width: f64, height: f64) -> ClientBox {
         ClientBox {
