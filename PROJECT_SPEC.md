@@ -563,7 +563,7 @@ Run the following **while the symptom is on screen** and paste the output into a
 
 What to look at: `foreground.proc` (the process that owns the foreground window), `foreground.gui_flags` (0x4 / 0x8 / 0x10 mean the foreground thread is in menu mode), `foreground.gui_capture` (non-zero means that thread holds the mouse capture), `spica[].pump_ms` (main-thread responsiveness), `spica[].gui_active` and `spica[].above` (windows above Spica in z-order while `is_foreground` is true). The decision table that maps these observations to causes is in `docs/superpowers/specs/2026-09-20-explorer-launch-foreground-checklist.md`.
 
-The case seen in the field so far is "Spica **is** the foreground window but the launching Explorer window sits above it in z-order" (a click does nothing because the window is already active). Spica corrects this itself right after launch (`docs/code-rationale.md` W3); with `SPICA_PERF_FILE` set, that launch shows `z_above` in the `window_created` line and a `z_raise` line in the log.
+The case seen in the field so far is "Spica **is** the foreground window but the launching Explorer window sits above it in z-order" (a click does nothing because the window is already active). Its trigger, a first show by `SW_MAXIMIZE`, is avoided by creating the window restored on the maximized rect (`docs/code-rationale.md` W5), and Spica still corrects the state itself right after launch if it happens (W3); with `SPICA_PERF_FILE` set, that launch shows `z_above` in the `window_created` line and a `z_raise` line in the log.
 
 ---
 

@@ -46,11 +46,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             crate::utils::perf::phase("setup", "");
-            // The main window is created here (config `create: false`) so it
-            // can be born maximized when launched with a file. A config
-            // window would first show at 800x600 and jump only when the
-            // frontend calls maximize_window ~500ms later (after WebView2
-            // init + page load + React mount).
+            // The main window is created here (config `create: false`) so a
+            // launch with a file can be born full-size. A config window would
+            // first show at 800x600 and jump only when the frontend calls
+            // maximize_window ~500ms later (after WebView2 init + page load +
+            // React mount).
             let startup_file = commands::file::startup_file_from_args();
             let _ = LAUNCHED_WITH_FILE.set(startup_file.is_some());
             if let Some(path) = &startup_file {
@@ -63,7 +63,6 @@ pub fn run() {
                     .unwrap_or((0, 0));
                 commands::startup::start(path, screen);
             }
-            let maximized = startup_file.is_some();
             let config = app
                 .config()
                 .app
@@ -73,14 +72,20 @@ pub fn run() {
                 .cloned()
                 .ok_or("missing main window config")?;
             let title = commands::window::startup_title(&config.title, startup_file.as_deref());
+            // Not `.maximized(true)`: a first show by SW_MAXIMIZE makes the
+            // launching Explorer window rise over ours (W5). The window is
+            // born restored on the maximized rect and maximized once built.
+            let placement =
+                launched_with_file().then(commands::window::FirstShowPlacement::install);
             let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .title(title)
-                .maximized(maximized)
                 .max_inner_size(
                     commands::window::MAX_TRACK_LOGICAL_PX,
                     commands::window::MAX_TRACK_LOGICAL_PX,
                 )
-                .build()?;
+                .build();
+            drop(placement);
+            let window = window?;
             let created_at = Instant::now();
             let _ = WINDOW_CREATED_AT.set(created_at);
             let fg = commands::window::foreground_state(&window);
@@ -94,6 +99,18 @@ pub fn run() {
                     fg.z_above
                 ),
             );
+            // After the trace, so z_above still shows what the first show left.
+            if launched_with_file() {
+                let result =
+                    commands::window::maximize_born_window(&window, (config.width, config.height));
+                crate::utils::perf::phase(
+                    "startup_maximize",
+                    &match result {
+                        Ok(()) => r#","ok":true"#.to_string(),
+                        Err(e) => format!(r#","ok":false,"err":{:?}"#, e),
+                    },
+                );
+            }
             commands::window::raise_startup_z(
                 &window,
                 launched_with_file(),

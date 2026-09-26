@@ -192,24 +192,62 @@ pub(crate) fn to_workspace(rect: Rect, work_area_origin: PhysicalPosition<i32>) 
     }
 }
 
+/// Outer rect Windows gives a window maximized on `work`: the resize border
+/// hangs outside the work area on every side (W5).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn maximized_outer_rect(work: Rect, frame: FrameInsets) -> Rect {
+    Rect {
+        left: work.left - frame.left,
+        top: work.top - frame.bottom,
+        right: work.right + frame.right,
+        bottom: work.bottom + frame.bottom,
+    }
+}
+
+/// Outer rect of a `client`-sized restored window centered in `work`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn centered_restored_rect(
+    work: Rect,
+    client: PhysicalSize<u32>,
+    frame: FrameInsets,
+) -> Rect {
+    let width = client.width as i32 + frame.left + frame.right;
+    let height = client.height as i32 + frame.top + frame.bottom;
+    let left = work.left + (work.right - work.left - width) / 2;
+    let top = work.top + (work.bottom - work.top - height) / 2;
+    Rect {
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+    }
+}
+
 #[cfg(windows)]
 mod native {
     use super::{FrameInsets, Rect, ZWindow};
     use std::ffi::c_void;
+    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
     use tauri::PhysicalPosition;
     use windows::core::BOOL;
-    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::{
         DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_CLOAKED,
         DWMWA_TRANSITIONS_FORCEDISABLED,
     };
-    use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowPlacement, GetWindowRect, IsIconic,
-        IsWindowVisible, SetWindowPlacement, SetWindowPos, SystemParametersInfoW, GWL_EXSTYLE,
-        GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HWND_TOP, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE,
-        WINDOW_STYLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
+        CallNextHookEx, GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowPlacement,
+        GetWindowRect, IsIconic, IsWindowVisible, SetWindowPlacement, SetWindowPos,
+        SetWindowsHookExW, SystemParametersInfoW, UnhookWindowsHookEx, CWPRETSTRUCT, GWL_EXSTYLE,
+        GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HC_ACTION, HHOOK, HWND_TOP, SPI_GETWORKAREA,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        WH_CALLWNDPROCRET, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CREATE, WS_CAPTION,
+        WS_CHILD, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
     };
 
     fn window_rect(hwnd: HWND) -> Option<Rect> {
@@ -352,6 +390,98 @@ mod native {
         }
         .map_err(|e| format!("Failed to read the work area: {}", e))?;
         Ok(PhysicalPosition::new(rect.left, rect.top))
+    }
+
+    static FIRST_SHOW_HOOK: AtomicIsize = AtomicIsize::new(0);
+    static FIRST_SHOW_PLACED: AtomicBool = AtomicBool::new(false);
+
+    /// The WebView2 windows are children and tao's event-target window exists
+    /// before `.build()`, so the first captioned top-level one is the main window.
+    fn is_captioned_top_level(hwnd: HWND) -> bool {
+        let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+        style & WS_CAPTION.0 == WS_CAPTION.0 && style & WS_CHILD.0 == 0
+    }
+
+    /// The monitor is the one the OS placed the window on (CW_USEDEFAULT), which
+    /// is where maximized creation used to maximize it.
+    fn place_on_maximized_rect(hwnd: HWND) -> Result<Rect, String> {
+        let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+            return Err("Failed to read the monitor's work area".to_string());
+        }
+        let work = Rect {
+            left: info.rcWork.left,
+            top: info.rcWork.top,
+            right: info.rcWork.right,
+            bottom: info.rcWork.bottom,
+        };
+        let rect = super::maximized_outer_rect(
+            work,
+            frame_insets(hwnd, unsafe { GetDpiForWindow(hwnd) })?,
+        );
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                None,
+                rect.left,
+                rect.top,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        }
+        .map_err(|e| format!("Failed to place the window: {}", e))?;
+        Ok(rect)
+    }
+
+    /// WH_CALLWNDPROCRET sees WM_CREATE after the window procedure ran and
+    /// before CreateWindowEx returns, so tao has not shown the window yet.
+    unsafe extern "system" fn first_show_hook(
+        code: i32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if code == HC_ACTION as i32 && !FIRST_SHOW_PLACED.load(Ordering::Relaxed) {
+            let msg = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
+            if msg.message == WM_CREATE && is_captioned_top_level(msg.hwnd) {
+                FIRST_SHOW_PLACED.store(true, Ordering::Relaxed);
+                let extra = match place_on_maximized_rect(msg.hwnd) {
+                    Ok(r) => format!(
+                        r#","ok":true,"rect":[{},{},{},{}]"#,
+                        r.left, r.top, r.right, r.bottom
+                    ),
+                    Err(e) => format!(r#","ok":false,"err":{:?}"#, e),
+                };
+                crate::utils::perf::phase("first_show_rect", &extra);
+            }
+        }
+        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    pub(super) fn install_first_show_hook() -> Result<(), String> {
+        FIRST_SHOW_PLACED.store(false, Ordering::Relaxed);
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_CALLWNDPROCRET,
+                Some(first_show_hook),
+                None,
+                GetCurrentThreadId(),
+            )
+        }
+        .map_err(|e| format!("Failed to hook window creation: {}", e))?;
+        FIRST_SHOW_HOOK.store(hook.0 as isize, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub(super) fn remove_first_show_hook() {
+        let raw = FIRST_SHOW_HOOK.swap(0, Ordering::Relaxed);
+        if raw != 0 {
+            let _ = unsafe { UnhookWindowsHookEx(HHOOK(raw as *mut c_void)) };
+        }
     }
 
     /// Rewrites only the rect the next SW_RESTORE lands on; the show state is
@@ -498,6 +628,66 @@ pub async fn maximize_window(app_handle: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to maximize window: {}", e))?;
     crate::utils::perf::phase("maximize_end", "");
 
+    Ok(())
+}
+
+/// While alive, the main window `.build()` creates is born on the maximized
+/// outer rect of its monitor, restored (docs/code-rationale.md#W5). Drop it
+/// right after `.build()` so no later window is touched.
+pub struct FirstShowPlacement(());
+
+impl FirstShowPlacement {
+    pub fn install() -> Self {
+        #[cfg(windows)]
+        if let Err(e) = native::install_first_show_hook() {
+            crate::utils::perf::phase("first_show_rect", &format!(r#","ok":false,"err":{:?}"#, e));
+        }
+        FirstShowPlacement(())
+    }
+}
+
+impl Drop for FirstShowPlacement {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        native::remove_first_show_hook();
+    }
+}
+
+/// Maximizes the window born by `FirstShowPlacement` and points its restore
+/// rect at `restored` (logical px) centered on the monitor, which is where a
+/// maximized-born window restored to; otherwise Restore would keep the
+/// maximized rect (W5).
+#[cfg_attr(not(windows), allow(unused_variables))]
+pub fn maximize_born_window(
+    window: &tauri::WebviewWindow,
+    restored: (f64, f64),
+) -> Result<(), String> {
+    window
+        .maximize()
+        .map_err(|e| format!("Failed to maximize window: {}", e))?;
+    #[cfg(windows)]
+    {
+        let monitor = window
+            .current_monitor()
+            .map_err(|e| format!("Failed to get the monitor: {}", e))?
+            .ok_or("Window is on no monitor")?;
+        let area = monitor.work_area();
+        let work = Rect {
+            left: area.position.x,
+            top: area.position.y,
+            right: area.position.x + area.size.width as i32,
+            bottom: area.position.y + area.size.height as i32,
+        };
+        let scale = monitor.scale_factor();
+        let client = PhysicalSize::new(
+            (restored.0 * scale).round() as u32,
+            (restored.1 * scale).round() as u32,
+        );
+        let hwnd = native::hwnd_of(window)?;
+        let frame = native::frame_insets(hwnd, (scale * 96.0).round() as u32)?;
+        let outer = centered_restored_rect(work, client, frame);
+        native::set_restore_rect(hwnd, to_workspace(outer, native::work_area_origin()?))?;
+    }
     Ok(())
 }
 
@@ -693,6 +883,76 @@ mod tests {
             right: 2560,
             bottom: 1392,
         }
+    }
+
+    /// WS_OVERLAPPEDWINDOW at 100% DPI.
+    fn frame_100() -> FrameInsets {
+        FrameInsets {
+            left: 8,
+            top: 31,
+            right: 8,
+            bottom: 8,
+        }
+    }
+
+    #[test]
+    fn maximized_outer_rect_matches_what_windows_reports() {
+        // GetWindowRect of a maximized window on a 2560x1392 work area.
+        assert_eq!(
+            maximized_outer_rect(ours(), frame_100()),
+            Rect {
+                left: -8,
+                top: -8,
+                right: 2568,
+                bottom: 1400
+            }
+        );
+    }
+
+    #[test]
+    fn maximized_outer_rect_follows_a_work_area_off_the_origin() {
+        // Taskbar docked on the left of a secondary monitor.
+        let work = Rect {
+            left: 2608,
+            top: 0,
+            right: 5120,
+            bottom: 1440,
+        };
+        assert_eq!(
+            maximized_outer_rect(work, frame_100()),
+            Rect {
+                left: 2600,
+                top: -8,
+                right: 5128,
+                bottom: 1448
+            }
+        );
+    }
+
+    #[test]
+    fn centered_restored_rect_wraps_the_client_in_the_frame_at_the_center() {
+        // The config's 800x600 restores to an 816x639 outer rect.
+        assert_eq!(
+            centered_restored_rect(ours(), PhysicalSize::new(800, 600), frame_100()),
+            Rect {
+                left: 872,
+                top: 376,
+                right: 1688,
+                bottom: 1015
+            }
+        );
+    }
+
+    #[test]
+    fn centered_restored_rect_is_relative_to_the_work_area() {
+        let work = Rect {
+            left: 2560,
+            top: 40,
+            right: 5120,
+            bottom: 1480,
+        };
+        let rect = centered_restored_rect(work, PhysicalSize::new(800, 600), frame_100());
+        assert_eq!((rect.left, rect.top), (2560 + 872, 40 + 400));
     }
 
     /// A launcher-like window that qualifies as covering ours.
