@@ -565,6 +565,14 @@ What to look at: `foreground.proc` (the process that owns the foreground window)
 
 The case seen in the field so far is "Spica **is** the foreground window but the launching Explorer window sits above it in z-order" (a click does nothing because the window is already active). Its trigger, a first show by `SW_MAXIMIZE`, is avoided by creating the window restored on the maximized rect (`docs/code-rationale.md` W5), and Spica still corrects the state itself right after launch if it happens (W3); with `SPICA_PERF_FILE` set, that launch shows `z_above` in the `window_created` line and a `z_raise` line in the log.
 
+### A dark-gray flash right before the first image after launch
+
+Before the page's first paint the WebView2 shows Chromium's about:blank, which the Windows dark theme paints #121212 over the window's black. Spica hides the WebView2 right after its creation until the page has loaded (`docs/code-rationale.md` W6; best effort, since the hide is dispatched after wry has already shown the WebView2). A launch with `SPICA_PERF_FILE` set logs `webview_hidden` and `webview_shown` (`by` is `page_load_finished`, or `fallback` when the page never loaded and the 10 s safety net showed it); both record that the call was dispatched, not that WebView2 applied it. To time such frames, sample the screen during a launch (with the display on):
+
+    powershell -ExecutionPolicy Bypass -File scripts\startup-frames.ps1 -File <image> [-Exe <spica-photo-viewer.exe>] [-Runs 10]
+
+It prints, per launch, how long each colour stayed at two sample points, the median gap between samples (a flash shorter than that can slip between two samples, so judge the total over all runs) and the time spent within a small tolerance of #121212 (0 ms expected on every run).
+
 ---
 
 ## PROJECT COMPLETION STATUS

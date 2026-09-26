@@ -86,6 +86,10 @@ pub fn run() {
                 .build();
             drop(placement);
             let window = window?;
+            // First thing after the build: wry showed the WebView2 (on
+            // about:blank) at the end of it, and the hide has to land before
+            // Chromium presents a frame (W6).
+            commands::window::hide_webview_until_loaded(&window);
             let created_at = Instant::now();
             let _ = WINDOW_CREATED_AT.set(created_at);
             let fg = commands::window::foreground_state(&window);
@@ -127,9 +131,14 @@ pub fn run() {
             };
             crate::utils::perf::phase(name, "");
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                if let (Some(window), Some(&created_at)) =
-                    (webview.get_webview_window("main"), WINDOW_CREATED_AT.get())
-                {
+                let window = webview.get_webview_window("main");
+                if let Some(window) = &window {
+                    // The document's load event: its render-blocking CSS is
+                    // applied, so the first frame after the show is the page's
+                    // own (W6).
+                    commands::window::reveal_webview(window, "page_load_finished");
+                }
+                if let (Some(window), Some(&created_at)) = (window, WINDOW_CREATED_AT.get()) {
                     commands::window::raise_startup_z(
                         &window,
                         launched_with_file(),
