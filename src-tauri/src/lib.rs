@@ -95,11 +95,13 @@ pub fn run() {
                 commands::window::spawn_early_maximize();
             }
             // "sync" (candidate G): maxrect, maximized synchronously on the
-            // first show.
-            if create == "sync" {
-                commands::window::begin_first_show_maximize();
+            // first show. "quiet" (candidate H): sync with DWM transitions off
+            // until the window is built.
+            let hooked = create == "sync" || create == "quiet";
+            if hooked {
+                commands::window::begin_first_show_maximize(create == "quiet");
             }
-            if create == "maxrect" || create == "early" || create == "sync" {
+            if create == "maxrect" || create == "early" || hooked {
                 if let Some(((x, y), (w, h))) = app
                     .primary_monitor()
                     .ok()
@@ -110,7 +112,7 @@ pub fn run() {
                 }
             }
             let window = builder.build();
-            if create == "sync" {
+            if hooked {
                 commands::window::end_first_show_maximize();
             }
             let window = window?;

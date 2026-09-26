@@ -229,7 +229,7 @@ mod native {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, CWPRETSTRUCT, HC_ACTION, HHOOK,
-        SWP_SHOWWINDOW, WH_CALLWNDPROCRET, WINDOWPOS, WM_WINDOWPOSCHANGED, WS_CHILD,
+        SWP_SHOWWINDOW, WH_CALLWNDPROCRET, WINDOWPOS, WM_CREATE, WM_WINDOWPOSCHANGED, WS_CHILD,
     };
 
     fn window_rect(hwnd: HWND) -> Option<Rect> {
@@ -389,6 +389,14 @@ mod native {
         use std::sync::atomic::Ordering;
         if code == HC_ACTION as i32 && !FIRST_SHOW_DONE.load(Ordering::Relaxed) {
             let msg = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
+            if msg.message == WM_CREATE && NO_TRANSITIONS.load(Ordering::Relaxed) {
+                let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
+                if style & WS_CAPTION.0 == WS_CAPTION.0 && style & WS_CHILD.0 == 0 {
+                    let ok = set_transitions_disabled(msg.hwnd, true).is_ok();
+                    NO_TRANSITIONS_HWND.store(msg.hwnd.0 as isize, Ordering::Relaxed);
+                    crate::utils::perf::phase("transitions_off", &format!(r#","ok":{ok}"#));
+                }
+            }
             if msg.message == WM_WINDOWPOSCHANGED {
                 let pos = unsafe { &*(msg.lParam.0 as *const WINDOWPOS) };
                 let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
@@ -404,6 +412,17 @@ mod native {
             }
         }
         unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    static NO_TRANSITIONS: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    static NO_TRANSITIONS_HWND: std::sync::atomic::AtomicIsize =
+        std::sync::atomic::AtomicIsize::new(0);
+
+    /// Candidate H: DWM transitions stay off from WM_CREATE until the hook is
+    /// removed, so neither the restored open animation nor the maximize one plays.
+    pub(super) fn set_first_show_no_transitions(on: bool) {
+        NO_TRANSITIONS.store(on, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub(super) fn install_first_show_hook() {
@@ -428,6 +447,11 @@ mod native {
         let raw = FIRST_SHOW_HOOK.swap(0, std::sync::atomic::Ordering::Relaxed);
         if raw != 0 {
             let _ = unsafe { UnhookWindowsHookEx(HHOOK(raw as *mut c_void)) };
+        }
+        let hwnd = NO_TRANSITIONS_HWND.swap(0, std::sync::atomic::Ordering::Relaxed);
+        if hwnd != 0 {
+            let ok = set_transitions_disabled(HWND(hwnd as *mut c_void), false).is_ok();
+            crate::utils::perf::phase("transitions_on", &format!(r#","ok":{ok}"#));
         }
     }
 
@@ -661,7 +685,8 @@ pub fn spawn_early_maximize() {}
 /// SW_MAXIMIZE, before DWM composes a frame of the restored state. Call
 /// before `.build()` and pair with `end_first_show_maximize` after it.
 #[cfg(windows)]
-pub fn begin_first_show_maximize() {
+pub fn begin_first_show_maximize(no_transitions: bool) {
+    native::set_first_show_no_transitions(no_transitions);
     native::install_first_show_hook();
 }
 
@@ -671,7 +696,7 @@ pub fn end_first_show_maximize() {
 }
 
 #[cfg(not(windows))]
-pub fn begin_first_show_maximize() {}
+pub fn begin_first_show_maximize(_no_transitions: bool) {}
 
 #[cfg(not(windows))]
 pub fn end_first_show_maximize() {}
