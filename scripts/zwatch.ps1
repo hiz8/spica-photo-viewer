@@ -34,18 +34,38 @@ public static class ZWatch {
   [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtrW(IntPtr h, int i);
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
   [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("kernel32.dll")] static extern bool GetProcessTimes(IntPtr h, out long created, out long exited, out long kernel, out long user);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
 
   const uint GW_HWNDNEXT = 2;
   const int GWL_EXSTYLE = -20;
   const long WS_EX_TOOLWINDOW = 0x80;
+  const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
   public static string TargetProc = "spica-photo-viewer";
-  static readonly Dictionary<uint, string> names = new Dictionary<uint, string>();
+  // Keyed by (pid, creation time): every launch starts new processes, and a
+  // reused pid must not inherit an exited process's name.
+  static readonly Dictionary<KeyValuePair<uint, long>, string> names = new Dictionary<KeyValuePair<uint, long>, string>();
+  static long CreatedAt(uint pid) {
+    IntPtr h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+    if (h == IntPtr.Zero) return 0;
+    long created, exited, kernel, user;
+    bool ok = GetProcessTimes(h, out created, out exited, out kernel, out user);
+    CloseHandle(h);
+    return ok ? created : 0;
+  }
   static string Proc(uint pid) {
+    long created = CreatedAt(pid);
+    // Unreadable (exited, or protected): look it up but do not cache.
+    if (created == 0) {
+      try { return Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; }
+    }
+    var key = new KeyValuePair<uint, long>(pid, created);
     string n;
-    if (names.TryGetValue(pid, out n)) return n;
-    try { n = Process.GetProcessById((int)pid).ProcessName; } catch { n = "?"; }
-    names[pid] = n; return n;
+    if (names.TryGetValue(key, out n)) return n;
+    try { n = Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; }
+    names[key] = n; return n;
   }
   static string Cls(IntPtr h) { var sb = new StringBuilder(64); GetClassNameW(h, sb, 64); return sb.ToString(); }
   static string Hex(IntPtr h) { return "0x" + h.ToInt64().ToString("X"); }
