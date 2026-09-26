@@ -567,11 +567,11 @@ The case seen in the field so far is "Spica **is** the foreground window but the
 
 ### A dark-gray flash right before the first image after launch
 
-Before the page's first paint the WebView2 shows Chromium's about:blank, which the Windows dark theme paints #121212 over the window's black. Spica hides the WebView2 from its creation until the page has loaded (`docs/code-rationale.md` W6); a launch with `SPICA_PERF_FILE` set logs `webview_hidden` and `webview_shown` (`by` is `page_load_finished`, or `fallback` when the page never loaded and the 3 s safety net showed it). To count such frames, sample the screen during a launch:
+Before the page's first paint the WebView2 shows Chromium's about:blank, which the Windows dark theme paints #121212 over the window's black. Spica hides the WebView2 right after its creation until the page has loaded (`docs/code-rationale.md` W6; best effort, since the hide is dispatched after wry has already shown the WebView2). A launch with `SPICA_PERF_FILE` set logs `webview_hidden` and `webview_shown` (`by` is `page_load_finished`, or `fallback` when the page never loaded and the 10 s safety net showed it); both record that the call was dispatched, not that WebView2 applied it. To time such frames, sample the screen during a launch (with the display on):
 
     powershell -ExecutionPolicy Bypass -File scripts\startup-frames.ps1 -File <image> [-Exe <spica-photo-viewer.exe>] [-Runs 10]
 
-It prints, per launch, how long each colour stayed at two sample points and the total time spent on #121212 (0 ms expected).
+It prints, per launch, how long each colour stayed at two sample points, the median gap between samples (a flash shorter than that can slip between two samples, so judge the total over all runs) and the time spent within a small tolerance of #121212 (0 ms expected on every run).
 
 ---
 
