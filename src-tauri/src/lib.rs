@@ -90,7 +90,11 @@ pub fn run() {
                     commands::window::MAX_TRACK_LOGICAL_PX,
                     commands::window::MAX_TRACK_LOGICAL_PX,
                 );
-            if create == "maxrect" {
+            // "early" (candidate F): maxrect, then maximized as soon as shown.
+            if create == "early" {
+                commands::window::spawn_early_maximize();
+            }
+            if create == "maxrect" || create == "early" {
                 if let Some(((x, y), (w, h))) = app
                     .primary_monitor()
                     .ok()

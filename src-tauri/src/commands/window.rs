@@ -211,19 +211,20 @@ mod native {
     use std::ffi::c_void;
     use tauri::PhysicalPosition;
     use windows::core::BOOL;
-    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::Graphics::Dwm::{
         DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_CLOAKED,
         DWMWA_TRANSITIONS_FORCEDISABLED,
     };
     use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
     use windows::Win32::UI::WindowsAndMessaging::{
-        AdjustWindowRectEx, GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowPlacement,
-        GetWindowRect, IsIconic, IsWindowVisible, SetWindowPlacement, SetWindowPos,
-        SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HWND_TOP,
-        SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE,
-        WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE, WS_OVERLAPPEDWINDOW,
+        AdjustWindowRectEx, EnumWindows, GetTopWindow, GetWindow, GetWindowLongPtrW,
+        GetWindowPlacement, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+        SetWindowPlacement, SetWindowPos, ShowWindow, SystemParametersInfoW, GWL_EXSTYLE,
+        GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HWND_TOP, SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SW_MAXIMIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT,
+        WINDOW_EX_STYLE, WINDOW_STYLE, WS_CAPTION, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
+        WS_OVERLAPPEDWINDOW,
     };
 
     fn window_rect(hwnd: HWND) -> Option<Rect> {
@@ -350,6 +351,29 @@ mod native {
             right: rect.right,
             bottom: rect.bottom,
         })
+    }
+
+    pub(super) fn own_visible_captioned_window() -> Option<HWND> {
+        unsafe extern "system" fn visit(hwnd: HWND, found: LPARAM) -> BOOL {
+            let mut pid = 0u32;
+            unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+            let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+            if pid == std::process::id()
+                && unsafe { IsWindowVisible(hwnd) }.as_bool()
+                && style & WS_CAPTION.0 == WS_CAPTION.0
+            {
+                unsafe { *(found.0 as *mut isize) = hwnd.0 as isize };
+                return BOOL(0);
+            }
+            BOOL(1)
+        }
+        let mut found: isize = 0;
+        let _ = unsafe { EnumWindows(Some(visit), LPARAM(&mut found as *mut isize as isize)) };
+        (found != 0).then_some(HWND(found as *mut c_void))
+    }
+
+    pub(super) fn show_maximized(hwnd: HWND) {
+        let _ = unsafe { ShowWindow(hwnd, SW_MAXIMIZE) };
     }
 
     /// Plain AdjustWindowRectEx (system DPI), as tao sizes a new window with it.
@@ -549,6 +573,29 @@ pub fn maximized_equivalent_geometry(monitor: &tauri::Monitor) -> Option<((f64, 
         (size.width as f64 / scale, size.height as f64 / scale),
     ))
 }
+
+/// EXPERIMENT (Issue #333, candidate F): maximizes our captioned top-level
+/// window as soon as it is visible, while `.build()` is still blocked in
+/// WebView2 init (which pumps messages, so the cross-thread ShowWindow runs).
+#[cfg(windows)]
+pub fn spawn_early_maximize() {
+    std::thread::spawn(|| {
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(3) {
+            if let Some(hwnd) = native::own_visible_captioned_window() {
+                crate::utils::perf::phase("early_maximize_start", "");
+                native::show_maximized(hwnd);
+                crate::utils::perf::phase("early_maximize_end", "");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        crate::utils::perf::phase("early_maximize_timeout", "");
+    });
+}
+
+#[cfg(not(windows))]
+pub fn spawn_early_maximize() {}
 
 #[cfg(not(windows))]
 pub fn maximized_equivalent_geometry(
