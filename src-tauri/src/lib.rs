@@ -94,7 +94,12 @@ pub fn run() {
             if create == "early" {
                 commands::window::spawn_early_maximize();
             }
-            if create == "maxrect" || create == "early" {
+            // "sync" (candidate G): maxrect, maximized synchronously on the
+            // first show.
+            if create == "sync" {
+                commands::window::begin_first_show_maximize();
+            }
+            if create == "maxrect" || create == "early" || create == "sync" {
                 if let Some(((x, y), (w, h))) = app
                     .primary_monitor()
                     .ok()
@@ -104,7 +109,11 @@ pub fn run() {
                     builder = builder.position(x, y).inner_size(w, h);
                 }
             }
-            let window = builder.build()?;
+            let window = builder.build();
+            if create == "sync" {
+                commands::window::end_first_show_maximize();
+            }
+            let window = window?;
             let created_at = Instant::now();
             let _ = WINDOW_CREATED_AT.set(created_at);
             let fg = commands::window::foreground_state(&window);

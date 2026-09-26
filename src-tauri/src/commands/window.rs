@@ -211,11 +211,12 @@ mod native {
     use std::ffi::c_void;
     use tauri::PhysicalPosition;
     use windows::core::BOOL;
-    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::{
         DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_CLOAKED,
         DWMWA_TRANSITIONS_FORCEDISABLED,
     };
+    use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
     use windows::Win32::UI::WindowsAndMessaging::{
         AdjustWindowRectEx, EnumWindows, GetTopWindow, GetWindow, GetWindowLongPtrW,
@@ -225,6 +226,10 @@ mod native {
         SWP_NOSIZE, SW_MAXIMIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT,
         WINDOW_EX_STYLE, WINDOW_STYLE, WS_CAPTION, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
         WS_OVERLAPPEDWINDOW,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, CWPRETSTRUCT, HC_ACTION, HHOOK,
+        SWP_SHOWWINDOW, WH_CALLWNDPROCRET, WINDOWPOS, WM_WINDOWPOSCHANGED, WS_CHILD,
     };
 
     fn window_rect(hwnd: HWND) -> Option<Rect> {
@@ -370,6 +375,60 @@ mod native {
         let mut found: isize = 0;
         let _ = unsafe { EnumWindows(Some(visit), LPARAM(&mut found as *mut isize as isize)) };
         (found != 0).then_some(HWND(found as *mut c_void))
+    }
+
+    static FIRST_SHOW_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+    static FIRST_SHOW_DONE: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    unsafe extern "system" fn first_show_proc(
+        code: i32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        use std::sync::atomic::Ordering;
+        if code == HC_ACTION as i32 && !FIRST_SHOW_DONE.load(Ordering::Relaxed) {
+            let msg = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
+            if msg.message == WM_WINDOWPOSCHANGED {
+                let pos = unsafe { &*(msg.lParam.0 as *const WINDOWPOS) };
+                let style = unsafe { GetWindowLongPtrW(msg.hwnd, GWL_STYLE) } as u32;
+                if pos.flags.contains(SWP_SHOWWINDOW)
+                    && style & WS_CAPTION.0 == WS_CAPTION.0
+                    && style & WS_CHILD.0 == 0
+                {
+                    FIRST_SHOW_DONE.store(true, Ordering::Relaxed);
+                    crate::utils::perf::phase("first_show_maximize_start", "");
+                    let _ = unsafe { ShowWindow(msg.hwnd, SW_MAXIMIZE) };
+                    crate::utils::perf::phase("first_show_maximize_end", "");
+                }
+            }
+        }
+        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    pub(super) fn install_first_show_hook() {
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_CALLWNDPROCRET,
+                Some(first_show_proc),
+                None,
+                GetCurrentThreadId(),
+            )
+        };
+        match hook {
+            Ok(h) => FIRST_SHOW_HOOK.store(h.0 as isize, std::sync::atomic::Ordering::Relaxed),
+            Err(e) => crate::utils::perf::phase(
+                "first_show_hook_failed",
+                &format!(r#","error":{:?}"#, e.to_string()),
+            ),
+        }
+    }
+
+    pub(super) fn remove_first_show_hook() {
+        let raw = FIRST_SHOW_HOOK.swap(0, std::sync::atomic::Ordering::Relaxed);
+        if raw != 0 {
+            let _ = unsafe { UnhookWindowsHookEx(HHOOK(raw as *mut c_void)) };
+        }
     }
 
     pub(super) fn show_maximized(hwnd: HWND) {
@@ -596,6 +655,26 @@ pub fn spawn_early_maximize() {
 
 #[cfg(not(windows))]
 pub fn spawn_early_maximize() {}
+
+/// EXPERIMENT (Issue #333, candidate G): on the calling (main) thread, the
+/// first show of our captioned window is followed synchronously by
+/// SW_MAXIMIZE, before DWM composes a frame of the restored state. Call
+/// before `.build()` and pair with `end_first_show_maximize` after it.
+#[cfg(windows)]
+pub fn begin_first_show_maximize() {
+    native::install_first_show_hook();
+}
+
+#[cfg(windows)]
+pub fn end_first_show_maximize() {
+    native::remove_first_show_hook();
+}
+
+#[cfg(not(windows))]
+pub fn begin_first_show_maximize() {}
+
+#[cfg(not(windows))]
+pub fn end_first_show_maximize() {}
 
 #[cfg(not(windows))]
 pub fn maximized_equivalent_geometry(
