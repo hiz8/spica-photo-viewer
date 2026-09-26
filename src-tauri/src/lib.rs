@@ -63,7 +63,11 @@ pub fn run() {
                     .unwrap_or((0, 0));
                 commands::startup::start(path, screen);
             }
-            let maximized = startup_file.is_some();
+            // EXPERIMENT (Issue #333, not for merge): a build with
+            // SPICA_EXP_WINDOWED_CREATE set at compile time is born 800x600
+            // as before #310, and the frontend's maximize_window maximizes it.
+            let maximized =
+                startup_file.is_some() && option_env!("SPICA_EXP_WINDOWED_CREATE").is_none();
             let config = app
                 .config()
                 .app
@@ -87,11 +91,12 @@ pub fn run() {
             crate::utils::perf::phase(
                 "window_created",
                 &format!(
-                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{}"#,
+                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{},"born_maximized":{}"#,
                     fg.is_ours,
                     fg.foreground,
                     commands::explorer_sort::foreground_at_launch().unwrap_or(0),
-                    fg.z_above
+                    fg.z_above,
+                    maximized
                 ),
             );
             commands::window::raise_startup_z(
