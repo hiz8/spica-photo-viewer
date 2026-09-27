@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 
@@ -650,6 +650,65 @@ impl Drop for FirstShowPlacement {
     fn drop(&mut self) {
         #[cfg(windows)]
         native::remove_first_show_hook();
+    }
+}
+
+/// The page load and the fallback thread race to show the WebView2; the
+/// loser must not repeat the show (W6).
+static WEBVIEW_REVEALED: AtomicBool = AtomicBool::new(false);
+
+/// A page load that never finishes (dev server down, navigation error) must
+/// not leave the WebView2 hidden for good, so it is shown anyway after this
+/// long (W6). A release launch loads ~85ms after the build; a first
+/// `tauri dev` launch can take several seconds while Vite pre-bundles, and
+/// that must still be the page-load path, not this one.
+pub const WEBVIEW_REVEAL_FALLBACK: Duration = Duration::from_secs(10);
+
+/// Hides the freshly built WebView2 until `reveal_webview`. Between the build
+/// and the page's first paint the WebView2 shows Chromium's about:blank,
+/// which the dark theme paints #121212 for ~3 frames over the window's black
+/// (Issue #342, W6). Hidden, the window's own black brush shows instead.
+/// Best effort: the hide is dispatched synchronously on this (main) thread,
+/// while Chromium's first about:blank frame was measured ~65ms after the
+/// build, so it lands first in practice but nothing serializes the two.
+pub fn hide_webview_until_loaded(window: &tauri::WebviewWindow) {
+    let webview: &tauri::Webview = window.as_ref();
+    // The runtime only logs a failed hide/show, so this traces the dispatch,
+    // not the outcome.
+    if let Err(e) = webview.hide() {
+        crate::utils::perf::phase("webview_hidden", &format!(r#","err":{:?}"#, e));
+        return;
+    }
+    crate::utils::perf::phase("webview_hidden", "");
+    let fallback = window.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(WEBVIEW_REVEAL_FALLBACK);
+        reveal_webview(&fallback, "fallback");
+    });
+}
+
+/// Shows the WebView2 hidden by `hide_webview_until_loaded`; only the first
+/// call acts. The hide took the keyboard focus out of the WebView2, so it is
+/// given back, but only while our window is the foreground one: a fallback
+/// reveal after the user moved to another app must not pull activation back
+/// (`MoveFocus` ends in `SetFocus`, which activates the top-level window).
+pub fn reveal_webview(window: &tauri::WebviewWindow, by: &str) {
+    if WEBVIEW_REVEALED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let webview: &tauri::Webview = window.as_ref();
+    let shown = webview.show();
+    let focused = shown.is_ok() && foreground_state(window).is_ours;
+    let focus = if focused { webview.set_focus() } else { Ok(()) };
+    if crate::utils::perf::enabled() {
+        let err = shown
+            .and(focus)
+            .err()
+            .map_or(String::new(), |e| format!(r#","err":{:?}"#, e));
+        crate::utils::perf::phase(
+            "webview_shown",
+            &format!(r#","by":{:?},"focused":{}{}"#, by, focused, err),
+        );
     }
 }
 
