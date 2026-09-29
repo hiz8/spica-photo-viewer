@@ -116,4 +116,4 @@ PR #345 で決めたアプリアイコン（菱形の結晶＋レンズ）の周
 
 - **GitHub がアニメーションを再生しない場合がある:** GitHub モバイルアプリなどでの挙動は未確認。再生されなくても O5 により止まった絵として崩れないので、許容する。
 - **README 画像のキャッシュ:** GitHub は README の画像をキャッシュするため、再生成後すぐには反映されないことがある。
-- **CSS transform の解釈の違い:** O1 は、SVG 要素への CSS `transform` が要素の座標系の原点を基準に回ることを前提にしている。CSS の既定値（`transform-box: view-box`、`transform-origin: 0 0`）はこの前提どおりだが、確認できたのは Chromium（Edge）だけで、Firefox・Safari では確かめていない。ブラウザによる違いを避けるため、この 2 つを SVG 内で明示する。
+- **CSS transform の解釈の違い:** O1 は、SVG 要素への CSS `transform` が要素の座標系の原点を基準に回ることを前提にしている。CSS の既定値（`transform-box: view-box`、`transform-origin: 0 0`）はこの前提どおりで、試作は Edge・Chrome・Firefox で正しく動いた。Safari では確かめていない。ブラウザによる違いを避けるため、この 2 つを SVG 内で明示する。
