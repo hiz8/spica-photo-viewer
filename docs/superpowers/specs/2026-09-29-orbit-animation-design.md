@@ -81,7 +81,7 @@ PR #345 で決めたアプリアイコン（菱形の結晶＋レンズ）の周
 
 ## 5. 組み込み
 
-- **README:** 冒頭の見出し `# Spica Photo Viewer` の上に、中央揃えで追加する。見出しと本文は変えない。
+- **README:** 冒頭の見出し `# Spica Photo Viewer` の直後（見出しと本文の間）に、中央揃えで追加する。見出しと本文は変えない。当初は見出しの上に置く設計だったが、GitHub での表示を確認したユーザーの判断で見出しの下に移した。
   ```html
   <p align="center"><img src="public/spica-orbit.svg" width="200" height="200" alt="Spica Photo Viewer logo"></p>
   ```
