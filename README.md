@@ -1,3 +1,5 @@
+<p align="center"><img src="public/spica-orbit.svg" width="200" height="200" alt="Spica Photo Viewer logo"></p>
+
 # Spica Photo Viewer
 
 A lightweight, fast image viewer application for Windows, inspired by Picasa Photo Viewer. Built with Tauri and React, it provides a seamless image browsing experience with thumbnail navigation and smooth zoom/pan capabilities.
