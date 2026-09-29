@@ -82,7 +82,35 @@ export function toCanvas({ x, y }) {
 export function iconBody(svg) {
   const match = svg.match(/<svg\b[^>]*>([\s\S]*)<\/svg>/);
   if (!match) throw new Error("icon SVG has no <svg> element");
-  return match[1].trim();
+  return match[1].trim().replace(/\r\n?/g, "\n");
+}
+
+// The icon's root element is replaced by ours, so anything on it the body depends on must be carried
+// over (namespace declarations such as xmlns:xlink) or refused (presentation attributes like
+// fill-rule), otherwise a re-exported icon yields an SVG that renders wrong or not at all.
+const ROOT_ATTRS_WE_REPLACE = new Set([
+  "width",
+  "height",
+  "viewBox",
+  "xmlns",
+  "version",
+]);
+
+function iconNamespaces(svg) {
+  const root = svg.match(/<svg\b([^>]*)>/)?.[1] ?? "";
+  const namespaces = [];
+  for (const [, name, value] of root.matchAll(/([\w:-]+)\s*=\s*"([^"]*)"/g)) {
+    if (name.startsWith("xmlns:")) namespaces.push(`${name}="${value}"`);
+    else if (
+      !ROOT_ATTRS_WE_REPLACE.has(name) &&
+      !(name === "fill" && value === "none")
+    ) {
+      throw new Error(
+        `icon <svg> root attribute ${name}="${value}" would be lost`,
+      );
+    }
+  }
+  return namespaces;
 }
 
 const ellipse = (stroke) =>
@@ -120,7 +148,10 @@ function style() {
 export function buildOrbitSvg(iconSvg) {
   const { scale, cx, cy } = fitTransform();
   const fit = `translate(${CANVAS / 2} ${CANVAS / 2}) scale(${fmt(scale)}) translate(${fmt(-cx)} ${fmt(-cy)})`;
-  return `<svg width="${CANVAS}" height="${CANVAS}" viewBox="0 0 ${CANVAS} ${CANVAS}" fill="none" xmlns="http://www.w3.org/2000/svg">
+  const namespaces = iconNamespaces(iconSvg)
+    .map((ns) => ` ${ns}`)
+    .join("");
+  return `<svg width="${CANVAS}" height="${CANVAS}" viewBox="0 0 ${CANVAS} ${CANVAS}" fill="none" xmlns="http://www.w3.org/2000/svg"${namespaces}>
 <style>
 ${style()}
 </style>

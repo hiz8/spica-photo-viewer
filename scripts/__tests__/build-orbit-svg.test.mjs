@@ -81,6 +81,24 @@ test("iconBody accepts an XML prolog and comments", () => {
   assert.equal(body, '<path d="M0 0"/>');
 });
 
+const XLINK_ICON =
+  '<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">\r\n<defs><path id="d" d="M0 0"/></defs>\r\n<use xlink:href="#d"/>\r\n</svg>\r\n';
+
+test("buildOrbitSvg keeps the namespace declarations the icon's body relies on", () => {
+  const outputRoot = buildOrbitSvg(XLINK_ICON).match(/^<svg\b[^>]*>/)[0];
+  assert.match(outputRoot, /xmlns:xlink="http:\/\/www\.w3\.org\/1999\/xlink"/);
+});
+
+test("buildOrbitSvg writes LF line endings even from a CRLF icon", () => {
+  assert.doesNotMatch(buildOrbitSvg(XLINK_ICON), /\r/);
+});
+
+test("buildOrbitSvg rejects icon root attributes it would silently drop", () => {
+  const icon =
+    '<svg viewBox="0 0 1024 1024" fill-rule="evenodd" xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>';
+  assert.throws(() => buildOrbitSvg(icon), /fill-rule/);
+});
+
 test("iconBody rejects input without an <svg> element", () => {
   assert.throws(() => iconBody("<g/>"), /no <svg> element/);
 });
