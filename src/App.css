@@ -468,8 +468,12 @@ body {
 }
 
 .logo-icon {
-  font-size: 48px;
   margin-bottom: 8px;
+}
+
+.logo-icon img {
+  display: block;
+  margin: 0 auto;
 }
 
 .version {

@@ -45,6 +45,19 @@ describe("AboutDialog", () => {
     expect(screen.getByText("Spica Photo Viewer")).toBeInTheDocument();
   });
 
+  it("shows the animated orbit logo", async () => {
+    mockStore.ui.showAbout = true;
+
+    await act(async () => {
+      render(<AboutDialog />);
+    });
+
+    const logo = screen.getByAltText("Spica Logo");
+    expect(logo).toHaveAttribute("src", "/spica-orbit.svg");
+    expect(logo).toHaveAttribute("width", "112");
+    expect(logo).toHaveAttribute("height", "112");
+  });
+
   it("should display application information", async () => {
     mockStore.ui.showAbout = true;
 

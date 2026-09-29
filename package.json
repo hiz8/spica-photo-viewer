@@ -19,6 +19,8 @@
     "bench:corpus": "node e2e/scripts/generate-corpus.mjs",
     "build:file-icon": "node scripts/build-file-icon.mjs src-tauri/icons/file-type.svg src-tauri/icons/file-type.ico",
     "build:file-icon:test": "node --test scripts/__tests__/build-file-icon.test.mjs",
+    "build:orbit": "node scripts/build-orbit-svg.mjs public/icon.svg public/spica-orbit.svg",
+    "build:orbit:test": "node --test scripts/__tests__/build-orbit-svg.test.mjs",
     "profile:rust": "node e2e/scripts/profile-rust.mjs",
     "profile:nav-rapid": "node e2e/scripts/profile-nav-rapid.mjs",
     "profile:nav-rapid:analyze": "node e2e/scripts/analyze-nav-rapid.mjs",
