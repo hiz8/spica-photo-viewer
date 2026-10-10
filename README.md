@@ -54,7 +54,7 @@ A lightweight, fast image viewer application for Windows, inspired by Picasa Pho
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v20.19+ or v22.12+)
+- [Node.js](https://nodejs.org/) (v24.21+)
 - [Rust](https://rust-lang.org/)
 - [Tauri Prerequisites](https://tauri.app/)
 
