@@ -52,10 +52,14 @@ function formatterFor(filePath) {
 }
 
 function runFormatter(formatter) {
-  const child = spawn(formatter.command, formatter.args, {
-    stdio: "inherit",
-    shell: formatter.useShell,
-  });
+  // Node 24 deprecates passing an args array alongside `shell: true` (DEP0190),
+  // since the shell only concatenates them anyway; hand it the joined line.
+  const child = formatter.useShell
+    ? spawn([formatter.command, ...formatter.args].join(" "), {
+        stdio: "inherit",
+        shell: true,
+      })
+    : spawn(formatter.command, formatter.args, { stdio: "inherit" });
 
   child.on("error", (err) => {
     console.error(
