@@ -14,25 +14,54 @@ edition = "2021"
 name = "spica_photo_viewer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# E2E-only: embeds a W3C WebDriver HTTP server in the app so @wdio/tauri-service
+# can drive it with driverProvider: "embedded". Never compiled into a plain
+# `cargo build --release` / `tauri build` — only `--features e2e` pulls it in.
+e2e = ["dep:tauri-plugin-wdio-webdriver"]
+
 [build-dependencies]
-tauri-build = { version = "2.5", features = [] }
+# append_rc_content は 2.5 系に無い (ファイルタイプアイコンの埋め込みに使う)
+tauri-build = { version = "2.6", features = [] }
 
 [dependencies]
-tauri = { version = "2.10", features = ["unstable"] }
+tauri = { version = "2.11", features = ["unstable"] }
 tauri-plugin-opener = "2.5"
 tauri-plugin-dialog = "2.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-image = "0.25"
-base64 = "0.22"
+# Only the formats the viewer supports (PROJECT_SPEC: JPEG/PNG/WebP/GIF).
+# The defaults also pull avif (rav1e), exr, tiff, ... whose generic
+# encoders/decoders get instantiated in this crate via `write_to` /
+# `with_guessed_format`, inflating the final-crate LLVM pass.
+image = { version = "0.25", default-features = false, features = ["rayon", "jpeg", "png", "webp", "gif"] }
+base64 = "0.23"
 walkdir = "2"
-rayon = "1.11"
+rayon = "1.12"
+percent-encoding = "2"
+tauri-plugin-wdio-webdriver = { version = "1.3", optional = true }
+fast_image_resize = { version = "6.1", features = ["rayon"] }
+jpeg-encoder = { version = "0.7", features = ["simd"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+windows = { version = "0.62", features = [
+  "Win32_Storage_FileSystem",       # existing
+  "Win32_Foundation",               # existing (PROPERTYKEY)
+  "Win32_UI_Shell",                 # Phase 1: StrCmpLogicalW / Phase 2: IShellWindows, IFolderView2, SORTCOLUMN, SID_STopLevelBrowser, IUnknown_QueryService
+  "Win32_UI_Shell_Common",          # ITEMIDLIST (GetCurFolder / SHGetPathFromIDListW)
+  "Win32_System_Com",               # CoCreateInstance / CoInitializeEx / IDispatch / IShellWindows gate
+  "Win32_System_Ole",               # IShellBrowser / IShellView / VARIANT gate (D-P2-1; spec §6.4 lacked it)
+  "Win32_System_Variant",           # VARIANT / VT_I4 (IShellWindows::Item)
+  "Win32_UI_WindowsAndMessaging",   # GetForegroundWindow / GetAncestor (D-P2-2) / SetWindowPlacement, AdjustWindowRectExForDpi (W1)
+  "Win32_Graphics_Dwm",             # DwmSetWindowAttribute: no restore animation while sizing the window to the image (W1)
+  "Win32_UI_HiDpi",                 # AdjustWindowRectExForDpi: restored frame size for the placement rect (W1) / GetDpiForWindow (W5)
+  "Win32_Graphics_Gdi",             # MonitorFromWindow / GetMonitorInfoW: work area the window is born on (W5)
+  "Win32_System_Threading",         # GetCurrentThreadId: thread-local creation hook (W5)
+] }
 
 [dev-dependencies]
 tempfile = "3.27"
 tokio-test = "0.4"
 tokio = { version = "1", features = ["macros", "rt"] }
+filetime = "0.2.29"
 

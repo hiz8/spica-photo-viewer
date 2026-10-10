@@ -1,6 +1,7 @@
+import { getVersion } from "@tauri-apps/api/app";
 import type React from "react";
 import { useState, useEffect, useId } from "react";
-import { getVersion } from "@tauri-apps/api/app";
+
 import { useAppStore } from "../store";
 
 const AboutDialog: React.FC = () => {
@@ -19,7 +20,7 @@ const AboutDialog: React.FC = () => {
       }
     };
 
-    loadVersion();
+    void loadVersion();
   }, []);
 
   if (!ui.showAbout) {
@@ -46,7 +47,9 @@ const AboutDialog: React.FC = () => {
   };
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the backdrop itself is the dismiss target; the handlers check e.target === e.currentTarget
     <div
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- native <dialog> would need showModal() and top-layer/::backdrop styling, a behavior change beyond this markup
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -69,7 +72,12 @@ const AboutDialog: React.FC = () => {
         <div className="about-dialog-content">
           <div className="about-logo">
             <div className="logo-icon">
-              <img src="/icon.svg" alt="Spica Logo" width={60} height={60} />
+              <img
+                src="/spica-orbit.svg"
+                alt="Spica Logo"
+                width={112}
+                height={112}
+              />
             </div>
             <p className="version">Version {version}</p>
           </div>

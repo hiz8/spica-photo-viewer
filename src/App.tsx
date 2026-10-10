@@ -1,35 +1,56 @@
+import { invoke } from "@tauri-apps/api/core";
 import type React from "react";
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import ImageViewer from "./components/ImageViewer";
+
+import AboutDialog from "./components/AboutDialog";
 import DropZone from "./components/DropZone";
 import FileOpenButton from "./components/FileOpenButton";
+import ImageViewer from "./components/ImageViewer";
 import ThumbnailBar from "./components/ThumbnailBar";
-import AboutDialog from "./components/AboutDialog";
-import { useKeyboard } from "./hooks/useKeyboard";
-// import { useFileDrop } from './hooks/useFileDrop';
 import { useCacheManager } from "./hooks/useCacheManager";
+import { useKeyboard } from "./hooks/useKeyboard";
 import { useWindowState } from "./hooks/useWindowState";
+import { useWindowTitle } from "./hooks/useWindowTitle";
 import { useAppStore } from "./store";
+import type { StartupFile } from "./types";
+import { perfMark } from "./utils/perf";
+
 import "./App.css";
 
 const App: React.FC = () => {
-  const { ui, currentImage, view, openImageFromPath, setCheckingStartupFile } =
-    useAppStore();
+  const {
+    ui,
+    currentImage,
+    view,
+    openImageFromPath,
+    setCachedThumbnail,
+    setCheckingStartupFile,
+  } = useAppStore();
 
   useKeyboard();
-  // useFileDrop(); // Temporarily disabled to test thumbnails
   useCacheManager();
   useWindowState();
+  useWindowTitle();
 
   // Check for startup file (from file association)
   useEffect(() => {
     const checkStartupFile = async () => {
       try {
-        const startupFile = await invoke<string | null>("get_startup_file");
-        if (startupFile) {
-          console.log("Opening startup file:", startupFile);
-          await openImageFromPath(startupFile);
+        perfMark("app:startup_check");
+        const startup = await invoke<StartupFile | null>("get_startup_file");
+        perfMark("app:startup_file", {
+          path: startup?.path ?? null,
+          thumb: !!startup?.thumbnail,
+        });
+        if (startup) {
+          console.log("Opening startup file:", startup.path);
+          // A prefetched thumbnail means its preview is on disk (I1): seeding
+          // the cache lets the viewer paint the preview instead of decoding
+          // the full-resolution original.
+          if (startup.thumbnail) {
+            setCachedThumbnail(startup.path, startup.thumbnail);
+          }
+          await openImageFromPath(startup.path);
         }
       } catch (error) {
         console.error("Failed to check startup file:", error);
@@ -38,8 +59,9 @@ const App: React.FC = () => {
       }
     };
 
-    checkStartupFile();
-  }, [openImageFromPath, setCheckingStartupFile]);
+    void checkStartupFile();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- setCheckingStartupFile IS read (in the finally above); oxlint 1.83 does not count reads inside try/finally, so it calls the dependency unnecessary
+  }, [openImageFromPath, setCachedThumbnail, setCheckingStartupFile]);
 
   return (
     <div

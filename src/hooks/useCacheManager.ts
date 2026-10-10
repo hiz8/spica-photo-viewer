@@ -1,55 +1,34 @@
-import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../store";
+import { useEffect } from "react";
 
-const MAX_PRELOADED_IMAGES = 20;
-const MAX_THUMBNAIL_CACHE = 100;
-const CLEANUP_INTERVAL_MS = 30000;
+/**
+ * The disk sweep walks every cache entry (thousands of files after a few
+ * large folders); run at mount it competes with the startup image and the
+ * folder scan for disk and blocking threads, so it waits until they are done.
+ */
+const DISK_SWEEP_DELAY_MS = 5000;
 
+/**
+ * Deliberately no periodic count cap on the in-memory caches. Thumbnails
+ * are inserted nearest-first, so an oldest-first cap blanked exactly the
+ * visible part of the bar in folders above the cap; and cache.preloaded is
+ * owned by useImagePreloader (window eviction + byte budget, I3), where a
+ * second sweep dropped entries whose bitmaps were still retained. Both maps
+ * are bounded by the folder: a folder switch drops the other folder's
+ * entries.
+ */
 export const useCacheManager = () => {
   useEffect(() => {
-    const initializeCache = async () => {
+    const sweepDiskCache = async () => {
       try {
         await invoke("clear_old_cache");
         console.log("Cache cleanup completed");
-
-        const stats = await invoke<{ [key: string]: number }>(
-          "get_cache_stats",
-        );
-        console.log("Cache stats:", stats);
       } catch (error) {
-        console.warn("Failed to initialize cache:", error);
+        console.warn("Failed to sweep cache:", error);
       }
     };
 
-    initializeCache();
-  }, []);
-
-  useEffect(() => {
-    const cleanupMemoryCache = () => {
-      const { cache, removePreloadedImages, removeCachedThumbnails } =
-        useAppStore.getState();
-
-      if (cache.preloaded.size > MAX_PRELOADED_IMAGES) {
-        const paths = Array.from(cache.preloaded.keys()).slice(
-          0,
-          cache.preloaded.size - MAX_PRELOADED_IMAGES,
-        );
-        removePreloadedImages(paths);
-        console.log(`Cleaned up ${paths.length} preloaded images from memory`);
-      }
-
-      if (cache.thumbnails.size > MAX_THUMBNAIL_CACHE) {
-        const paths = Array.from(cache.thumbnails.keys()).slice(
-          0,
-          cache.thumbnails.size - MAX_THUMBNAIL_CACHE,
-        );
-        removeCachedThumbnails(paths);
-        console.log(`Cleaned up ${paths.length} thumbnails from memory`);
-      }
-    };
-
-    const interval = setInterval(cleanupMemoryCache, CLEANUP_INTERVAL_MS);
-    return () => clearInterval(interval);
+    const timeoutId = setTimeout(sweepDiskCache, DISK_SWEEP_DELAY_MS);
+    return () => clearTimeout(timeoutId);
   }, []);
 };

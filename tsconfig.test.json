@@ -4,6 +4,9 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["src", "**/*.test.ts", "**/*.test.tsx"],
+  /* App-side tests only. The Node/WebdriverIO tests under e2e/ are checked by
+     e2e/tsconfig.json, which supplies the node + wdio type packages they need;
+     npm run type-check:test runs both projects. */
+  "include": ["src"],
   "exclude": []
 }

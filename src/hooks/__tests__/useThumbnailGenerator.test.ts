@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import type { ImageInfo } from "../../types";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
 import {
   THUMBNAIL_GENERATION_DEBOUNCE_MS,
   THUMBNAIL_GENERATION_INITIAL_RANGE,
   THUMBNAIL_SIZE,
   MAX_CONCURRENT_LOADS,
 } from "../../constants/timing";
+import type { ImageInfo } from "../../types";
 
-// Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
   index: number,
   overrides: Partial<ImageInfo> = {},
@@ -16,7 +16,8 @@ const createMockImageInfo = (
   path: `/test/image${index}.jpg`,
   filename: `image${index}.jpg`,
   size: 1024,
-  modified: Date.now() - index * 1000,
+  modified: Math.floor(Date.now() / 1000) - index,
+  created: Math.floor(Date.now() / 1000) - index,
   format: "jpeg",
   ...overrides,
 });
@@ -26,7 +27,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-// Mock the store
 const mockStore = {
   folder: {
     images: [] as ImageInfo[],
@@ -41,28 +41,32 @@ const mockStore = {
     >(),
   },
   setCachedThumbnail: vi.fn(),
+  setCachedThumbnails: vi.fn(),
   setThumbnailGeneration: vi.fn(),
 };
 
-// Mock getState to return fresh state
 const mockGetState = vi.fn(() => ({
   folder: mockStore.folder,
   currentImage: mockStore.currentImage,
   cache: mockStore.cache,
   setCachedThumbnail: mockStore.setCachedThumbnail,
+  setCachedThumbnails: mockStore.setCachedThumbnails,
   setThumbnailGeneration: mockStore.setThumbnailGeneration,
 }));
 
 vi.mock("../../store", () => {
-  const mockUseAppStore = vi.fn(() => mockStore);
-  mockUseAppStore.getState = () => mockGetState();
+  const mockUseAppStore = Object.assign(
+    vi.fn(() => mockStore),
+    { getState: () => mockGetState() },
+  );
   return {
     useAppStore: mockUseAppStore,
   };
 });
 
-import { useThumbnailGenerator } from "../useThumbnailGenerator";
 import { invoke } from "@tauri-apps/api/core";
+
+import { useThumbnailGenerator } from "../useThumbnailGenerator";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -108,7 +112,7 @@ describe("useThumbnailGenerator", () => {
   });
 
   describe("thumbnail generation with debounce", () => {
-    it("should debounce thumbnail generation by 500ms", async () => {
+    it("starts generating immediately on a fresh open (no debounce)", async () => {
       const images = Array.from({ length: 5 }, (_, i) =>
         createMockImageInfo(i),
       );
@@ -121,6 +125,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -129,26 +134,29 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Should not have called immediately
-      expect(mockInvoke).not.toHaveBeenCalled();
-
-      // Fast-forward just before debounce - still should not have called
+      // Well inside the debounce window the backend has already been asked:
+      // only the (zero-delay) scheduling tick stands between mount and the
+      // first call.
       await act(async () => {
-        vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS - 1);
-        await Promise.resolve();
-      });
-      expect(mockInvoke).not.toHaveBeenCalled();
-
-      // Fast-forward remaining 1ms - now should start
-      await act(async () => {
-        vi.advanceTimersByTime(1);
-        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(THUMBNAIL_GENERATION_DEBOUNCE_MS - 1);
       });
 
       expect(mockInvoke).toHaveBeenCalled();
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "generate_thumbnail_with_dimensions",
+        {
+          path: expect.any(String),
+          size: THUMBNAIL_SIZE,
+          previewBox: expect.any(String),
+        },
+      );
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "set_cached_thumbnail",
+        expect.anything(),
+      );
     });
 
-    it("should reset debounce on new navigation", async () => {
+    it("debounces a navigation that follows within the debounce window", async () => {
       const images = Array.from({ length: 5 }, (_, i) =>
         createMockImageInfo(i),
       );
@@ -161,6 +169,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -169,30 +178,33 @@ describe("useThumbnailGenerator", () => {
 
       const { rerender } = renderHook(() => useThumbnailGenerator());
 
-      // Advance 250ms (half of debounce)
+      // Fresh open: runs to completion without a debounce.
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      const callsAfterOpen = mockInvoke.mock.calls.length;
+      expect(callsAfterOpen).toBeGreaterThan(0);
+
+      // A navigation 250ms after the last start is "rapid": its generation
+      // waits out the full debounce window.
       await act(async () => {
         vi.advanceTimersByTime(250);
         await Promise.resolve();
       });
-      expect(mockInvoke).not.toHaveBeenCalled();
-
-      // Navigate to different image - should reset debounce
       mockStore.currentImage.index = 3;
       rerender();
 
-      // Advance another 250ms (not enough for new debounce)
       await act(async () => {
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS - 1);
         await Promise.resolve();
       });
-      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(mockInvoke.mock.calls.length).toBe(callsAfterOpen);
 
-      // Complete the new debounce
       await act(async () => {
-        vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
-        await Promise.resolve();
+        vi.advanceTimersByTime(1);
+        await vi.runAllTimersAsync();
       });
-      expect(mockInvoke).toHaveBeenCalled();
+      expect(mockInvoke.mock.calls.length).toBeGreaterThan(callsAfterOpen);
     });
   });
 
@@ -213,6 +225,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -220,16 +233,14 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
-        // Allow all async operations to complete
         await vi.runAllTimersAsync();
       });
 
       // Priority order from index 2: [2, 3, 1, 4, 0]
-      expect(callOrder).toContain("/test/image2.jpg"); // Current image first
+      expect(callOrder).toContain("/test/image2.jpg");
     });
 
     it("should limit initial queue to THUMBNAIL_GENERATION_INITIAL_RANGE", async () => {
@@ -240,14 +251,13 @@ describe("useThumbnailGenerator", () => {
       mockStore.folder.images = images;
       mockStore.currentImage.index = 15;
 
-      let generateCount = 0;
       mockInvoke.mockImplementation(async (cmd) => {
         if (cmd === "generate_thumbnail_with_dimensions") {
-          generateCount++;
           return {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -259,13 +269,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
-      // Initial queue should be limited to ±THUMBNAIL_GENERATION_INITIAL_RANGE
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining(`±${THUMBNAIL_GENERATION_INITIAL_RANGE}`),
       );
@@ -280,7 +288,6 @@ describe("useThumbnailGenerator", () => {
       mockStore.folder.images = images;
       mockStore.currentImage.index = 2;
 
-      // Pre-cache some thumbnails
       mockStore.cache.thumbnails.set("/test/image2.jpg", {
         base64: "cached",
         width: 800,
@@ -292,12 +299,12 @@ describe("useThumbnailGenerator", () => {
         height: 600,
       });
 
-      // Update mockGetState to return the updated cache
       mockGetState.mockReturnValue({
         folder: mockStore.folder,
         currentImage: mockStore.currentImage,
         cache: mockStore.cache,
         setCachedThumbnail: mockStore.setCachedThumbnail,
+        setCachedThumbnails: mockStore.setCachedThumbnails,
         setThumbnailGeneration: mockStore.setThumbnailGeneration,
       });
 
@@ -310,6 +317,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -317,13 +325,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Should not generate for cached images
       expect(generatedPaths).not.toContain("/test/image2.jpg");
       expect(generatedPaths).not.toContain("/test/image3.jpg");
     });
@@ -351,6 +357,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -358,13 +365,11 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Max concurrent calls should not exceed MAX_CONCURRENT_LOADS
       expect(maxConcurrentCalls).toBeLessThanOrEqual(MAX_CONCURRENT_LOADS);
     });
   });
@@ -376,29 +381,89 @@ describe("useThumbnailGenerator", () => {
       mockStore.currentImage.index = 0;
 
       mockInvoke.mockImplementation(async (cmd) => {
-        if (cmd === "get_cached_thumbnail") {
-          // Return cached thumbnail with dimensions
-          return ["cachedBase64", 1920, 1080];
+        if (cmd === "get_cached_thumbnails") {
+          return [["cachedBase64", 1920, 1080]];
         }
         return null;
       });
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      expect(mockStore.setCachedThumbnail).toHaveBeenCalledWith(
-        "/test/image0.jpg",
-        { base64: "cachedBase64", width: 1920, height: 1080 },
-      );
-      // Should not call generate_thumbnail_with_dimensions
+      expect(mockStore.setCachedThumbnails).toHaveBeenCalledWith([
+        [
+          "/test/image0.jpg",
+          { base64: "cachedBase64", width: 1920, height: 1080 },
+        ],
+      ]);
+      expect(mockInvoke).toHaveBeenCalledWith("get_cached_thumbnails", {
+        paths: ["/test/image0.jpg"],
+        size: THUMBNAIL_SIZE,
+        previewBox: expect.stringMatching(/^\d+x\d+$/),
+      });
       expect(mockInvoke).not.toHaveBeenCalledWith(
         "generate_thumbnail_with_dimensions",
         expect.anything(),
+      );
+    });
+
+    it("looks up the queue in one batch and generates only the misses", async () => {
+      const images = Array.from({ length: 3 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+      mockStore.folder.images = images;
+      mockStore.currentImage.index = 0;
+
+      mockInvoke.mockImplementation(async (cmd, args) => {
+        if (cmd === "get_cached_thumbnails") {
+          const { paths } = args as { paths: string[] };
+          return paths.map((p) =>
+            p === "/test/image1.jpg" ? null : ["cached", 800, 600],
+          );
+        }
+        if (cmd === "generate_thumbnail_with_dimensions") {
+          return {
+            thumbnail_base64: "new",
+            original_width: 800,
+            original_height: 600,
+            preview_available: true,
+          };
+        }
+        return null;
+      });
+
+      renderHook(() => useThumbnailGenerator());
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // The whole initial queue (current → +1 → +2) goes to the backend in
+      // one call, and every hit lands in the store in one update.
+      expect(mockInvoke).toHaveBeenCalledWith("get_cached_thumbnails", {
+        paths: ["/test/image0.jpg", "/test/image1.jpg", "/test/image2.jpg"],
+        size: THUMBNAIL_SIZE,
+        previewBox: expect.any(String),
+      });
+      expect(mockStore.setCachedThumbnails).toHaveBeenCalledWith([
+        ["/test/image0.jpg", { base64: "cached", width: 800, height: 600 }],
+        ["/test/image2.jpg", { base64: "cached", width: 800, height: 600 }],
+      ]);
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "generate_thumbnail_with_dimensions",
+        {
+          path: "/test/image1.jpg",
+          size: THUMBNAIL_SIZE,
+          previewBox: expect.any(String),
+        },
+      );
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "generate_thumbnail_with_dimensions",
+        expect.objectContaining({ path: "/test/image0.jpg" }),
       );
     });
 
@@ -408,15 +473,15 @@ describe("useThumbnailGenerator", () => {
       mockStore.currentImage.index = 0;
 
       mockInvoke.mockImplementation(async (cmd) => {
-        if (cmd === "get_cached_thumbnail") {
-          // Return cached thumbnail without dimensions
-          return ["cachedBase64", null, null];
+        if (cmd === "get_cached_thumbnails") {
+          return [["cachedBase64", null, null]];
         }
         if (cmd === "generate_thumbnail_with_dimensions") {
           return {
             thumbnail_base64: "newBase64",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -424,18 +489,17 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
       });
 
-      // Should have regenerated the thumbnail
       expect(mockInvoke).toHaveBeenCalledWith(
         "generate_thumbnail_with_dimensions",
         {
           path: "/test/image0.jpg",
           size: THUMBNAIL_SIZE,
+          previewBox: expect.any(String),
         },
       );
     });
@@ -452,8 +516,8 @@ describe("useThumbnailGenerator", () => {
         .mockImplementation(() => {});
 
       mockInvoke.mockImplementation(async (cmd) => {
-        if (cmd === "get_cached_thumbnail") {
-          return null;
+        if (cmd === "get_cached_thumbnails") {
+          return [null];
         }
         if (cmd === "generate_thumbnail_with_dimensions") {
           throw new Error("Failed to generate thumbnail");
@@ -466,7 +530,6 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
@@ -494,6 +557,71 @@ describe("useThumbnailGenerator", () => {
 
       consoleWarnSpy.mockRestore();
     });
+
+    it("logs a failure of the initial batch instead of leaving it unhandled", async () => {
+      mockStore.folder.images = [createMockImageInfo(0)];
+      mockStore.currentImage.index = 0;
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      mockStore.setThumbnailGeneration.mockImplementationOnce(() => {
+        throw new Error("store update failed");
+      });
+
+      renderHook(() => useThumbnailGenerator());
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Thumbnail generation failed"),
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("logs a failure of the progressive expansion instead of leaving it unhandled", async () => {
+      const images = Array.from({ length: 5 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+      mockStore.folder.images = images;
+      mockStore.currentImage.index = 2;
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      mockInvoke.mockImplementation(async (cmd) => {
+        if (cmd === "get_cached_thumbnails") {
+          return images.map(() => null);
+        }
+        if (cmd === "generate_thumbnail_with_dimensions") {
+          // Shrinking the folder mid-batch makes the expansion's queue build
+          // read past the end: the failure comes from the chained step.
+          mockStore.folder.images = images.slice(0, 1);
+          return {
+            thumbnail_base64: "base64data",
+            original_width: 800,
+            original_height: 600,
+            preview_available: true,
+          };
+        }
+        return null;
+      });
+
+      renderHook(() => useThumbnailGenerator());
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Thumbnail generation failed"),
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
   });
 
   describe("abort controller handling", () => {
@@ -512,6 +640,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -519,25 +648,19 @@ describe("useThumbnailGenerator", () => {
 
       const { rerender } = renderHook(() => useThumbnailGenerator());
 
-      // Start generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
-      // Navigate to different image before generation completes
       mockStore.currentImage.index = 5;
       rerender();
 
-      // The hook should have aborted previous generation
-      // and started new one after debounce
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await Promise.resolve();
       });
 
-      // Previous generation should have been aborted
-      // New generation should be in progress
       expect(mockInvoke).toHaveBeenCalled();
     });
 
@@ -556,6 +679,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         return null;
@@ -563,16 +687,13 @@ describe("useThumbnailGenerator", () => {
 
       const { unmount } = renderHook(() => useThumbnailGenerator());
 
-      // Unmount before debounce completes
       unmount();
 
-      // Fast-forward past debounce
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS + 100);
         await Promise.resolve();
       });
 
-      // No thumbnails should have been generated
       expect(mockInvoke).not.toHaveBeenCalledWith(
         "generate_thumbnail_with_dimensions",
         expect.anything(),
@@ -599,6 +720,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -607,7 +729,6 @@ describe("useThumbnailGenerator", () => {
 
       renderHook(() => useThumbnailGenerator());
 
-      // Trigger initial generation
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_GENERATION_DEBOUNCE_MS);
         await vi.runAllTimersAsync();
@@ -628,7 +749,6 @@ describe("useThumbnailGenerator", () => {
       mockStore.folder.images = images;
       mockStore.currentImage.index = 2;
 
-      // Pre-cache all thumbnails
       for (const img of images) {
         mockStore.cache.thumbnails.set(img.path, {
           base64: "cached",
@@ -642,6 +762,7 @@ describe("useThumbnailGenerator", () => {
         currentImage: mockStore.currentImage,
         cache: mockStore.cache,
         setCachedThumbnail: mockStore.setCachedThumbnail,
+        setCachedThumbnails: mockStore.setCachedThumbnails,
         setThumbnailGeneration: mockStore.setThumbnailGeneration,
       });
 
@@ -656,7 +777,6 @@ describe("useThumbnailGenerator", () => {
         await vi.runAllTimersAsync();
       });
 
-      // Should log that all thumbnails are already generated
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("All"),
       );
@@ -678,6 +798,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -709,6 +830,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;
@@ -739,6 +861,7 @@ describe("useThumbnailGenerator", () => {
             thumbnail_base64: "base64data",
             original_width: 800,
             original_height: 600,
+            preview_available: true,
           };
         }
         if (cmd === "set_cached_thumbnail") return null;

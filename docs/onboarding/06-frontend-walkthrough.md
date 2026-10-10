@@ -104,7 +104,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 {
   currentImage: { path, index, data, error },
   folder: { path, images, imagesByPath, sortOrder },
-  view: { zoom, panX, panY, isFullscreen, isMaximized, thumbnailOpacity, imageLeft?, imageTop?, imageWidth?, imageHeight? },
+  view: { zoom, panX, panY, isFullscreen, isMaximized, imageLeft?, imageTop?, imageWidth?, imageHeight? },
   cache: { thumbnails: Map, preloaded: Map, imageViewStates: Map, lastNavigationTime },
   thumbnailGeneration: { isGenerating, allGenerated, currentGeneratingPath },
   ui: { isLoading, showAbout, isDragOver, error, suppressTransition, suppressTransitionTimeoutId, thumbnailDisplayed?, isCheckingStartupFile },
@@ -195,12 +195,11 @@ if (cachedImage && cachedImage.format !== "error") {
 
 ### `useCacheManager` (`src/hooks/useCacheManager.ts`)
 
-2 つの `useEffect` を持ちます。
+`useEffect` は 1 つだけで、マウントの 5 秒後に `invoke("clear_old_cache")` を 1 回呼んでディスクキャッシュを掃除します（起動直後は起動画像の読み込みとフォルダスキャンがディスクを使うので、その後に回す）。
 
-1. **マウント時 (10-26 行)**: `invoke("clear_old_cache")` と `invoke("get_cache_stats")` をコールしてコンソールにログ
-2. **30 秒ごと (28-54 行)**: メモリ上の `cache.preloaded` (上限 20)、`cache.thumbnails` (上限 100) が超過してたら古い順に削除
+メモリ上の `cache.thumbnails` / `cache.preloaded` に対する周期的な件数上限の掃除は**意図的にありません**。かつて 30 秒ごとに「古い順に上限超過分を削除」していましたが、サムネイルは現在画像に近い順に挿入されるため、古い順の削除は可視範囲のサムネイルをまとめて消してしまい、百枚以上のフォルダでバーが突然空になる不具合の原因でした。`cache.preloaded` の寿命は `useImagePreloader` が窓外退避とバイト予算で管理しており（I3）、別の掃除がエントリだけ消すとビットマップが残ったまま hit を取りこぼします。両 Map はフォルダ単位で有界です: `setFolderImages` はフォルダ変更時に Map を作り直し、`openImageFromPath` は新フォルダに属さないサムネイルだけを落とします（起動ファイルのサムネイルはフォルダを開く前に seed されるため、全消しはしない）。
 
-削除はストアのバルクアクション (`removePreloadedImages` / `removeCachedThumbnails`) で 1 回の `set()` にまとめて行います。1 件ずつ単発アクションを呼ぶと、削除件数分だけ Map を再生成して store 更新が走り、`ThumbnailBar` 等の購読コンポーネントが連続再レンダリングしてしまうためです。イミュータブル更新自体は [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) で必須とされている書き方で、Map を直接 `delete()` すると React の再レンダリングが発火せずに stale 表示の原因になるので避けてください。
+ストアの Map を更新するときは [`.claude/rules/zustand-store.md`](../../.claude/rules/zustand-store.md) のとおりイミュータブルに行い、複数件はバルクアクション (`removePreloadedImages` / `setCachedThumbnails`) で 1 回の `set()` にまとめます。Map を直接 `delete()` すると React の再レンダリングが発火せず stale 表示の原因になります。
 
 ### `useThumbnailGenerator` (`src/hooks/useThumbnailGenerator.ts`)
 
@@ -266,7 +265,7 @@ if (cachedImage && cachedImage.format !== "error") {
 | `get_cache_stats` (`commands/cache.rs:180`) | `useCacheManager.ts:17` | なし | `Record<string, number>` |
 | `get_window_state` (`commands/window.rs:20`) | `useWindowState.ts:15` | なし (`AppHandle` は自動注入) | `{ is_maximized, is_fullscreen }` |
 | `maximize_window` (`commands/window.rs:118`) | `store/index.ts:559` | なし | `void` |
-| `resize_window_to_image` (`commands/window.rs:40`) | `store/index.ts:736` | `{ imageWidth, imageHeight, zoomPercent, imageScreenCenterX, imageScreenCenterY, disableAnimation }` (※ `disableAnimation` はバックエンドで現在使われていないが、IPC 互換のため受け取り続けている) | `void` |
+| `resize_window_to_image` (`commands/window.rs`) | `store/index.ts` の `resizeToImage` | `{ clientLeft, clientTop, clientWidth, clientHeight }`（CSS px のクライアント領域。算出は `utils/windowedGeometry.ts`、根拠は `docs/code-rationale.md#W1`） | `void` |
 | `open_with_dialog` (`commands/file.rs:230`) | `store/index.ts:830` | `{ path: string }` | `void` |
 
 未使用 (登録のみ):

@@ -30,17 +30,17 @@ Create a GitHub Pull Request with an auto-generated title and description based 
 6. Analyze all commits and changes to draft a PR title and body:
    - PR title: concise, under 70 characters, in English
    - PR body format:
+
      ```
      ## Summary
      <1-3 bullet points describing the changes>
 
      ## Test plan
      <Bulleted checklist of testing steps>
-
-     🤖 Generated with [Claude Code](https://claude.com/claude-code)
      ```
 
 7. Create the PR using `gh pr create`:
+
    ```
    gh pr create --base <base-branch> --title "the pr title" --body "$(cat <<'EOF'
    ## Summary
@@ -48,8 +48,6 @@ Create a GitHub Pull Request with an auto-generated title and description based 
 
    ## Test plan
    - [ ] ...
-
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
    EOF
    )"
    ```

@@ -1,13 +1,12 @@
 import { vi } from "vitest";
+
 import type { ImageData, ImageInfo } from "../types";
 
-// Image data factories
 export const createImageData = (
   overrides: Partial<ImageData> = {},
 ): ImageData => ({
   path: "/test/image.jpg",
-  base64:
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  src: "data:jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
   width: 800,
   height: 600,
   format: "jpeg",
@@ -16,39 +15,44 @@ export const createImageData = (
 
 export const createImageInfo = (
   overrides: Partial<ImageInfo> = {},
-): ImageInfo => ({
-  path: "/test/image.jpg",
-  filename: "image.jpg",
-  size: 1024,
-  modified: Date.now(),
-  format: "jpeg",
-  ...overrides,
-});
+): ImageInfo => {
+  const nowSec = Math.floor(Date.now() / 1000);
+  return {
+    path: "/test/image.jpg",
+    filename: "image.jpg",
+    size: 1024,
+    modified: nowSec,
+    created: nowSec,
+    format: "jpeg",
+    ...overrides,
+  };
+};
 
 export const createImageList = (
   count: number = 3,
   baseName: string = "image",
 ): ImageInfo[] => {
-  return Array.from({ length: count }, (_, index) =>
-    createImageInfo({
+  return Array.from({ length: count }, (_, index) => {
+    const modifiedSec = Math.floor(Date.now() / 1000) - (count - index);
+    return createImageInfo({
       path: `/test/${baseName}${index + 1}.jpg`,
       filename: `${baseName}${index + 1}.jpg`,
-      modified: Date.now() - (count - index) * 1000,
-    }),
-  );
+      modified: modifiedSec,
+      created: modifiedSec,
+    });
+  });
 };
 
 export const createErrorImageData = (
   path: string = "/test/error.jpg",
 ): ImageData => ({
   path,
-  base64: "",
+  src: "",
   width: 0,
   height: 0,
   format: "error",
 });
 
-// Mock factories
 export const createMockTauriApi = () => ({
   invoke: vi.fn(),
   open: vi.fn(),
@@ -56,11 +60,11 @@ export const createMockTauriApi = () => ({
   getCurrentWindow: vi.fn(() => ({
     isFullscreen: vi.fn(),
     setFullscreen: vi.fn(),
+    setTitle: vi.fn(() => Promise.resolve()),
     close: vi.fn(),
   })),
 });
 
-// Store state factories
 export const createImageViewerState = (
   overrides: Record<string, unknown> = {},
 ) => ({
@@ -73,14 +77,12 @@ export const createImageViewerState = (
   folder: {
     path: "/test",
     images: createImageList(),
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
     panX: 0,
     panY: 0,
     isFullscreen: false,
-    thumbnailOpacity: 0.5,
   },
   cache: {
     thumbnails: new Map(),
@@ -106,14 +108,12 @@ export const createEmptyViewerState = () => ({
   folder: {
     path: "",
     images: [],
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
     panX: 0,
     panY: 0,
     isFullscreen: false,
-    thumbnailOpacity: 0.5,
   },
   cache: {
     thumbnails: new Map(),
@@ -154,7 +154,6 @@ export const createLoadingViewerState = () => ({
   },
 });
 
-// Common test scenarios
 export const createTestScenario = {
   withImage: () => createImageViewerState(),
   empty: () => createEmptyViewerState(),

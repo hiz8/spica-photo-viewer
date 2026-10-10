@@ -1,5 +1,6 @@
-import { useEffect, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useCallback } from "react";
+
 import { useAppStore } from "../store";
 
 export const useKeyboard = () => {
@@ -78,7 +79,7 @@ export const useKeyboard = () => {
 
         case "F11":
           event.preventDefault();
-          toggleFullscreen();
+          void toggleFullscreen();
           break;
 
         case "Escape":
@@ -86,9 +87,9 @@ export const useKeyboard = () => {
           if (ui.showAbout) {
             setShowAbout(false);
           } else if (view.isFullscreen) {
-            exitFullscreen();
+            void exitFullscreen();
           } else {
-            closeApplication();
+            void closeApplication();
           }
           break;
 
@@ -108,10 +109,10 @@ export const useKeyboard = () => {
         case "O":
           if (event.ctrlKey && event.shiftKey) {
             event.preventDefault();
-            openWithDialog();
+            void openWithDialog();
           } else if (event.ctrlKey) {
             event.preventDefault();
-            openFileDialog();
+            void openFileDialog();
           }
           break;
 

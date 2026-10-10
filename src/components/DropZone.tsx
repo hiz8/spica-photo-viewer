@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback } from "react";
+
 import { useAppStore } from "../store";
 
 interface DropZoneProps {
@@ -55,7 +56,6 @@ const DropZone: React.FC<DropZoneProps> = ({ className = "", children }) => {
         return;
       }
 
-      // For now, show a message that drag & drop from file system is not yet implemented
       setError(
         new Error(
           "File drag & drop from file system not yet implemented. Please use a file dialog instead.",
@@ -67,6 +67,7 @@ const DropZone: React.FC<DropZoneProps> = ({ className = "", children }) => {
   );
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a drop zone is a region by definition; the drag handlers belong to the region, not to a control inside it
     <section
       aria-label="Drop zone"
       className={`drop-zone ${className} ${ui.isDragOver ? "drag-over" : ""}`}

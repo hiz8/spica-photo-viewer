@@ -1,32 +1,92 @@
-use crate::utils::image::{
-    generate_thumbnail, get_image_dimensions, is_supported_image, load_image_as_base64,
-};
+//! Spec (preview): docs/superpowers/specs/2026-08-21-thumbnail-implies-cached-preview-tier-design.md
+//! Spec (sort):    docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+//!
+//! This file spans both specs; every inline reference below is qualified
+//! `(preview ...)` or `(sort ...)` since both specs define their own §6.2,
+//! §6.5, I1, D4, D5.
+
+use crate::commands::cache::{self, CacheEntry, PreviewSidecar};
+use crate::utils::image::is_supported_image;
+use crate::utils::natural_sort::natural_cmp;
+use crate::utils::preview::{self, PreviewBox};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-// Windows API constants
 #[cfg(target_os = "windows")]
 const MAX_PATH_EXTENDED: usize = 32768;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
     pub filename: String,
     pub size: u64,
     pub modified: u64,
+    /// UNIX seconds; falls back to `modified` where the platform/filesystem
+    /// has no creation time (e.g. Linux) (sort §6.5).
+    pub created: u64,
     pub format: String,
+    /// Sort-only full-precision timestamps (sort D5). Never serialized:
+    /// ns since epoch exceeds JavaScript's safe-integer range (2^53).
+    #[serde(skip)]
+    pub modified_ns: u64,
+    #[serde(skip)]
+    pub created_ns: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ImageData {
-    pub path: String,
-    pub base64: String,
-    pub width: u32,
-    pub height: u32,
-    pub format: String,
+// Explorer detection is the only producer of the keys other than Name, and it
+// is stubbed out off Windows (explorer_sort I4) — so there the variants are
+// matched but never constructed.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    Name,
+    Size,
+    Modified,
+    Created,
+    Type,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SortSpec {
+    pub key: SortKey,
+    pub descending: bool,
+}
+
+impl Default for SortSpec {
+    fn default() -> Self {
+        Self {
+            key: SortKey::Name,
+            descending: false,
+        }
+    }
+}
+
+/// Sorts images the way Explorer displays them for the given sort setting.
+/// Pure function: no COM, unit-testable (sort §6.2). Ties on the primary key
+/// always break by natural name order ASCENDING regardless of `descending`,
+/// so the order is deterministic (sort I1).
+pub fn sort_images(images: &mut [ImageInfo], spec: SortSpec) {
+    images.sort_by(|a, b| {
+        let primary = match spec.key {
+            SortKey::Name => natural_cmp(&a.filename, &b.filename),
+            SortKey::Size => a.size.cmp(&b.size),
+            SortKey::Modified => a.modified_ns.cmp(&b.modified_ns),
+            SortKey::Created => a.created_ns.cmp(&b.created_ns),
+            SortKey::Type => natural_cmp(&a.format, &b.format),
+        };
+        let primary = if spec.descending {
+            primary.reverse()
+        } else {
+            primary
+        };
+        // natural_cmp can return Equal for case-insensitively equal names
+        // ("IMG_1.jpg" vs "img_1.jpg" under StrCmpLogicalW). The tiebreak is
+        // then a no-op and the stable sort keeps enumeration order.
+        primary.then_with(|| natural_cmp(&a.filename, &b.filename))
+    });
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,36 +94,101 @@ pub struct ThumbnailWithDimensions {
     pub thumbnail_base64: String,
     pub original_width: u32,
     pub original_height: u32,
+    /// true when a display-resolution preview for the requested box is now on disk (preview I1).
+    pub preview_available: bool,
 }
 
 #[tauri::command]
 pub async fn get_folder_images(path: String) -> Result<Vec<ImageInfo>, String> {
-    let folder_path = Path::new(&path);
-
-    if !folder_path.exists() || !folder_path.is_dir() {
+    if !Path::new(&path).is_dir() {
         return Err("Invalid folder path".to_string());
     }
 
-    // First, collect all valid image paths (fast, no metadata reads)
-    let image_paths: Vec<_> = WalkDir::new(folder_path)
+    // Both branches block — waiting for the prefetch or walking the folder —
+    // so they run off the async runtime's core threads.
+    tauri::async_runtime::spawn_blocking(move || {
+        let folder_path = Path::new(&path);
+        // The startup prefetch may have scanned (and sort-probed) this folder already.
+        if let Some(prefetched) = crate::commands::startup::take_folder(folder_path) {
+            crate::utils::perf::phase("folder_scan_prefetched", "");
+            return prefetched;
+        }
+        scan_folder(folder_path, &path)
+    })
+    .await
+    .map_err(|e| format!("folder scan task failed: {e}"))?
+}
+
+/// Enumerates `folder_path`'s images in Explorer's display order. `path` is
+/// the same folder as a string, for the perf log only.
+pub fn scan_folder(folder_path: &Path, path: &str) -> Result<Vec<ImageInfo>, String> {
+    crate::utils::perf::phase("folder_scan_start", "");
+    let t_scan = std::time::Instant::now();
+
+    // Ask Explorer for this folder's sort setting concurrently with the scan
+    // (sort §5); the answer is picked up after the scan with whatever remains
+    // of the 300ms budget.
+    let probe = crate::commands::explorer_sort::spawn_detect(folder_path.to_path_buf());
+
+    // Directory enumeration already carries type, size and timestamps
+    // (FindNextFile on Windows; walkdir keeps them on the entry), so neither
+    // `path.is_file()` nor a second `fs::metadata` is needed per file. Each
+    // of those opens a handle on Windows, which is also where real-time AV
+    // scanning hooks in — two avoidable opens per image, linear in folder size.
+    let entries: Vec<(std::path::PathBuf, Option<fs::Metadata>)> = WalkDir::new(folder_path)
         .max_depth(1)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|entry| {
-            let path = entry.path();
-            path.is_file() && is_supported_image(path)
+            let ft = entry.file_type();
+            // Symlinked images still count, matching the old is_file() walk.
+            (ft.is_file() || (ft.is_symlink() && entry.path().is_file()))
+                && is_supported_image(entry.path())
         })
-        .map(|entry| entry.path().to_path_buf())
+        .map(|entry| {
+            let meta = entry.metadata().ok();
+            (entry.into_path(), meta)
+        })
         .collect();
+    let walk_ms = t_scan.elapsed().as_secs_f64() * 1000.0;
 
-    // Process metadata in parallel using rayon
-    // This dramatically speeds up folder scanning for large folders (900+ images)
-    let mut images: Vec<ImageInfo> = image_paths
+    let t_meta = std::time::Instant::now();
+    let mut images: Vec<ImageInfo> = entries
         .par_iter()
-        .filter_map(|path| get_image_info(path).ok())
+        .filter_map(|(path, meta)| image_info_from(path, meta.as_ref()).ok())
         .collect();
+    let meta_ms = t_meta.elapsed().as_secs_f64() * 1000.0;
 
-    images.sort_by(|a, b| a.filename.cmp(&b.filename));
+    let t_probe = std::time::Instant::now();
+    let (detected, probe_ms) = probe.join();
+    let probe_wait_ms = t_probe.elapsed().as_secs_f64() * 1000.0;
+    crate::utils::perf::phase(
+        "folder_scan_end",
+        &format!(
+            r#","n":{},"walk_ms":{:.1},"meta_ms":{:.1},"probe_wait_ms":{:.1}"#,
+            images.len(),
+            walk_ms,
+            meta_ms,
+            probe_wait_ms
+        ),
+    );
+    if crate::utils::perf::enabled() {
+        // Sort provenance (sort §6.5): explorer = a window's setting was adopted,
+        // fallback = Name ascending. Log-only; never surfaced in UI (sort D4).
+        let (source, key, descending) = match detected {
+            Some(s) => ("explorer", format!("{:?}", s.key), s.descending),
+            None => ("fallback", "Name".to_string(), false),
+        };
+        crate::utils::perf::emit(format!(
+            r#"{{"perf":"rust","op":"explorer_sort","path":{},"ms":{:.2},"source":"{}","key":"{}","descending":{}}}"#,
+            serde_json::to_string(&path).unwrap_or_else(|_| "\"?\"".into()),
+            probe_ms,
+            source,
+            key,
+            descending
+        ));
+    }
+    sort_images(&mut images, detected.unwrap_or_default());
     Ok(images)
 }
 
@@ -75,32 +200,6 @@ fn validate_image_path(path: &Path) -> Result<(), String> {
         return Err("Unsupported file format".to_string());
     }
     Ok(())
-}
-
-#[tauri::command]
-pub async fn load_image(path: String) -> Result<ImageData, String> {
-    let image_path = Path::new(&path);
-    validate_image_path(image_path)?;
-
-    let base64_data =
-        load_image_as_base64(image_path).map_err(|e| format!("Failed to load image: {}", e))?;
-
-    let (width, height) = get_image_dimensions(image_path)
-        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
-
-    let format = image_path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_lowercase();
-
-    Ok(ImageData {
-        path,
-        base64: base64_data,
-        width,
-        height,
-        format,
-    })
 }
 
 #[tauri::command]
@@ -117,59 +216,139 @@ pub fn validate_image_file(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn get_startup_file() -> Result<Option<String>, String> {
-    let args: Vec<String> = std::env::args().collect();
-
-    // Look for image file in command line arguments (usually args[1])
-    for arg in &args[1..] {
-        let path = Path::new(arg);
-        if path.exists() && path.is_file() && is_supported_image(path) {
-            return Ok(Some(arg.clone()));
-        }
-    }
-
-    Ok(None)
+pub fn get_startup_file() -> Result<Option<StartupFile>, String> {
+    crate::utils::perf::phase("get_startup_file", "");
+    Ok(startup_file_from_args().map(|path| {
+        let thumbnail = crate::commands::startup::take_thumbnail(&path);
+        crate::utils::perf::phase(
+            "get_startup_file_end",
+            &format!(r#","thumb":{}"#, thumbnail.is_some()),
+        );
+        StartupFile { path, thumbnail }
+    }))
 }
 
-#[tauri::command]
-pub async fn generate_image_thumbnail(path: String, size: Option<u32>) -> Result<String, String> {
-    let image_path = Path::new(&path);
-    validate_image_path(image_path)?;
+#[derive(Debug, Serialize)]
+pub struct StartupFile {
+    pub path: String,
+    /// Thumbnail prepared by the startup prefetch when it finished in time;
+    /// its preview is then on disk too (preview I1), so the frontend can
+    /// seed its thumbnail cache and take the preview route for first paint.
+    pub thumbnail: Option<crate::commands::startup::PrefetchedThumbnail>,
+}
 
-    let thumbnail_size = size.unwrap_or(30);
+/// The image passed on the command line (file association), if any.
+pub fn startup_file_from_args() -> Option<String> {
+    startup_file_in(std::env::args().skip(1))
+}
 
-    generate_thumbnail(image_path, thumbnail_size)
-        .map_err(|e| format!("Failed to generate thumbnail: {}", e))
+pub fn startup_file_in(args: impl Iterator<Item = String>) -> Option<String> {
+    let mut args = args;
+    args.find(|arg| {
+        let path = Path::new(arg);
+        path.exists() && path.is_file() && is_supported_image(path)
+    })
+}
+
+fn is_gif_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("gif"))
+        .unwrap_or(false)
+}
+
+/// Thumbnail + (non-GIF, box given) preview from one decode, both written to
+/// `cache_dir` before returning, so "thumbnail exists" implies "preview exists".
+pub fn generate_and_cache(
+    path: &Path,
+    size: u32,
+    preview_box: Option<&str>,
+    cache_dir: &Path,
+) -> Result<ThumbnailWithDimensions, String> {
+    validate_image_path(path)?;
+    let path_str = path.to_string_lossy().to_string();
+    let bbox = match preview_box {
+        Some(s) => {
+            Some(PreviewBox::parse(s).ok_or_else(|| format!("unsupported preview box: {s}"))?)
+        }
+        None => None,
+    };
+    let stamp =
+        cache::source_stamp(path).ok_or_else(|| "Failed to stat source file".to_string())?;
+    let now = cache::current_unix_time();
+
+    let (thumbnail_base64, natural_width, natural_height, stored_box) =
+        match (bbox, is_gif_path(path)) {
+            (Some(bbox), false) => {
+                let g = preview::generate(path, bbox, size)?;
+                cache::store_preview(
+                    cache_dir,
+                    &path_str,
+                    &bbox.key(),
+                    &g.preview_jpeg,
+                    &PreviewSidecar {
+                        natural_width: g.natural_width,
+                        natural_height: g.natural_height,
+                        source_mtime: stamp.0,
+                        source_size: stamp.1,
+                        created: now,
+                    },
+                )?;
+                (
+                    g.thumbnail_base64,
+                    g.natural_width,
+                    g.natural_height,
+                    Some(bbox.key()),
+                )
+            }
+            _ => {
+                let (b64, w, h) = preview::thumbnail_only(path, size)?;
+                (b64, w, h, None)
+            }
+        };
+    cache::store_thumbnail_entry(
+        cache_dir,
+        &path_str,
+        size,
+        &CacheEntry {
+            thumbnail: thumbnail_base64.clone(),
+            created: now,
+            width: Some(natural_width),
+            height: Some(natural_height),
+            preview_box: stored_box.clone(),
+            source_mtime: Some(stamp.0),
+            source_size: Some(stamp.1),
+        },
+    )?;
+    Ok(ThumbnailWithDimensions {
+        thumbnail_base64,
+        original_width: natural_width,
+        original_height: natural_height,
+        preview_available: stored_box.is_some(),
+    })
 }
 
 #[tauri::command]
 pub async fn generate_thumbnail_with_dimensions(
     path: String,
     size: u32,
+    preview_box: Option<String>,
 ) -> Result<ThumbnailWithDimensions, String> {
-    let image_path = Path::new(&path);
-    validate_image_path(image_path)?;
-
-    let (original_width, original_height) = get_image_dimensions(image_path)
-        .map_err(|e| format!("Failed to get image dimensions: {}", e))?;
-
-    let thumbnail_base64 = generate_thumbnail(image_path, size)
-        .map_err(|e| format!("Failed to generate thumbnail: {}", e))?;
-
-    Ok(ThumbnailWithDimensions {
-        thumbnail_base64,
-        original_width,
-        original_height,
+    tauri::async_runtime::spawn_blocking(move || {
+        let _t = crate::utils::perf::PerfTimer::start("thumb_preview", &path);
+        // Validate before touching the cache dir, so a bad path fails
+        // without creating the real cache directory as a side effect.
+        validate_image_path(Path::new(&path))?;
+        let cache_dir = cache::get_cache_dir()?;
+        generate_and_cache(Path::new(&path), size, preview_box.as_deref(), &cache_dir)
     })
+    .await
+    .map_err(|e| format!("thumbnail task failed: {e}"))?
 }
 
-/// Validates the file path and converts it to a short path name (8.3 format) for Windows.
-///
-/// This function handles special characters (parentheses, spaces, Japanese characters, etc.)
-/// by converting the path to Windows short path name format, which avoids command-line
-/// escaping issues when passing to rundll32.exe.
-///
-/// Returns the prepared path as a String, or an error if validation fails.
+/// Short-path (8.3) conversion avoids rundll32.exe command-line escaping
+/// issues with special characters (parentheses, spaces, Japanese characters,
+/// etc.) in file names.
 #[cfg(target_os = "windows")]
 fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
     use windows::core::PCWSTR;
@@ -177,7 +356,6 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
 
     let file_path = Path::new(path);
 
-    // Validate file exists
     if !file_path.exists() {
         return Err("File not found".to_string());
     }
@@ -186,19 +364,15 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         return Err("Path is not a file".to_string());
     }
 
-    // Convert path to absolute path
     let absolute_path = file_path
         .canonicalize()
         .map_err(|e| format!("Failed to get absolute path: {}", e))?;
 
-    // Convert to string and remove the UNC prefix (\\?\) if present
     let mut path_str = absolute_path.to_string_lossy().to_string();
     if path_str.starts_with(r"\\?\") {
         path_str = path_str[4..].to_string();
     }
 
-    // Convert to short path name (8.3 format) to avoid issues with special characters
-    // like parentheses, spaces, etc. in file names
     let path_wide: Vec<u16> = path_str.encode_utf16().chain(Some(0)).collect();
     let mut short_path_buf: Vec<u16> = vec![0; MAX_PATH_EXTENDED];
 
@@ -208,18 +382,16 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         let result = GetShortPathNameW(PCWSTR(path_wide.as_ptr()), Some(&mut short_path_buf));
 
         if result == 0 {
-            // GetShortPathNameW failed - check the error code
+            // Known failure codes: ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED
+            // (5), ERROR_INVALID_NAME (123). Fall back to the original path so
+            // Open With still works when short-path conversion isn't available.
             let error = GetLastError();
-            // ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED (5), ERROR_INVALID_NAME (123)
-            // Log the error but fall back to original path for compatibility
-            // This allows the function to work even if short path conversion is not available
             eprintln!(
                 "GetShortPathNameW failed with error code {:?}, falling back to original path",
                 error
             );
             Ok(path_str)
         } else {
-            // Use the short path name
             let short_path = String::from_utf16_lossy(&short_path_buf[..result as usize]);
             Ok(short_path)
         }
@@ -228,10 +400,8 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub fn open_with_dialog(path: String) -> Result<(), String> {
-    // Windows-specific implementation
     #[cfg(target_os = "windows")]
     {
-        // Validate and prepare the path
         let _prepared_path = prepare_path_for_open_with(&path)?;
 
         // Skip actual dialog spawn during tests to avoid UI interaction
@@ -249,16 +419,31 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
         Ok(())
     }
 
-    // Non-Windows platforms
     #[cfg(not(target_os = "windows"))]
     {
+        // The IPC signature is the same on every target, so the parameter has
+        // to stay even where nothing reads it.
+        let _ = path;
         Err("Open With dialog is only supported on Windows".to_string())
     }
 }
 
 fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
-    let metadata =
-        fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    image_info_from(path, None)
+}
+
+/// `metadata` is the directory-entry metadata when the caller already has it
+/// (folder scan); None stats the file.
+fn image_info_from(path: &Path, metadata: Option<&fs::Metadata>) -> Result<ImageInfo, String> {
+    let owned;
+    let metadata = match metadata {
+        Some(m) => m,
+        None => {
+            owned =
+                fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+            &owned
+        }
+    };
 
     let filename = path
         .file_name()
@@ -272,23 +457,32 @@ fn get_image_info(path: &Path) -> Result<ImageInfo, String> {
         .unwrap_or("unknown")
         .to_lowercase();
 
-    let modified = metadata
+    let modified_dur = metadata
         .modified()
         .map_err(|e| format!("Failed to get modification time: {}", e))?
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("Failed to convert time: {}", e))?
-        .as_secs();
+        .map_err(|e| format!("Failed to convert time: {}", e))?;
+    let modified = modified_dur.as_secs();
 
-    // Note: Image validation is deferred to actual image loading time (load_image, generate_thumbnail)
-    // to avoid opening 900+ files during folder scan, which causes significant delays.
-    // Corrupted images will be detected when actually loaded via image::open().
+    let created_dur = metadata
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .unwrap_or(modified_dur);
+
+    // Note: Image validation is deferred to actual image loading time (spica-img protocol serve,
+    // generate_thumbnail) to avoid opening 900+ files during folder scan, which causes significant
+    // delays. Corrupted images will be detected when actually loaded via image::open() / browser decode.
 
     Ok(ImageInfo {
         path: path.to_string_lossy().to_string(),
         filename,
         size: metadata.len(),
         modified,
+        created: created_dur.as_secs(),
         format,
+        modified_ns: modified_dur.as_nanos() as u64,
+        created_ns: created_dur.as_nanos() as u64,
     })
 }
 
@@ -298,11 +492,79 @@ mod tests {
     use crate::test_utils::*;
     use std::fs;
 
+    #[test]
+    fn generate_and_cache_writes_thumbnail_entry_and_preview() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let img = create_gradient_jpeg(dir.path(), "big.jpg", 2400, 1600);
+        let out = generate_and_cache(&img, 20, Some("1920x1080"), cache.path()).unwrap();
+        assert!(out.preview_available);
+        assert_eq!((out.original_width, out.original_height), (2400, 1600));
+        assert!(!out.thumbnail_base64.is_empty());
+        let p = img.to_string_lossy().to_string();
+        assert!(
+            crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, Some("1920x1080"))
+                .is_some()
+        );
+        let (bytes, side) =
+            crate::commands::cache::load_preview(cache.path(), &p, "1920x1080").unwrap();
+        assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 1620);
+        assert_eq!((side.natural_width, side.natural_height), (2400, 1600));
+    }
+
+    #[test]
+    fn generate_and_cache_gif_has_no_preview() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let gif = create_test_gif(dir.path(), "a.gif");
+        let out = generate_and_cache(&gif, 20, Some("1920x1080"), cache.path()).unwrap();
+        assert!(!out.preview_available);
+        let p = gif.to_string_lossy().to_string();
+        assert!(
+            crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, Some("1920x1080"))
+                .is_some()
+        );
+        assert!(crate::commands::cache::load_preview(cache.path(), &p, "1920x1080").is_none());
+    }
+
+    #[test]
+    fn generate_and_cache_without_box_only_writes_the_thumbnail() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let img = create_gradient_jpeg(dir.path(), "a.jpg", 640, 480);
+        let out = generate_and_cache(&img, 20, None, cache.path()).unwrap();
+        assert!(!out.preview_available);
+        let p = img.to_string_lossy().to_string();
+        assert!(crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, None).is_some());
+        assert!(
+            crate::commands::cache::lookup_thumbnail(cache.path(), &p, 20, Some("1920x1080"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn generate_and_cache_rejects_invalid_box() {
+        let dir = create_temp_dir();
+        let cache = create_temp_dir();
+        let img = create_gradient_jpeg(dir.path(), "a.jpg", 640, 480);
+        assert!(generate_and_cache(&img, 20, Some("999x999"), cache.path()).is_err());
+    }
+
+    #[tokio::test]
+    async fn generate_thumbnail_with_dimensions_command_rejects_missing_file() {
+        let r = generate_thumbnail_with_dimensions(
+            "C:\\nope\\missing.jpg".to_string(),
+            20,
+            Some("1920x1080".to_string()),
+        )
+        .await;
+        assert!(r.is_err());
+    }
+
     #[tokio::test]
     async fn test_get_folder_images_with_valid_folder() {
         let temp_dir = create_temp_dir();
 
-        // Create test images
         create_test_jpeg(temp_dir.path(), "image1.jpg");
         create_test_png(temp_dir.path(), "image2.png");
         create_test_gif(temp_dir.path(), "image3.gif");
@@ -313,10 +575,263 @@ mod tests {
         let images = result.unwrap();
         assert_eq!(images.len(), 3);
 
-        // Check sorting (should be alphabetical)
+        // Check sorting (natural name order; same as alphabetical for these names)
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
         assert_eq!(images[2].filename, "image3.gif");
+    }
+
+    #[tokio::test]
+    async fn test_get_folder_images_unopened_folder_uses_name_order() {
+        // No Explorer window shows a fresh temp dir, so detection resolves to
+        // None and the order must be natural-name ascending (sort G2/I2). Also
+        // guards the probe wiring: the command must not error or hang.
+        let temp_dir = create_temp_dir();
+        create_test_jpeg(temp_dir.path(), "img10.jpg");
+        create_test_jpeg(temp_dir.path(), "img2.jpg");
+        create_test_png(temp_dir.path(), "img3.png");
+
+        let images = get_folder_images(temp_dir.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        let names: Vec<&str> = images.iter().map(|i| i.filename.as_str()).collect();
+        assert_eq!(names, ["img2.jpg", "img3.png", "img10.jpg"]);
+    }
+
+    #[tokio::test]
+    async fn test_image_info_timestamps_full_precision() {
+        let temp_dir = create_temp_dir();
+        create_test_jpeg(temp_dir.path(), "ts.jpg");
+
+        let images = get_folder_images(temp_dir.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        let info = &images[0];
+
+        // seconds fields are the ns fields truncated (sort D5)
+        assert_eq!(info.modified, info.modified_ns / 1_000_000_000);
+        assert_eq!(info.created, info.created_ns / 1_000_000_000);
+        assert!(info.modified_ns > 0);
+        assert!(info.created_ns > 0);
+    }
+
+    /// Builds an ImageInfo for sort tests. Seconds fields derive from the ns
+    /// fields the same way get_image_info does.
+    fn sort_info(
+        filename: &str,
+        size: u64,
+        modified_ns: u64,
+        created_ns: u64,
+        format: &str,
+    ) -> ImageInfo {
+        ImageInfo {
+            path: format!("/t/{filename}"),
+            filename: filename.to_string(),
+            size,
+            modified: modified_ns / 1_000_000_000,
+            created: created_ns / 1_000_000_000,
+            format: format.to_string(),
+            modified_ns,
+            created_ns,
+        }
+    }
+
+    fn names(images: &[ImageInfo]) -> Vec<&str> {
+        images.iter().map(|i| i.filename.as_str()).collect()
+    }
+
+    #[test]
+    fn test_sort_images_name_natural_order() {
+        // Data must sort identically under StrCmpLogicalW and the non-Windows
+        // fallback (see natural_sort.rs): digits decide, no punctuation-vs-digit
+        // comparisons. "IMG_1.jpg" vs "img2.jpg" would diverge ('_' vs '2').
+        let mut v = vec![
+            sort_info("img10.jpg", 1, 1, 1, "jpeg"),
+            sort_info("img2.jpg", 1, 1, 1, "jpeg"),
+            sort_info("IMG3.jpg", 1, 1, 1, "jpeg"),
+        ];
+        sort_images(&mut v, SortSpec::default());
+        assert_eq!(names(&v), ["img2.jpg", "IMG3.jpg", "img10.jpg"]);
+
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Name,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["img10.jpg", "IMG3.jpg", "img2.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_size_with_name_tiebreak() {
+        let mut v = vec![
+            sort_info("b.jpg", 200, 1, 1, "jpeg"),
+            sort_info("c.jpg", 100, 1, 1, "jpeg"),
+            sort_info("a.jpg", 100, 1, 1, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Size,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "c.jpg", "b.jpg"]);
+
+        // Descending flips the primary key only; the tie between a/c stays
+        // name-ASCENDING (sort I1).
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Size,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["b.jpg", "a.jpg", "c.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_modified_uses_ns_precision() {
+        // Same second, different ns. Name order is the REVERSE of ns order,
+        // so a seconds-truncated compare would fall to the name tiebreak and
+        // produce the wrong result (sort D5 regression test).
+        let base = 1_700_000_000_000_000_000u64;
+        let mut v = vec![
+            sort_info("a.jpg", 1, base + 500_000_000, 1, "jpeg"),
+            sort_info("b.jpg", 1, base + 100_000_000, 1, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
+
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_modified_tie_breaks_by_name() {
+        // Identical modified_ns: even with descending set, the tiebreak
+        // stays name-ASCENDING (sort I1) — descending only flips the primary key.
+        let same = 1_700_000_000_000_000_000u64;
+        let mut v = vec![
+            sort_info("b.jpg", 1, same, 1, "jpeg"),
+            sort_info("a.jpg", 1, same, 1, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_created_uses_ns_precision() {
+        let base = 1_700_000_000_000_000_000u64;
+        let mut v = vec![
+            sort_info("a.jpg", 1, 1, base + 500_000_000, "jpeg"),
+            sort_info("b.jpg", 1, 1, base + 100_000_000, "jpeg"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Created,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["b.jpg", "a.jpg"]);
+
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Created,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["a.jpg", "b.jpg"]);
+    }
+
+    #[test]
+    fn test_sort_images_type_then_name() {
+        let mut v = vec![
+            sort_info("b.png", 1, 1, 1, "png"),
+            sort_info("a.jpg", 1, 1, 1, "jpeg"),
+            sort_info("c.gif", 1, 1, 1, "gif"),
+        ];
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Type,
+                descending: false,
+            },
+        );
+        assert_eq!(names(&v), ["c.gif", "a.jpg", "b.png"]);
+
+        sort_images(
+            &mut v,
+            SortSpec {
+                key: SortKey::Type,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&v), ["b.png", "a.jpg", "c.gif"]);
+    }
+
+    #[test]
+    fn test_image_info_serde_skips_ns_fields() {
+        let info = sort_info(
+            "a.jpg",
+            1,
+            1_700_000_000_500_000_000,
+            1_700_000_000_100_000_000,
+            "jpeg",
+        );
+        let value = serde_json::to_value(&info).unwrap();
+        let obj = value.as_object().unwrap();
+
+        for key in ["path", "filename", "size", "modified", "created", "format"] {
+            assert!(
+                obj.contains_key(key),
+                "expected key `{key}` in serialized ImageInfo"
+            );
+        }
+        for key in ["modified_ns", "created_ns"] {
+            assert!(
+                !obj.contains_key(key),
+                "did not expect key `{key}` in serialized ImageInfo (D5)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sort_images_empty_and_single() {
+        let mut empty: Vec<ImageInfo> = vec![];
+        sort_images(&mut empty, SortSpec::default());
+        assert!(empty.is_empty());
+
+        let mut one = vec![sort_info("a.jpg", 1, 1, 1, "jpeg")];
+        sort_images(
+            &mut one,
+            SortSpec {
+                key: SortKey::Modified,
+                descending: true,
+            },
+        );
+        assert_eq!(names(&one), ["a.jpg"]);
     }
 
     #[tokio::test]
@@ -341,7 +856,6 @@ mod tests {
     async fn test_get_folder_images_with_mixed_files() {
         let temp_dir = create_temp_dir();
 
-        // Create test images and non-image files
         create_test_jpeg(temp_dir.path(), "image1.jpg");
         create_invalid_image(temp_dir.path(), "textfile.txt");
         create_test_png(temp_dir.path(), "image2.png");
@@ -350,7 +864,7 @@ mod tests {
         assert!(result.is_ok());
 
         let images = result.unwrap();
-        assert_eq!(images.len(), 2); // Only valid images
+        assert_eq!(images.len(), 2);
         assert_eq!(images[0].filename, "image1.jpg");
         assert_eq!(images[1].filename, "image2.png");
     }
@@ -359,7 +873,6 @@ mod tests {
     async fn test_get_folder_images_defers_validation_to_load_time() {
         let temp_dir = create_temp_dir();
 
-        // Create valid and corrupted images with valid extensions
         create_test_jpeg(temp_dir.path(), "valid.jpg");
         create_fake_image(temp_dir.path(), "corrupted.jpg");
 
@@ -377,10 +890,8 @@ mod tests {
     async fn test_get_folder_images_with_subdirectories() {
         let temp_dir = create_temp_dir();
 
-        // Create image in root
         create_test_jpeg(temp_dir.path(), "root.jpg");
 
-        // Create subdirectory with image
         let sub_dir = temp_dir.path().join("subdir");
         fs::create_dir(&sub_dir).unwrap();
         create_test_png(&sub_dir, "sub.png");
@@ -398,7 +909,6 @@ mod tests {
     async fn test_get_folder_images_case_insensitive_extensions() {
         let temp_dir = create_temp_dir();
 
-        // Create images with different case extensions
         create_test_jpeg(temp_dir.path(), "lower.jpg");
         create_test_jpeg(temp_dir.path(), "upper.JPG");
         create_test_jpeg(temp_dir.path(), "mixed.Jpeg");
@@ -408,73 +918,6 @@ mod tests {
 
         let images = result.unwrap();
         assert_eq!(images.len(), 3);
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_valid_file() {
-        let temp_dir = create_temp_dir();
-        let image_path = create_test_jpeg(temp_dir.path(), "test.jpg");
-
-        let result = load_image(image_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-
-        let image_data = result.unwrap();
-        assert_eq!(image_data.path, image_path.to_string_lossy().to_string());
-        assert!(!image_data.base64.is_empty());
-        assert_eq!(image_data.width, 1);
-        assert_eq!(image_data.height, 1);
-        assert_eq!(image_data.format, "jpg");
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_nonexistent_file() {
-        let result = load_image("/nonexistent/image.jpg".to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("File not found"));
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_unsupported_format() {
-        let temp_dir = create_temp_dir();
-        let text_file = temp_dir.path().join("test.txt");
-        fs::write(&text_file, "not an image").unwrap();
-
-        let result = load_image(text_file.to_string_lossy().to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported file format"));
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_corrupted_file() {
-        let temp_dir = create_temp_dir();
-        let corrupted_path = create_fake_image(temp_dir.path(), "corrupted.jpg");
-
-        let result = load_image(corrupted_path.to_string_lossy().to_string()).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to load image"));
-    }
-
-    #[tokio::test]
-    async fn test_load_image_with_different_formats() {
-        let temp_dir = create_temp_dir();
-
-        // Test JPEG
-        let jpeg_path = create_test_jpeg(temp_dir.path(), "test.jpeg");
-        let result = load_image(jpeg_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().format, "jpeg");
-
-        // Test PNG
-        let png_path = create_test_png(temp_dir.path(), "test.png");
-        let result = load_image(png_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().format, "png");
-
-        // Test GIF
-        let gif_path = create_test_gif(temp_dir.path(), "test.gif");
-        let result = load_image(gif_path.to_string_lossy().to_string()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().format, "gif");
     }
 
     #[tokio::test]
@@ -554,7 +997,7 @@ mod tests {
 
         let result = validate_image_file(temp_dir.path().to_string_lossy().to_string());
         assert!(result.is_ok());
-        assert!(!result.unwrap()); // Directory should not be valid
+        assert!(!result.unwrap());
     }
 
     #[test]
@@ -574,59 +1017,38 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_valid_image() {
-        let temp_dir = create_temp_dir();
-        let image_path = create_test_jpeg(temp_dir.path(), "thumbnail_test.jpg");
-
-        let result =
-            generate_image_thumbnail(image_path.to_string_lossy().to_string(), Some(30)).await;
-        assert!(result.is_ok());
-
-        let thumbnail_data = result.unwrap();
-        assert!(!thumbnail_data.is_empty());
+    #[test]
+    fn image_info_from_dir_entry_metadata_matches_a_fresh_stat() {
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        let entry = WalkDir::new(dir.path())
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .find(|e| e.path() == img)
+            .unwrap();
+        let from_entry = image_info_from(&img, entry.metadata().ok().as_ref()).unwrap();
+        let from_stat = get_image_info(&img).unwrap();
+        assert_eq!(from_entry.size, from_stat.size);
+        assert_eq!(from_entry.modified_ns, from_stat.modified_ns);
+        assert_eq!(from_entry.created_ns, from_stat.created_ns);
+        assert_eq!(from_entry.filename, "a.jpg");
+        assert_eq!(from_entry.format, "jpg");
     }
 
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_default_size() {
-        let temp_dir = create_temp_dir();
-        let image_path = create_test_jpeg(temp_dir.path(), "thumbnail_test.jpg");
-
-        let result = generate_image_thumbnail(image_path.to_string_lossy().to_string(), None).await;
-        assert!(result.is_ok());
-
-        let thumbnail_data = result.unwrap();
-        assert!(!thumbnail_data.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_nonexistent_file() {
-        let result = generate_image_thumbnail("/nonexistent/file.jpg".to_string(), Some(30)).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("File not found"));
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_unsupported_format() {
-        let temp_dir = create_temp_dir();
-        let text_file = temp_dir.path().join("text.txt");
-        fs::write(&text_file, "not an image").unwrap();
-
-        let result =
-            generate_image_thumbnail(text_file.to_string_lossy().to_string(), Some(30)).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported file format"));
-    }
-
-    #[tokio::test]
-    async fn test_generate_image_thumbnail_with_corrupted_file() {
-        let temp_dir = create_temp_dir();
-        let corrupted_path = create_fake_image(temp_dir.path(), "corrupted.jpg");
-
-        let result =
-            generate_image_thumbnail(corrupted_path.to_string_lossy().to_string(), Some(30)).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to generate thumbnail"));
+    #[test]
+    fn startup_file_in_picks_the_first_existing_supported_image() {
+        let dir = create_temp_dir();
+        let img = create_test_jpeg(dir.path(), "a.jpg");
+        let img_str = img.to_string_lossy().to_string();
+        let args = vec![
+            "--flag".to_string(),
+            dir.path().join("missing.jpg").to_string_lossy().to_string(),
+            dir.path().join("notes.txt").to_string_lossy().to_string(),
+            img_str.clone(),
+        ];
+        assert_eq!(startup_file_in(args.into_iter()), Some(img_str));
+        assert_eq!(startup_file_in(std::iter::empty()), None);
     }
 
     #[test]
@@ -679,7 +1101,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for special characters (parentheses) in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
@@ -700,7 +1121,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for spaces in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {
@@ -721,7 +1141,6 @@ mod tests {
 
         let result = open_with_dialog(image_path.to_string_lossy().to_string());
 
-        // Regression test for non-ASCII characters (Japanese) in filename
         // In test environment, actual dialog spawn is skipped
         #[cfg(target_os = "windows")]
         {

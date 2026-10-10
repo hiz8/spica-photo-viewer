@@ -1,25 +1,11 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M978.269 512.134L512.135 46L46.0004 512.134L512.135 978.269L978.269 512.134Z" fill="url(#paint0_radial_21_252)"/>
-<g filter="url(#filter0_i_21_252)">
-<circle cx="584" cy="487" r="163" fill="white"/>
-</g>
-<circle cx="558" cy="487" r="94" fill="#101010"/>
-<defs>
-<filter id="filter0_i_21_252" x="417" y="324" width="330" height="330" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-<feFlood flood-opacity="0" result="BackgroundImageFix"/>
-<feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
-<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
-<feMorphology radius="4" operator="erode" in="SourceAlpha" result="effect1_innerShadow_21_252"/>
-<feOffset dx="-5" dy="6"/>
-<feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1"/>
-<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.82 0"/>
-<feBlend mode="normal" in2="shape" result="effect1_innerShadow_21_252"/>
-</filter>
-<radialGradient id="paint0_radial_21_252" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(740.001 151.5) rotate(115.615) scale(890.525)">
-<stop stop-color="#56AFFF"/>
-<stop offset="0.5" stop-color="#56AFFF"/>
-<stop offset="0.5" stop-color="#2E8CD9"/>
-<stop offset="1" stop-color="#2E8CD9"/>
-</radialGradient>
-</defs>
+<path d="M512 41L983 512L512 983L41 512L512 41Z" fill="#1F7FE2"/>
+<path d="M41 512L512 41L389 348L41 512Z" fill="#B4E5FF"/>
+<path d="M512 41L983 512L389 348L512 41Z" fill="#58B4FF"/>
+<path d="M389 348L983 512L512 983L389 348Z" fill="#1F7FE2"/>
+<path d="M389 348L512 983L41 512L389 348Z" fill="#3C9EF6"/>
+<path d="M640 601C725.052 601 794 532.052 794 447C794 361.948 725.052 293 640 293C554.948 293 486 361.948 486 447C486 532.052 554.948 601 640 601Z" fill="#0B3D7A" fill-opacity="0.22"/>
+<path d="M638 585C723.052 585 792 516.052 792 431C792 345.948 723.052 277 638 277C552.948 277 484 345.948 484 431C484 516.052 552.948 585 638 585Z" fill="white"/>
+<path d="M621 522C668.496 522 707 483.496 707 436C707 388.504 668.496 350 621 350C573.504 350 535 388.504 535 436C535 483.496 573.504 522 621 522Z" fill="#0E2A4D"/>
+<path d="M592 425C605.807 425 617 413.807 617 400C617 386.193 605.807 375 592 375C578.193 375 567 386.193 567 400C567 413.807 578.193 425 592 425Z" fill="white"/>
 </svg>
