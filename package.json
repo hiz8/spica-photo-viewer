@@ -37,7 +37,7 @@
     "verify:comments:test": "node --test scripts/__tests__/verify-comment-only.test.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "react": "^19.2.8",
