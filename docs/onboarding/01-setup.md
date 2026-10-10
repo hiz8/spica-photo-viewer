@@ -20,24 +20,22 @@ macOS / Linux でも開発自体は可能ですが、Windows 限定の機能 (`c
 
 ## ステップ 1: Node.js のインストール
 
-`package.json` の `engines` フィールドを確認します。
+本プロジェクトはリポジトリ直下の `mise.toml` で **Node.js 24.21.0** に固定しています (CI も同じバージョン)。`package.json` の `engines` は `>=24.21.0` です。
 
-```json
-"engines": {
-  "node": ">=20.19.0 <21 || >=22.12.0"
-}
-```
+- バージョン管理ツール (推奨): [mise](https://mise.jdx.dev/)。リポジトリ直下で以下を実行すると、このディレクトリでは常に 24.21.0 が使われます。
 
-つまり **Node.js 20.19 以上 (20.x 系) または 22.12 以上** が必要です。22 系の LTS を推奨します。
+  ```bash
+  mise trust     # 初回のみ。mise.toml の読み込みを許可
+  mise install   # mise.toml のバージョンをインストール
+  ```
 
-- 公式インストーラ: https://nodejs.org/
-- バージョン管理ツール (推奨): [Volta](https://volta.sh/) や [fnm](https://github.com/Schniz/fnm)
+- 公式インストーラ: https://nodejs.org/ (この場合は 24.21.0 を手動で入れる)
 
 インストール後、以下で確認します。
 
 ```bash
-node --version   # v22.x.x
-npm --version    # 10.x.x など
+node --version   # v24.21.0
+npm --version    # 11.x.x など
 ```
 
 ---
