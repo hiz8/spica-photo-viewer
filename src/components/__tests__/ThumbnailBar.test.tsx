@@ -1,8 +1,12 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import "@testing-library/jest-dom";
+
+import {
+  THUMBNAIL_BAR_HIDE_DELAY_MS,
+  THUMBNAIL_SCROLL_DEBOUNCE_MS,
+} from "../../constants/timing";
 import type { ImageInfo, ImageData as AppImageData } from "../../types";
-import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../../constants/timing";
 
 // Mock ResizeObserver before component imports
 class MockResizeObserver {
@@ -11,9 +15,9 @@ class MockResizeObserver {
   disconnect = vi.fn();
 }
 
-global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+globalThis.ResizeObserver =
+  MockResizeObserver as unknown as typeof ResizeObserver;
 
-// Helper function to create mock ImageInfo objects
 const createMockImageInfo = (
   index: number,
   overrides: Partial<ImageInfo> = {},
@@ -21,14 +25,15 @@ const createMockImageInfo = (
   path: `/test/image${index}.jpg`,
   filename: `image${index}.jpg`,
   size: 1024,
-  modified: Date.now() - index * 1000,
+  modified: Math.floor(Date.now() / 1000) - index,
+  created: Math.floor(Date.now() / 1000) - index,
   format: "jpeg",
   ...overrides,
 });
 
-// Create default mock store state
 const createDefaultMockStore = () => ({
   folder: {
+    path: "/test",
     images: [] as ImageInfo[],
   },
   currentImage: {
@@ -100,15 +105,20 @@ describe("ThumbnailBar", () => {
       expect(image).toHaveAttribute("alt", "image0.jpg");
     });
 
-    it("should render loading placeholder when no thumbnail data", () => {
+    it("should render an empty item (no icon, no image) when no thumbnail data", () => {
       const images = [createMockImageInfo(0)];
       mockStoreState.folder.images = images;
       mockStoreState.currentImage.index = 0;
-      // No thumbnail in cache
 
       render(<ThumbnailBar />);
 
-      expect(screen.getByText("⏳")).toBeInTheDocument();
+      // Picasa-style: a not-yet-generated thumbnail is blank space that still
+      // occupies its slot (the <button> keeps layout and click target).
+      const item = screen.getByRole("button");
+      expect(item).toBeEmptyDOMElement();
+      expect(item).not.toHaveClass("error");
+      expect(screen.queryByRole("img")).not.toBeInTheDocument();
+      expect(screen.queryByText("⏳")).not.toBeInTheDocument();
     });
 
     it("should render error placeholder when thumbnail has error", () => {
@@ -120,6 +130,7 @@ describe("ThumbnailBar", () => {
       render(<ThumbnailBar />);
 
       expect(screen.getByText("❌")).toBeInTheDocument();
+      expect(screen.getByRole("button")).toHaveClass("error");
     });
 
     it("should apply active class to current image thumbnail", () => {
@@ -189,14 +200,13 @@ describe("ThumbnailBar", () => {
         createMockImageInfo(i),
       );
       mockStoreState.folder.images = images;
-      mockStoreState.currentImage.index = 2; // Last image
+      mockStoreState.currentImage.index = 2;
 
       render(<ThumbnailBar />);
 
       const nav = screen.getByRole("navigation");
       fireEvent.wheel(nav, { deltaY: 100 });
 
-      // Should not call navigateToImage because already at last
       expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
     });
 
@@ -205,46 +215,96 @@ describe("ThumbnailBar", () => {
         createMockImageInfo(i),
       );
       mockStoreState.folder.images = images;
-      mockStoreState.currentImage.index = 0; // First image
+      mockStoreState.currentImage.index = 0;
 
       render(<ThumbnailBar />);
 
       const nav = screen.getByRole("navigation");
       fireEvent.wheel(nav, { deltaY: -100 });
 
-      // Should not call navigateToImage because already at first
       expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
     });
   });
 
-  describe("hover state", () => {
-    it("should apply hovered class on mouse enter", () => {
-      const images = [createMockImageInfo(0)];
-      mockStoreState.folder.images = images;
+  describe("auto-hide", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "performance"],
+      });
+      // jsdom has no Element.scrollTo; advancing past THUMBNAIL_BAR_HIDE_DELAY_MS
+      // also flushes the unrelated scroll-debounce timer inside act().
+      Element.prototype.scrollTo = vi.fn();
+      mockStoreState.folder.images = [
+        createMockImageInfo(0),
+        createMockImageInfo(1),
+      ];
       mockStoreState.currentImage.index = 0;
-
-      render(<ThumbnailBar />);
-
-      const nav = screen.getByRole("navigation");
-      expect(nav).not.toHaveClass("hovered");
-
-      fireEvent.mouseEnter(nav);
-      expect(nav).toHaveClass("hovered");
     });
 
-    it("should remove hovered class on mouse leave", () => {
-      const images = [createMockImageInfo(0)];
-      mockStoreState.folder.images = images;
-      mockStoreState.currentImage.index = 0;
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
+    const hideBar = () => {
+      act(() => {
+        vi.advanceTimersByTime(THUMBNAIL_BAR_HIDE_DELAY_MS);
+      });
+    };
+
+    it("is shown at mount and hidden after the delay", () => {
       render(<ThumbnailBar />);
-
       const nav = screen.getByRole("navigation");
+      expect(nav).toHaveClass("shown");
+
+      hideBar();
+      expect(nav).not.toHaveClass("shown");
+    });
+
+    it("shows while hovered and hides after leaving", () => {
+      render(<ThumbnailBar />);
+      const nav = screen.getByRole("navigation");
+      hideBar();
+
       fireEvent.mouseEnter(nav);
-      expect(nav).toHaveClass("hovered");
+      expect(nav).toHaveClass("shown");
+      act(() => {
+        vi.advanceTimersByTime(THUMBNAIL_BAR_HIDE_DELAY_MS * 5);
+      });
+      expect(nav).toHaveClass("shown");
 
       fireEvent.mouseLeave(nav);
-      expect(nav).not.toHaveClass("hovered");
+      hideBar();
+      expect(nav).not.toHaveClass("shown");
+    });
+
+    it("ignores thumbnail clicks while hidden (D4)", () => {
+      render(<ThumbnailBar />);
+      hideBar();
+
+      fireEvent.click(screen.getByTitle("image1.jpg"));
+      expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
+    });
+
+    it("ignores the wheel while hidden (D4)", () => {
+      render(<ThumbnailBar />);
+      hideBar();
+
+      fireEvent.wheel(screen.getByRole("navigation"), { deltaY: 100 });
+      expect(mockStoreState.navigateToImage).not.toHaveBeenCalled();
+    });
+
+    it("shows again when the folder changes (D3)", () => {
+      const { rerender } = render(<ThumbnailBar />);
+      const nav = screen.getByRole("navigation");
+      hideBar();
+      expect(nav).not.toHaveClass("shown");
+
+      mockStoreState = {
+        ...mockStoreState,
+        folder: { ...mockStoreState.folder, path: "/other" },
+      };
+      rerender(<ThumbnailBar />);
+      expect(nav).toHaveClass("shown");
     });
   });
 
@@ -268,7 +328,7 @@ describe("ThumbnailBar", () => {
       mockStoreState.currentImage.path = "/test/image0.jpg";
       mockStoreState.currentImage.data = {
         path: "/test/image0.jpg",
-        base64: "data",
+        src: "data:image/jpeg;base64,data",
         width: 1920,
         height: 1080,
         format: "jpeg",
@@ -307,13 +367,11 @@ describe("ThumbnailBar", () => {
       mockStoreState.folder.images = images;
       mockStoreState.currentImage.index = 5;
 
-      // Mock scrollTo
       const scrollToMock = vi.fn();
       Element.prototype.scrollTo = scrollToMock;
 
       render(<ThumbnailBar />);
 
-      // Advance timers past debounce
       await act(async () => {
         vi.advanceTimersByTime(THUMBNAIL_SCROLL_DEBOUNCE_MS);
       });
@@ -346,6 +404,52 @@ describe("ThumbnailBar", () => {
     });
   });
 
+  describe("virtualization", () => {
+    // jsdom's window.innerWidth is 1024 → visibleThumbnailRadius = 12; with
+    // the render margin that is far fewer than 500 items either way.
+    it("renders only the thumbnails around the current image for large folders", () => {
+      mockStoreState.folder.images = Array.from({ length: 500 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+      mockStoreState.currentImage.index = 250;
+
+      render(<ThumbnailBar />);
+
+      const buttons = screen.getAllByRole("button");
+      expect(buttons.length).toBeLessThan(200);
+      expect(buttons.length).toBeGreaterThanOrEqual(2 * 4 + 1);
+      expect(screen.getByTitle("image250.jpg")).toHaveClass("active");
+
+      // The omitted items are replaced by spacers of exactly their pitch, so
+      // offsets (and the centering scroll) are unchanged.
+      const spacers = document.querySelectorAll(".thumbnail-spacer");
+      expect(spacers).toHaveLength(2);
+      const first = Number(buttons[0].getAttribute("data-index"));
+      const last = Number(
+        buttons[buttons.length - 1].getAttribute("data-index"),
+      );
+      expect((spacers[0] as HTMLElement).style.width).toBe(`${first * 40}px`);
+      expect((spacers[1] as HTMLElement).style.width).toBe(
+        `${(499 - last) * 40}px`,
+      );
+    });
+
+    it("starts the window at the first image when there is no current image", () => {
+      mockStoreState.folder.images = Array.from({ length: 500 }, (_, i) =>
+        createMockImageInfo(i),
+      );
+      mockStoreState.currentImage.index = -1;
+
+      render(<ThumbnailBar />);
+
+      const buttons = screen.getAllByRole("button");
+      expect(buttons[0].getAttribute("data-index")).toBe("0");
+      expect(buttons.length).toBeLessThan(200);
+      // Nothing is omitted on the left, so only the right spacer exists.
+      expect(document.querySelectorAll(".thumbnail-spacer")).toHaveLength(1);
+    });
+  });
+
   describe("memoization of ThumbnailItem", () => {
     it("should render different state for each thumbnail", () => {
       const images = Array.from({ length: 3 }, (_, i) =>
@@ -354,7 +458,6 @@ describe("ThumbnailBar", () => {
       mockStoreState.folder.images = images;
       mockStoreState.currentImage.index = 1;
 
-      // Set different states for thumbnails
       mockStoreState.cache.thumbnails.set("/test/image0.jpg", {
         base64: "data0",
         width: 800,
@@ -365,10 +468,12 @@ describe("ThumbnailBar", () => {
 
       render(<ThumbnailBar />);
 
-      // Check different states are rendered
+      const items = screen.getAllByRole("button");
       expect(screen.getByAltText("image0.jpg")).toBeInTheDocument(); // Image rendered
-      expect(screen.getByText("⏳")).toBeInTheDocument(); // Loading placeholder
+      expect(items[1]).toBeEmptyDOMElement(); // Loading: blank slot, no icon
+      expect(screen.queryByText("⏳")).not.toBeInTheDocument();
       expect(screen.getByText("❌")).toBeInTheDocument(); // Error placeholder
+      expect(items[2]).toHaveClass("error");
     });
   });
 });

@@ -1,35 +1,229 @@
+//! Spec: docs/superpowers/specs/2026-08-28-explorer-folder-sort-order-design.md
+
 mod commands;
+mod protocol;
 mod utils;
 
 #[cfg(test)]
 mod test_utils;
 
 use commands::cache::{
-    clear_old_cache, get_cache_stats, get_cached_thumbnail, set_cached_thumbnail,
+    clear_old_cache, get_cache_stats, get_cached_thumbnail, get_cached_thumbnails,
+    set_cached_thumbnail,
 };
 use commands::file::{
-    generate_image_thumbnail, generate_thumbnail_with_dimensions, get_folder_images,
-    get_startup_file, handle_dropped_file, load_image, open_with_dialog, validate_image_file,
+    generate_thumbnail_with_dimensions, get_folder_images, get_startup_file, handle_dropped_file,
+    open_with_dialog, validate_image_file,
 };
 use commands::window::{
     get_window_position, get_window_state, maximize_window, resize_window_to_image,
 };
+use std::sync::atomic::AtomicU32;
+use std::sync::OnceLock;
+use std::time::Instant;
+use tauri::Manager;
+
+/// Startup z-order raises made so far (W3).
+static Z_RAISES: AtomicU32 = AtomicU32::new(0);
+/// W3's time window starts here, not at run_start: a cold WebView2 can hold
+/// window creation past the whole window.
+static WINDOW_CREATED_AT: OnceLock<Instant> = OnceLock::new();
+static LAUNCHED_WITH_FILE: OnceLock<bool> = OnceLock::new();
+
+fn launched_with_file() -> bool {
+    LAUNCHED_WITH_FILE.get().copied().unwrap_or(false)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    crate::utils::perf::phase("run_start", "");
+    // Stash the launcher's foreground window before Tauri creates ours and
+    // takes focus (§6.3: picks among multiple Explorer windows).
+    commands::explorer_sort::stash_foreground_window();
+
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            crate::utils::perf::phase("setup", "");
+            // The main window is created here (config `create: false`) so a
+            // launch with a file can be born full-size. A config window would
+            // first show at 800x600 and jump only when the frontend calls
+            // maximize_window ~500ms later (after WebView2 init + page load +
+            // React mount).
+            let startup_file = commands::file::startup_file_from_args();
+            let _ = LAUNCHED_WITH_FILE.set(startup_file.is_some());
+            if let Some(path) = &startup_file {
+                // Overlaps the WebView2 init that window creation blocks on.
+                let screen = app
+                    .primary_monitor()
+                    .ok()
+                    .flatten()
+                    .map(|m| (m.size().width, m.size().height))
+                    .unwrap_or((0, 0));
+                commands::startup::start(path, screen);
+            }
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("missing main window config")?;
+            let title = commands::window::startup_title(&config.title, startup_file.as_deref());
+            // Not `.maximized(true)`: a first show by SW_MAXIMIZE makes the
+            // launching Explorer window rise over ours (W5). The window is
+            // born restored on the maximized rect and maximized once built.
+            let placement =
+                launched_with_file().then(commands::window::FirstShowPlacement::install);
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .title(title)
+                .max_inner_size(
+                    commands::window::MAX_TRACK_LOGICAL_PX,
+                    commands::window::MAX_TRACK_LOGICAL_PX,
+                )
+                .build();
+            drop(placement);
+            let window = window?;
+            // First thing after the build: wry showed the WebView2 (on
+            // about:blank) at the end of it, and the hide has to land before
+            // Chromium presents a frame (W6).
+            commands::window::hide_webview_until_loaded(&window);
+            let created_at = Instant::now();
+            let _ = WINDOW_CREATED_AT.set(created_at);
+            let fg = commands::window::foreground_state(&window);
+            crate::utils::perf::phase(
+                "window_created",
+                &format!(
+                    r#","foreground_is_ours":{},"foreground":{},"launcher":{},"z_above":{}"#,
+                    fg.is_ours,
+                    fg.foreground,
+                    commands::explorer_sort::foreground_at_launch().unwrap_or(0),
+                    fg.z_above
+                ),
+            );
+            // After the trace, so z_above still shows what the first show left.
+            if launched_with_file() {
+                let result =
+                    commands::window::maximize_born_window(&window, (config.width, config.height));
+                crate::utils::perf::phase(
+                    "startup_maximize",
+                    &match result {
+                        Ok(()) => r#","ok":true"#.to_string(),
+                        Err(e) => format!(r#","ok":false,"err":{:?}"#, e),
+                    },
+                );
+            }
+            commands::window::raise_startup_z(
+                &window,
+                launched_with_file(),
+                created_at,
+                &Z_RAISES,
+                "window_created",
+            );
+            Ok(())
+        })
+        .on_page_load(|webview, payload| {
+            let name = match payload.event() {
+                tauri::webview::PageLoadEvent::Started => "page_load_started",
+                tauri::webview::PageLoadEvent::Finished => "page_load_finished",
+            };
+            crate::utils::perf::phase(name, "");
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                let window = webview.get_webview_window("main");
+                if let Some(window) = &window {
+                    // The document's load event: its render-blocking CSS is
+                    // applied, so the first frame after the show is the page's
+                    // own (W6).
+                    commands::window::reveal_webview(window, "page_load_finished");
+                }
+                if let (Some(window), Some(&created_at)) = (window, WINDOW_CREATED_AT.get()) {
+                    commands::window::raise_startup_z(
+                        &window,
+                        launched_with_file(),
+                        created_at,
+                        &Z_RAISES,
+                        "page_load_finished",
+                    );
+                }
+            }
+        })
+        // Traced only: a focused:true -> focused:false flip right after launch
+        // is how the checklist tells a lost foreground apart from W3's state.
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                crate::utils::perf::phase("focused", &format!(r#","focused":{focused}"#));
+            }
+        });
+
+    // Custom `spica-img` scheme: serves image files straight to the WebView as
+    // raw bytes instead of base64 over IPC. On Windows WebView2 reaches it at
+    // http://spica-img.localhost/<encodeURIComponent(absolute path)>.
+    let builder = builder.register_asynchronous_uri_scheme_protocol(
+        "spica-img",
+        |_ctx, request, responder| {
+            let uri_path = request.uri().path().to_string();
+            // File reads are blocking; keep them off the async runtime's core threads.
+            tauri::async_runtime::spawn_blocking(move || {
+                let response = if let Some(rest) = uri_path.strip_prefix("/preview/") {
+                    let _t = crate::utils::perf::PerfTimer::start("serve_preview", &uri_path);
+                    match crate::protocol::resolve_preview_request(rest) {
+                        Ok((bbox, path)) => {
+                            match crate::commands::cache::get_cache_dir().and_then(|dir| {
+                                crate::protocol::ensure_preview(
+                                    &dir,
+                                    &path,
+                                    bbox,
+                                    crate::utils::preview::DEFAULT_THUMB_SIZE,
+                                )
+                            }) {
+                                Ok(served) => crate::protocol::preview_response(&served),
+                                Err(e) => crate::protocol::error_response(500, &e),
+                            }
+                        }
+                        Err(msg) => crate::protocol::error_response(404, &msg),
+                    }
+                } else {
+                    let _t = crate::utils::perf::PerfTimer::start("serve", &uri_path);
+                    match crate::protocol::resolve_image_path(&uri_path) {
+                        Ok(path) => match std::fs::read(&path) {
+                            Ok(bytes) => tauri::http::Response::builder()
+                                .status(200)
+                                .header("Content-Type", crate::protocol::mime_for(&path))
+                                .header(
+                                    "Access-Control-Allow-Origin",
+                                    crate::protocol::ALLOW_ORIGIN,
+                                )
+                                .body(bytes)
+                                .unwrap_or_else(|_| {
+                                    crate::protocol::error_response(500, "response build failed")
+                                }),
+                            Err(e) => crate::protocol::error_response(500, &e.to_string()),
+                        },
+                        Err(msg) => crate::protocol::error_response(404, &msg),
+                    }
+                };
+                responder.respond(response);
+            });
+        },
+    );
+
+    // E2E-only: embedded WebDriver server for @wdio/tauri-service. Gated behind
+    // the `e2e` cargo feature so shipping builds never carry it.
+    #[cfg(feature = "e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+
+    builder
         .invoke_handler(tauri::generate_handler![
             get_folder_images,
-            load_image,
             handle_dropped_file,
             validate_image_file,
-            generate_image_thumbnail,
             generate_thumbnail_with_dimensions,
             get_startup_file,
             open_with_dialog,
             get_cached_thumbnail,
+            get_cached_thumbnails,
             set_cached_thumbnail,
             clear_old_cache,
             get_cache_stats,
@@ -40,4 +234,13 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Probe-only surface for scripts/explorer-sort-probe. Not a public API.
+#[doc(hidden)]
+pub mod probe_api {
+    #[cfg(windows)]
+    pub use crate::commands::explorer_sort::detect_sort_spec;
+    pub use crate::commands::explorer_sort::normalize_path;
+    pub use crate::commands::file::get_folder_images;
 }

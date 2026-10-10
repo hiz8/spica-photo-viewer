@@ -121,8 +121,9 @@ spica-photo-viewer/
 ├── vite.config.ts             # Vite 設定 (port 1420)
 ├── vitest.config.ts           # vitest 設定 (jsdom + setup.ts)
 ├── tsconfig.json              # TypeScript 設定
-├── biome.json                 # Biome (lint + format) 設定
-├── .github/workflows/ci.yml   # CI: 型/lint/format/フロントテスト/cargo test
+├── .oxlintrc.json             # oxlint (lint) 設定
+├── .oxfmtrc.json              # oxfmt (format) 設定
+├── .github/workflows/ci.yml   # CI: 型/lint/format/フロントテスト/cargo fmt/clippy/test
 └── .claude/                   # Claude Code 用の設定 (hook, rules, commands)
 ```
 

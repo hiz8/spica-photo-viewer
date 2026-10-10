@@ -305,23 +305,25 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 最大化中・フルスクリーン中かを `WindowState` 構造体で返します。フロントは `useWindowState.ts:15` で起動時にこれを呼び、初期状態を取得します。
 
-### `resize_window_to_image` (39-103 行目)
+### `resize_window_to_image`
 
-このプロジェクトで一番複雑なコマンドです。「最大化されたウィンドウを、表示中の画像にぴったり合うサイズに縮める」処理を行います。
+このプロジェクトで一番複雑なコマンドです。「最大化されたウィンドウを、表示中の画像にぴったり合うサイズに縮め、画像の画面上の位置を変えない」処理を行います（Picasa の画像外クリック）。
+
+「どのサイズ・どの位置にするか」はフロント側の純関数 `src/utils/windowedGeometry.ts` が決め、このコマンドは受け取ったクライアント領域（CSS px、現在のビューポート座標）を物理 px に写してウィンドウを動かすだけです。
 
 ロジックの大筋:
 
-1. 最大化されていなければ早期 return (`57-59 行目`)
-2. ズーム率を考慮した「表示画像サイズ」を計算 (`61-63 行目`)
-3. UI 余白 (40px 横、80px 縦 — サムネイルバー分) を加算 (`65-70 行目`)
-4. ウィンドウを `unmaximize()` してから `set_size()`
-5. 画像が画面内のどの位置にいたかを基に新しいウィンドウ位置を計算
-6. プライマリモニターのサイズ取得 → 画面外にはみ出さないようにクランプ
-7. `set_position()`
+1. 最大化されていなければ早期 return
+2. `scale_factor()` と `inner_position()` で、CSS px の箱を画面上の物理 px に変換（`physical_client_target`）
+3. `DwmSetWindowAttribute(DWMWA_TRANSITIONS_FORCEDISABLED)` で復元アニメーションを処理中だけ止める
+4. `restore_onto`: 目標クライアント矩形を `AdjustWindowRectExForDpi` の枠で外枠矩形にし、`SetWindowPlacement` で復元先（`rcNormalPosition`、ワークスペース座標）に書き込んでから `unmaximize()`。これで最大化→最終位置が 1 回のジオメトリ変更になる。復元後に `inner_size()` / `inner_position()` を検証し、ずれていれば `set_size()` / `set_position()`（`outer_position_for`）で 1 回だけ補正
+5. アニメーション設定を戻してから結果を返す
 
-`_disable_animation: Option<bool>` 引数は IPC 互換のためにシグネチャに残してありますが、現在は値を参照していません。以前は「アニメーションを抑制する/しない」で 2 分岐していましたが、フロント側 (`store/index.ts:742`) が常に `true` を渡し、しかも両分岐の処理内容が同一だったため、リファクタで分岐ごと削除しました。先頭のアンダースコアは Rust の慣用で「意図的に未使用」を表す印で、Tauri が JS キーへ変換するときに使う `heck` クレートはアンダースコアを区切り扱いするので、JS 側のキーは引き続き `disableAnimation` のまま（`_disable_animation` → `disableAnimation`）です。
+画面より大きいウィンドウを OS の `WM_GETMINMAXINFO` 既定値が切り詰めないよう、上限サイズは `lib.rs` のウィンドウ生成時に builder の `max_inner_size` で与えています（コマンド内の `set_max_size` は tao の実装上ウィンドウを復元してしまうので使えません）。
 
-### `maximize_window` (118-128 行目)
+画面内へのクランプは行いません。根拠は `docs/code-rationale.md#W1`。
+
+### `maximize_window`
 
 シンプルにウィンドウを最大化。`store/index.ts:572` で「画像を開いたときに自動最大化」のために呼ばれます。
 
@@ -335,7 +337,7 @@ const CACHE_DURATION: u64 = 24 * 60 * 60; // 24 hours in seconds
 | --- | --- |
 | `commands/file.rs:40` | `Result<Vec<ImageInfo>, String>` |
 | `commands/cache.rs:180` | `Result<HashMap<String, u32>, String>` |
-| `commands/window.rs:40` | `Result<(), String>` |
+| `commands/window.rs` (`resize_window_to_image`) | `Result<(), String>` |
 
 エラーメッセージは英語の自然文で書かれます。フロント側では `try/catch` の `error` として受け取り、`store/index.ts:651` のように `new Error(...)` でラップして UI に表示されます。
 

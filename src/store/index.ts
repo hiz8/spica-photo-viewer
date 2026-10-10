@@ -1,61 +1,152 @@
-import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  AppState,
-  ImageInfo,
-  ImageData,
-  ViewState,
-  ThumbnailGenerationState,
-} from "../types";
+import { create } from "zustand";
+
 import {
   RAPID_NAVIGATION_THRESHOLD_MS,
   SUPPRESS_TRANSITION_MS,
 } from "../constants/timing";
+import type {
+  AppState,
+  ImageData,
+  ImageInfo,
+  ThumbnailGenerationState,
+  ViewState,
+} from "../types";
+import { effectiveTier } from "../utils/bitmapCache";
+import { displayTierOf } from "../utils/displayTier";
 import { getFilename, getFolderPath } from "../utils/path";
+import { perfEvent, perfMark } from "../utils/perf";
+import {
+  centeredPosition,
+  fitZoom,
+  viewerLayoutArea,
+} from "../utils/viewerLayout";
+import { windowedClientBox } from "../utils/windowedGeometry";
 
-// Constants
-const THUMBNAIL_BAR_HEIGHT = 80;
+const layoutArea = (windowed: boolean) =>
+  viewerLayoutArea(window.innerWidth, window.innerHeight, windowed);
 
-// Helper function to calculate fit-to-window zoom level
-const calculateFitToWindowZoom = (
-  imageWidth: number,
-  imageHeight: number,
-): number => {
-  const MARGIN = 20;
-  const MIN_DIMENSION = 1; // Minimum to prevent division by zero
+// isMaximized stays true until the resize IPC resolves, so a second outside
+// click in that window would pass resizeToImage's guard and its failure
+// path could undo the first call's state. Other actions (navigation) are
+// not blocked; resizeToImage re-reads the current image when the IPC
+// settles instead.
+let resizeInFlight = false;
 
-  // Validate image dimensions to prevent division by zero or invalid results
-  const validImageWidth = Math.max(MIN_DIMENSION, imageWidth);
-  const validImageHeight = Math.max(MIN_DIMENSION, imageHeight);
-
-  // Validate window dimensions to prevent division by zero
-  const windowWidth = Math.max(MIN_DIMENSION, window.innerWidth);
-  const windowHeight = Math.max(MIN_DIMENSION, window.innerHeight);
-
-  const availableWidth = Math.max(MIN_DIMENSION, windowWidth - MARGIN * 2);
-  const availableHeight = Math.max(
-    MIN_DIMENSION,
-    windowHeight - THUMBNAIL_BAR_HEIGHT - MARGIN * 2,
-  );
-
-  const scaleX = availableWidth / validImageWidth;
-  const scaleY = availableHeight / validImageHeight;
-  const fitScale = Math.min(scaleX, scaleY);
-  // Only scale down if image is larger than available space
-  // Clamp to minimum 10% for very large images or very small windows
-  return fitScale >= 1 ? 100 : Math.max(10, fitScale * 100);
+// The timer is replaced rather than stacked so back-to-back callers extend the
+// suppression instead of an older timer ending a newer one early.
+const suppressedTransitionUi = (
+  ui: AppState["ui"],
+  set: (partial: Partial<AppState>) => void,
+  get: () => AppState,
+): AppState["ui"] => {
+  if (ui.suppressTransitionTimeoutId !== null) {
+    clearTimeout(ui.suppressTransitionTimeoutId);
+  }
+  return {
+    ...ui,
+    suppressTransition: true,
+    suppressTransitionTimeoutId: setTimeout(() => {
+      set({
+        ui: {
+          ...get().ui,
+          suppressTransition: false,
+          suppressTransitionTimeoutId: null,
+        },
+      });
+    }, SUPPRESS_TRANSITION_MS),
+  };
 };
+
+// Layout position of the image currently shown for the given mode; nothing to
+// change while no image data is loaded (its load will fit it).
+const centeredCurrentImage = (
+  state: AppState,
+  windowed: boolean,
+): Pick<ViewState, "imageLeft" | "imageTop"> | undefined => {
+  const data = state.currentImage.data;
+  if (!data) {
+    return undefined;
+  }
+  const { left, top } = centeredPosition(
+    layoutArea(windowed),
+    data.width,
+    data.height,
+  );
+  return { imageLeft: left, imageTop: top };
+};
+
+// Fit of the image currently shown for the given mode. Only for a fit the app
+// made itself against the wrong area, never for a zoom the user chose, which
+// every other path keeps.
+const refitCurrentImage = (
+  state: AppState,
+  windowed: boolean,
+): Partial<ViewState> | undefined => {
+  const data = state.currentImage.data;
+  if (!data) {
+    return undefined;
+  }
+  const area = layoutArea(windowed);
+  const { left, top } = centeredPosition(area, data.width, data.height);
+  return {
+    zoom: fitZoom(area, data.width, data.height),
+    panX: 0,
+    panY: 0,
+    imageLeft: left,
+    imageTop: top,
+  };
+};
+
+// Maximize/fullscreen ends windowed mode. The image is re-centered above the
+// bar here, with its zoom and pan kept as on any other resize, because the
+// window's resize event may have run before the mode flag changed and laid it
+// out for the wrong area.
+const leaveWindowedView = (
+  state: AppState,
+  patch: Partial<ViewState>,
+): ViewState => {
+  const view = { ...state.view, ...patch };
+  if (!state.view.windowed) {
+    return view;
+  }
+  return { ...view, windowed: false, ...centeredCurrentImage(state, false) };
+};
+
+// Only the user's zoom gestures count, including ones pinned at a limit: the
+// fits on load, navigation and resize must not flash the zoom indicator.
+const countZoomOperation = (state: AppState): Pick<AppState, "ui"> => ({
+  ui: { ...state.ui, zoomOperation: state.ui.zoomOperation + 1 },
+});
 
 export const thumbnailToImageData = (
   path: string,
   thumbnailCache: { base64: string; width: number; height: number },
 ): ImageData => ({
   path,
-  base64: thumbnailCache.base64,
+  src: `data:jpeg;base64,${thumbnailCache.base64}`,
   width: thumbnailCache.width,
   height: thumbnailCache.height,
   format: "jpeg",
 });
+
+// Nothing else bounds the thumbnail map (there is deliberately no count
+// cap, see useCacheManager), so leaving a folder is when its entries go.
+// Filter rather than reset: the startup file's thumbnail is seeded before
+// its folder is opened (App.tsx, I1) and must survive the switch.
+const thumbnailsForFolder = (
+  state: AppState,
+  folderPath: string,
+  images: ImageInfo[],
+): AppState["cache"]["thumbnails"] => {
+  if (state.folder.path === folderPath) {
+    return state.cache.thumbnails;
+  }
+  const inFolder = new Set(images.map((img) => img.path));
+  return new Map(
+    [...state.cache.thumbnails].filter(([path]) => inFolder.has(path)),
+  );
+};
 
 interface AppActions {
   setCurrentImage: (path: string, index: number) => void;
@@ -67,7 +158,6 @@ interface AppActions {
   setPan: (panX: number, panY: number) => void;
   setFullscreen: (isFullscreen: boolean) => void;
   setMaximized: (isMaximized: boolean) => void;
-  setThumbnailOpacity: (opacity: number) => void;
   setLoading: (isLoading: boolean) => void;
   setDragOver: (isDragOver: boolean) => void;
   setShowAbout: (showAbout: boolean) => void;
@@ -79,6 +169,7 @@ interface AppActions {
   resetZoom: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** `point*`: pointer offset from the image's transform origin, in screen px. */
   zoomAtPoint: (zoomFactor: number, pointX: number, pointY: number) => void;
   fitToWindow: (
     imageWidth: number,
@@ -93,8 +184,15 @@ interface AppActions {
     path: string,
     thumbnail: { base64: string; width: number; height: number } | "error",
   ) => void;
-  removeCachedThumbnail: (path: string) => void;
-  removeCachedThumbnails: (paths: readonly string[]) => void;
+  /** Batch form of setCachedThumbnail: one Map copy and one render for all entries. */
+  setCachedThumbnails: (
+    entries: ReadonlyArray<
+      readonly [
+        string,
+        { base64: string; width: number; height: number } | "error",
+      ]
+    >,
+  ) => void;
   updateImageDimensions: (width: number, height: number) => void;
   resizeToImage: () => Promise<void>;
   openFileDialog: () => Promise<void>;
@@ -106,7 +204,6 @@ interface AppActions {
 type AppStore = AppState & AppActions;
 
 export const useAppStore = create<AppStore>((set, get) => ({
-  // Initial state
   currentImage: {
     path: "",
     index: -1,
@@ -117,7 +214,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     path: "",
     images: [],
     imagesByPath: new Map(),
-    sortOrder: "name",
   },
   view: {
     zoom: 100,
@@ -125,7 +221,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     panY: 0,
     isFullscreen: false,
     isMaximized: false,
-    thumbnailOpacity: 0.5,
+    windowed: false,
   },
   cache: {
     thumbnails: new Map(),
@@ -147,9 +243,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     suppressTransitionTimeoutId: null,
     thumbnailDisplayed: false,
     isCheckingStartupFile: true,
+    zoomOperation: 0,
   },
 
-  // Actions
   setCurrentImage: (path, index) =>
     set((state) => ({
       currentImage: {
@@ -184,7 +280,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         images,
         // Build imagesByPath Map for O(1) lookup performance
         imagesByPath: new Map(images.map((img) => [img.path, img])),
-        sortOrder: "name",
       },
       cache: {
         ...state.cache,
@@ -226,26 +321,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   setFullscreen: (isFullscreen) =>
-    set((state) =>
-      state.view.isFullscreen === isFullscreen
-        ? state
-        : { view: { ...state.view, isFullscreen } },
-    ),
+    set((state) => {
+      if (state.view.isFullscreen === isFullscreen) {
+        return state;
+      }
+      return {
+        view: isFullscreen
+          ? leaveWindowedView(state, { isFullscreen })
+          : { ...state.view, isFullscreen },
+      };
+    }),
 
   setMaximized: (isMaximized) =>
-    set((state) =>
-      state.view.isMaximized === isMaximized
-        ? state
-        : { view: { ...state.view, isMaximized } },
-    ),
-
-  setThumbnailOpacity: (opacity) =>
-    set((state) => ({
-      view: {
-        ...state.view,
-        thumbnailOpacity: opacity,
-      },
-    })),
+    set((state) => {
+      if (state.view.isMaximized === isMaximized) {
+        return state;
+      }
+      return {
+        view: isMaximized
+          ? leaveWindowedView(state, { isMaximized })
+          : { ...state.view, isMaximized },
+      };
+    }),
 
   setLoading: (isLoading) =>
     set((state) =>
@@ -290,41 +387,53 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (index >= 0 && index < images.length) {
       const image = images[index];
 
-      // Check if navigating quickly (within threshold of last navigation)
+      perfMark("open:request", { path: image.path, index, trigger: "nav" });
+
       const now = Date.now();
       const lastNavTime = state.cache.lastNavigationTime;
       const isRapidNavigation =
         now - lastNavTime < RAPID_NAVIGATION_THRESHOLD_MS;
 
-      // Restore saved view state for the new image, or use default
       const savedViewState = state.cache.imageViewStates.get(image.path);
 
-      set((state) => {
-        // Create new imageViewStates Map
-        const newImageViewStates = new Map(state.cache.imageViewStates);
+      set((prev) => {
+        const newImageViewStates = new Map(prev.cache.imageViewStates);
 
         // Only save current image's view state if NOT in rapid navigation mode
-        if (state.currentImage.path && !isRapidNavigation) {
-          newImageViewStates.set(state.currentImage.path, {
-            zoom: state.view.zoom,
-            panX: state.view.panX,
-            panY: state.view.panY,
+        if (prev.currentImage.path && !isRapidNavigation) {
+          newImageViewStates.set(prev.currentImage.path, {
+            zoom: prev.view.zoom,
+            panX: prev.view.panX,
+            panY: prev.view.panY,
           });
         }
 
         // Priority 1: Check if image is already preloaded (full resolution)
-        const cachedImage = state.cache.preloaded.get(image.path);
+        const cachedImage = prev.cache.preloaded.get(image.path);
+        const hit = !!(cachedImage && cachedImage.format !== "error");
         let imageData: ImageData | null = null;
         let thumbnailDisplayed = false;
 
         if (cachedImage && cachedImage.format !== "error") {
-          // Full resolution available - use it
-          imageData = cachedImage;
+          // Full resolution available - use it. Label the displayed tier from
+          // the bitmap actually retained for this path (the scheduler may
+          // have filed an unscaled preview under the preview tier), falling
+          // back to the loader's verdict, then "full".
+          imageData = {
+            ...cachedImage,
+            tier:
+              effectiveTier(
+                image.path,
+                cachedImage.width,
+                cachedImage.height,
+              ) ??
+              cachedImage.tier ??
+              "full",
+          };
         } else {
           // Priority 2: Check if thumbnail is available for instant display
-          const cachedThumbnail = state.cache.thumbnails.get(image.path);
+          const cachedThumbnail = prev.cache.thumbnails.get(image.path);
           if (cachedThumbnail && cachedThumbnail !== "error") {
-            // Display thumbnail immediately with actual image dimensions
             imageData = thumbnailToImageData(image.path, cachedThumbnail);
             thumbnailDisplayed = true;
             console.log(
@@ -333,26 +442,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
           }
         }
 
-        // Determine zoom value
+        perfEvent("preload", {
+          path: image.path,
+          hit,
+          tier: imageData?.tier ?? null,
+          thumbnailFallback: thumbnailDisplayed,
+        });
+
+        const area = layoutArea(prev.view.windowed);
         let viewZoom = savedViewState?.zoom ?? 100;
         if (imageData && imageData.width > 0 && !savedViewState) {
-          // Calculate fit zoom for cached images with valid dimensions
-          viewZoom = calculateFitToWindowZoom(
+          viewZoom = fitZoom(area, imageData.width, imageData.height);
+        }
+
+        let viewImagePosition = {};
+        if (imageData && imageData.width > 0) {
+          const { left, top } = centeredPosition(
+            area,
             imageData.width,
             imageData.height,
           );
-        }
-
-        // Calculate image position for cached images with valid dimensions
-        let viewImagePosition = {};
-        if (imageData && imageData.width > 0) {
-          const containerWidth = window.innerWidth;
-          const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
-          const centerX = (containerWidth - imageData.width) / 2;
-          const centerY = (containerHeight - imageData.height) / 2;
           viewImagePosition = {
-            imageLeft: centerX,
-            imageTop: centerY,
+            imageLeft: left,
+            imageTop: top,
             imageWidth: imageData.width,
             imageHeight: imageData.height,
           };
@@ -360,46 +472,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         return {
           currentImage: {
-            ...state.currentImage,
+            ...prev.currentImage,
             path: image.path,
             index,
             data: imageData, // Use cached data if available for instant display, otherwise null
             error: null,
           },
           view: {
-            ...state.view,
+            ...prev.view,
             zoom: viewZoom,
             panX: savedViewState?.panX ?? 0,
             panY: savedViewState?.panY ?? 0,
             ...viewImagePosition,
           },
           cache: {
-            ...state.cache,
+            ...prev.cache,
             imageViewStates: newImageViewStates,
             lastNavigationTime: now,
           },
           ui: {
-            ...state.ui,
-            suppressTransition: true,
-            thumbnailDisplayed, // Set thumbnail display flag
-            // Atomically create new timeout and store ID to prevent race conditions
-            suppressTransitionTimeoutId: (() => {
-              // Clear old timeout if exists
-              if (state.ui.suppressTransitionTimeoutId !== null) {
-                clearTimeout(state.ui.suppressTransitionTimeoutId);
-              }
-              // Create new timeout that will reset suppressTransition after delay
-              return setTimeout(() => {
-                const currentState = get();
-                set({
-                  ui: {
-                    ...currentState.ui,
-                    suppressTransition: false,
-                    suppressTransitionTimeoutId: null,
-                  },
-                });
-              }, SUPPRESS_TRANSITION_MS);
-            })(),
+            ...suppressedTransitionUi(prev.ui, set, get),
+            thumbnailDisplayed,
           },
         };
       });
@@ -415,14 +508,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const cachedImage = state.cache.preloaded.get(
         state.folder.images[nextIndex].path,
       );
-      if (!cachedImage || cachedImage.format !== "error") {
+      if (cachedImage?.format !== "error") {
         get().navigateToImage(nextIndex);
         return;
       }
       nextIndex++;
     }
 
-    // If no valid image found, try the regular navigation
     if (state.currentImage.index + 1 < state.folder.images.length) {
       get().navigateToImage(state.currentImage.index + 1);
     }
@@ -437,31 +529,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const cachedImage = state.cache.preloaded.get(
         state.folder.images[prevIndex].path,
       );
-      if (!cachedImage || cachedImage.format !== "error") {
+      if (cachedImage?.format !== "error") {
         get().navigateToImage(prevIndex);
         return;
       }
       prevIndex--;
     }
 
-    // If no valid image found, try the regular navigation
     if (state.currentImage.index - 1 >= 0) {
       get().navigateToImage(state.currentImage.index - 1);
     }
   },
 
   resetZoom: () => {
+    set(countZoomOperation);
     const state = get();
     if (state.currentImage.data) {
-      // Reset to fit-to-window when resetting zoom
       get().fitToWindow(
         state.currentImage.data.width,
         state.currentImage.data.height,
       );
     } else {
-      set((state) => ({
+      set((prev) => ({
         view: {
-          ...state.view,
+          ...prev.view,
           zoom: 100,
           panX: 0,
           panY: 0,
@@ -471,74 +562,103 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   zoomIn: () => {
+    set(countZoomOperation);
     const state = get();
     const newZoom = Math.min(2000, state.view.zoom * 1.2);
+    perfMark("zoom:request", {
+      path: state.currentImage.path,
+      zoom: newZoom,
+      displayedTier: displayTierOf(
+        state.currentImage.data,
+        state.ui.thumbnailDisplayed,
+      ),
+    });
     state.setZoom(newZoom);
   },
 
   zoomOut: () => {
+    set(countZoomOperation);
     const state = get();
     const newZoom = Math.max(10, state.view.zoom / 1.2);
+    perfMark("zoom:request", {
+      path: state.currentImage.path,
+      zoom: newZoom,
+      displayedTier: displayTierOf(
+        state.currentImage.data,
+        state.ui.thumbnailDisplayed,
+      ),
+    });
     state.setZoom(newZoom);
   },
 
   zoomAtPoint: (zoomFactor, pointX, pointY) => {
+    set(countZoomOperation);
     const state = get();
     const currentZoom = state.view.zoom;
     const newZoom = Math.max(10, Math.min(2000, currentZoom * zoomFactor));
+    perfMark("zoom:request", {
+      path: state.currentImage.path,
+      zoom: newZoom,
+      displayedTier: displayTierOf(
+        state.currentImage.data,
+        state.ui.thumbnailDisplayed,
+      ),
+    });
 
     if (newZoom !== currentZoom) {
-      // Convert screen coordinates to image coordinates before zoom
-      const currentScale = currentZoom / 100;
-      const imageX = pointX / currentScale - state.view.panX;
-      const imageY = pointY / currentScale - state.view.panY;
+      // pan is a post-scale screen offset, so the pan that pins the image
+      // point at `point` is a plain interpolation towards the pointer
+      // (docs/code-rationale.md#Z1). `ratio` is derived from the CLAMPED
+      // newZoom, so the anchor holds at the 10%/2000% limits too.
+      const ratio = newZoom / currentZoom;
 
-      // Calculate new pan so that the same image point stays under the mouse
-      const newScale = newZoom / 100;
-      const newPanX = pointX / newScale - imageX;
-      const newPanY = pointY / newScale - imageY;
-
-      set((state) => ({
+      set((prev) => ({
         view: {
-          ...state.view,
+          ...prev.view,
           zoom: newZoom,
-          panX: newPanX,
-          panY: newPanY,
+          panX: prev.view.panX * ratio + pointX * (1 - ratio),
+          panY: prev.view.panY * ratio + pointY * (1 - ratio),
         },
       }));
     }
   },
 
   fitToWindow: (imageWidth, imageHeight, preserveZoom = false) => {
-    // Calculate fit-to-window zoom level
-    const fitZoom = calculateFitToWindowZoom(imageWidth, imageHeight);
-
-    // Calculate center position for the original image (before CSS scaling)
-    // CSS transform will scale from the center (transform-origin: center)
-    const containerWidth = window.innerWidth;
-    const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
-
-    // Position the original image so its center aligns with container center
-    const centerX = (containerWidth - imageWidth) / 2;
-    const centerY = (containerHeight - imageHeight) / 2;
+    const area = layoutArea(get().view.windowed);
+    const zoom = fitZoom(area, imageWidth, imageHeight);
+    const { left, top } = centeredPosition(area, imageWidth, imageHeight);
 
     set((state) => ({
       view: {
         ...state.view,
-        zoom: preserveZoom ? state.view.zoom : fitZoom,
+        zoom: preserveZoom ? state.view.zoom : zoom,
         panX: preserveZoom ? state.view.panX : 0,
         panY: preserveZoom ? state.view.panY : 0,
-        // Store original image dimensions and calculated position
-        imageLeft: centerX,
-        imageTop: centerY,
-        imageWidth, // Original image width
-        imageHeight, // Original image height
+        imageLeft: left,
+        imageTop: top,
+        imageWidth,
+        imageHeight,
       },
     }));
   },
 
   openImageFromPath: async (imagePath: string) => {
+    // Reopening the image already displayed (e.g. via the file-open dialog)
+    // must not blank the viewer: the reset below nulls currentImage.data, and
+    // ImageViewer's load effect keys on currentImage.path — unchanged on a
+    // same-path reopen — so data would never reload. Nothing to do — the
+    // folder and image are already loaded.
+    const current = get().currentImage;
+    if (
+      current.path === imagePath &&
+      current.data !== null &&
+      current.index >= 0
+    ) {
+      return;
+    }
     try {
+      perfMark("open:request", { path: imagePath, trigger: "open" });
+
       const folderPath = getFolderPath(imagePath);
 
       // OPTIMIZATION: Immediately set the image path to hide welcome screen
@@ -551,6 +671,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
           data: null,
           error: null,
         },
+        // The window is maximized below; an image that loads before the
+        // maximize event comes back must not be fit for the windowed layout.
+        view: { ...state.view, windowed: false },
         ui: {
           ...state.ui,
           isLoading: true,
@@ -566,6 +689,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const images = await invoke<ImageInfo[]>("get_folder_images", {
         path: folderPath,
       });
+      perfMark("folder:scanned", { path: imagePath, n: images.length });
 
       // Check for race condition: user may have navigated away during folder scan
       const currentState = get();
@@ -576,7 +700,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return;
       }
 
-      // Find the index of the specific image
       const imageIndex = images.findIndex(
         (img: ImageInfo) => img.path === imagePath,
       );
@@ -595,6 +718,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           cache: {
             ...state.cache,
+            thumbnails: thumbnailsForFolder(state, folderPath, images),
             imageViewStates:
               state.folder.path !== folderPath
                 ? new Map()
@@ -602,7 +726,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           ui: {
             ...state.ui,
-            isLoading: false, // Reset loading state after folder scan
+            isLoading: false,
           },
         }));
       } else {
@@ -617,17 +741,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
           currentImage: {
             ...state.currentImage,
-            index: 0, // Default to first if not found
+            index: 0,
           },
           view: {
             ...state.view,
-            zoom: 100, // Reset zoom to default
+            zoom: 100,
             panX: 0,
             panY: 0,
           },
+          cache: {
+            ...state.cache,
+            thumbnails: thumbnailsForFolder(state, folderPath, images),
+          },
           ui: {
             ...state.ui,
-            isLoading: false, // Reset loading state
+            isLoading: false,
           },
         }));
       }
@@ -694,24 +822,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     }),
 
-  removeCachedThumbnail: (path) =>
+  setCachedThumbnails: (entries) =>
     set((state) => {
+      if (entries.length === 0) {
+        return state;
+      }
       const newThumbnails = new Map(state.cache.thumbnails);
-      newThumbnails.delete(path);
-      return {
-        cache: {
-          ...state.cache,
-          thumbnails: newThumbnails,
-        },
-      };
-    }),
-
-  removeCachedThumbnails: (paths) =>
-    set((state) => {
-      if (paths.length === 0) return state;
-      const newThumbnails = new Map(state.cache.thumbnails);
-      for (const path of paths) {
-        newThumbnails.delete(path);
+      for (const [path, thumbnail] of entries) {
+        newThumbnails.set(path, thumbnail);
       }
       return {
         cache: {
@@ -722,16 +840,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }),
 
   updateImageDimensions: (imageWidth, imageHeight) => {
-    const containerWidth = window.innerWidth;
-    const containerHeight = window.innerHeight - THUMBNAIL_BAR_HEIGHT;
-    const centerX = (containerWidth - imageWidth) / 2;
-    const centerY = (containerHeight - imageHeight) / 2;
+    const { left, top } = centeredPosition(
+      layoutArea(get().view.windowed),
+      imageWidth,
+      imageHeight,
+    );
 
     set((state) => ({
       view: {
         ...state.view,
-        imageLeft: centerX,
-        imageTop: centerY,
+        imageLeft: left,
+        imageTop: top,
         imageWidth,
         imageHeight,
       },
@@ -739,55 +858,105 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   resizeToImage: async () => {
-    try {
-      const state = get();
+    const { view, currentImage } = get();
+    if (
+      resizeInFlight ||
+      !view.isMaximized ||
+      view.isFullscreen ||
+      !currentImage.data
+    ) {
+      return;
+    }
+    resizeInFlight = true;
 
-      // Check if conditions are met for resizing
-      if (
-        !state.view.isMaximized ||
-        state.view.isFullscreen ||
-        !state.currentImage.data
-      ) {
+    try {
+      const { width, height } = currentImage.data;
+      const box = windowedClientBox({
+        imageWidth: width,
+        imageHeight: height,
+        zoom: view.zoom,
+        imageLeft: view.imageLeft ?? 0,
+        imageTop: view.imageTop ?? 0,
+        panX: view.panX,
+        panY: view.panY,
+      });
+
+      // The window's resize event usually arrives before the IPC resolves,
+      // and its re-layout must already use the windowed rule, or the image is
+      // first centered above the bar and then moved. The pan is folded into
+      // the layout at the same time: visually identical now (the transform
+      // origin moves by the pan, Z1), and it leaves that re-layout nothing to
+      // animate away — resetting the pan afterwards slid the image in from
+      // its dragged position (W1).
+      const { imageLeft = 0, imageTop = 0, panX, panY } = view;
+      set((state) => ({
+        view: {
+          ...state.view,
+          windowed: true,
+          imageLeft: imageLeft + panX,
+          imageTop: imageTop + panY,
+          panX: 0,
+          panY: 0,
+        },
+        ui: suppressedTransitionUi(state.ui, set, get),
+      }));
+      try {
+        await invoke("resize_window_to_image", {
+          clientLeft: box.left,
+          clientTop: box.top,
+          clientWidth: box.width,
+          clientHeight: box.height,
+        });
+      } catch (error) {
+        console.error("Failed to resize window to image size:", error);
+        set((state) => {
+          if (state.currentImage.path === currentImage.path) {
+            return {
+              view: {
+                ...state.view,
+                windowed: false,
+                imageLeft: view.imageLeft,
+                imageTop: view.imageTop,
+                panX,
+                panY,
+              },
+            };
+          }
+          // Navigated meanwhile: that image was fit with the windowed rule
+          // (the flag was already set) while the window stayed maximized, so
+          // re-fit it for the maximized area instead of restoring this
+          // call's snapshot; that zoom was ours, not the user's.
+          return {
+            view: {
+              ...state.view,
+              windowed: false,
+              ...refitCurrentImage(state, false),
+            },
+          };
+        });
         return;
       }
 
-      const { width, height } = state.currentImage.data;
-      const currentZoom = state.view.zoom;
-
-      // Get image element to calculate its actual screen position
-      const imageElement = document.querySelector(
-        ".image-viewer img",
-      ) as HTMLImageElement;
-      if (imageElement) {
-        const rect = imageElement.getBoundingClientRect();
-
-        // Calculate center of the image on screen
-        const imageScreenCenterX = rect.left + rect.width / 2;
-        const imageScreenCenterY = rect.top + rect.height / 2;
-
-        await invoke("resize_window_to_image", {
-          imageWidth: width,
-          imageHeight: height,
-          zoomPercent: currentZoom,
-          imageScreenCenterX: imageScreenCenterX,
-          imageScreenCenterY: imageScreenCenterY,
-          disableAnimation: true,
-        });
-
-        // Update maximized state and reset pan values to center the image in new window
-        set((state) => ({
+      // Re-center here as well in case the resize event fired before the
+      // flag, and re-assert the flag: a get_window_state reply that was in
+      // flight before the click can still report "maximized" and clear it
+      // meanwhile. Read the image back from the state: an arrow key during
+      // the IPC has already laid the next image out (windowed rule, its own
+      // pan), so its pan is kept and re-centering it is idempotent.
+      set((state) => {
+        const sameImage = state.currentImage.path === currentImage.path;
+        return {
           view: {
             ...state.view,
             isMaximized: false,
-            panX: 0,
-            panY: 0,
+            windowed: true,
+            ...(sameImage ? { panX: 0, panY: 0 } : {}),
+            ...centeredCurrentImage(state, true),
           },
-        }));
-      } else {
-        console.error("Could not find image element for positioning");
-      }
-    } catch (error) {
-      console.error("Failed to resize window to image size:", error);
+        };
+      });
+    } finally {
+      resizeInFlight = false;
     }
   },
 
@@ -814,7 +983,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
 
       if (selected && typeof selected === "string") {
-        // Use openImageFromPath to handle the rest
         await get().openImageFromPath(selected);
       }
     } catch (error) {
@@ -847,18 +1015,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const state = get();
 
-      // Check if there's a current image loaded
       if (!state.currentImage.path) {
-        set((state) => ({
+        set((prev) => ({
           ui: {
-            ...state.ui,
+            ...prev.ui,
             error: new Error("No image is currently loaded"),
           },
         }));
         return;
       }
 
-      // Call the Tauri command to open the "Open With" dialog
       await invoke("open_with_dialog", {
         path: state.currentImage.path,
       });

@@ -12,7 +12,7 @@
 
 ## 前提
 
-このドキュメントは **Windows 10 / 11** を前提にしています。Spica Photo Viewer の主要ターゲットは Windows で、MSI インストーラ・ファイル関連付け・「プログラムから開く」ダイアログなど Windows 固有の機能を扱うためです。
+このドキュメントは **Windows 10 / 11** を前提にしています。Spica Photo Viewer の主要ターゲットは Windows で、NSIS インストーラ・ファイル関連付け・「プログラムから開く」ダイアログなど Windows 固有の機能を扱うためです。
 
 macOS / Linux でも開発自体は可能ですが、Windows 限定の機能 (`commands/file.rs:230` の `open_with_dialog` など) はそのままでは動作しません。
 
@@ -20,24 +20,22 @@ macOS / Linux でも開発自体は可能ですが、Windows 限定の機能 (`c
 
 ## ステップ 1: Node.js のインストール
 
-`package.json` の `engines` フィールドを確認します。
+本プロジェクトはリポジトリ直下の `mise.toml` で **Node.js 24.21.0** に固定しています (CI も同じバージョン)。`package.json` の `engines` は `>=24.21.0` です。
 
-```json
-"engines": {
-  "node": ">=20.19.0 <21 || >=22.12.0"
-}
-```
+- バージョン管理ツール (推奨): [mise](https://mise.jdx.dev/)。リポジトリ直下で以下を実行すると、このディレクトリでは常に 24.21.0 が使われます。
 
-つまり **Node.js 20.19 以上 (20.x 系) または 22.12 以上** が必要です。22 系の LTS を推奨します。
+  ```bash
+  mise trust     # 初回のみ。mise.toml の読み込みを許可
+  mise install   # mise.toml のバージョンをインストール
+  ```
 
-- 公式インストーラ: https://nodejs.org/
-- バージョン管理ツール (推奨): [Volta](https://volta.sh/) や [fnm](https://github.com/Schniz/fnm)
+- 公式インストーラ: https://nodejs.org/ (この場合は 24.21.0 を手動で入れる)
 
 インストール後、以下で確認します。
 
 ```bash
-node --version   # v22.x.x
-npm --version    # 10.x.x など
+node --version   # v24.21.0
+npm --version    # 11.x.x など
 ```
 
 ---
@@ -80,11 +78,9 @@ Rust が一部のクレートをコンパイルする際に MSVC リンカと Wi
   - 「**C++ によるデスクトップ開発**」ワークロード
   - 「**Windows 10/11 SDK**」 (バージョンは最新でよい)
 
-### 3-3. (本番ビルド時のみ) WiX Toolset v3
+### 3-3. (本番ビルド時のみ) NSIS
 
-MSI インストーラを生成するために使用します。**普段の `npm run tauri dev` には不要** で、`npm run tauri build` を実行する場合のみ必要です。
-
-- https://wixtoolset.org/ から WiX v3 をインストール
+インストーラ (`*-setup.exe`) を生成するために使用します。**手動のインストールは不要** で、`npm run tauri build` の初回に Tauri CLI が自動でダウンロードします (`%LOCALAPPDATA%\tauri\NSIS`)。MSI (WiX) は出力しない設定なので、WiX Toolset も不要です (`src-tauri/tauri.conf.json` の `bundle.targets`)。
 
 > Tauri 公式の最新ガイド: https://tauri.app/start/prerequisites/
 
@@ -109,7 +105,7 @@ npm install
 
 これで以下が自動的に行われます。
 
-- `package.json` で宣言された Node のパッケージ (React, Tauri JS API, Vite, vitest, Biome 等) が `node_modules/` にインストールされる
+- `package.json` で宣言された Node のパッケージ (React, Tauri JS API, Vite, vitest, oxlint, oxfmt 等) が `node_modules/` にインストールされる
 - `src-tauri/Cargo.toml` で宣言された Rust 依存はこの段階ではまだ取得されません。次の `tauri dev` で初めてダウンロード・コンパイルされます
 
 ---
@@ -189,9 +185,9 @@ npm run tauri dev
 
 VS Code を使う場合は `rust-analyzer` 拡張をインストールしておくと、`src-tauri/` 配下の開発体験が大きく向上します。
 
-### Biome 拡張
+### Oxc 拡張
 
-フロントエンドのフォーマットは Biome を使っています (`biome.json`)。VS Code なら Biome 公式拡張を入れると、保存時の自動整形に対応できます。とはいえ本リポジトリでは保存時整形は Claude Code の hook (`.claude/hooks/format.mjs`) でも実行されるため、必須ではありません。
+フロントエンドの lint は oxlint (`.oxlintrc.json`)、フォーマットは oxfmt (`.oxfmtrc.json`) を使っています。VS Code なら Oxc 公式拡張 (`oxc.oxc-vscode`) を入れると、保存時の自動整形に対応できます。とはいえ本リポジトリでは保存時整形は Claude Code の hook (`.claude/hooks/format.mjs`) でも実行されるため、必須ではありません。
 
 ---
 

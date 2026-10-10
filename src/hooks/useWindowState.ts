@@ -1,6 +1,7 @@
-import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect } from "react";
+
 import { useAppStore } from "../store";
 import type { WindowState } from "../types";
 
@@ -9,11 +10,16 @@ export const useWindowState = () => {
 
   useEffect(() => {
     let isMonitoring = true;
+    // Only the latest query's reply is applied: a query dispatched while the
+    // window was still maximized can land after the reply for its restore,
+    // and would flip the store back to maximized (W1).
+    let latestQuery = 0;
 
     const checkWindowState = async () => {
+      const query = ++latestQuery;
       try {
         const windowState = await invoke<WindowState>("get_window_state");
-        if (isMonitoring) {
+        if (isMonitoring && query === latestQuery) {
           setMaximized(windowState.is_maximized);
           setFullscreen(windowState.is_fullscreen);
         }
@@ -22,12 +28,10 @@ export const useWindowState = () => {
       }
     };
 
-    // Check initial state
-    checkWindowState();
+    void checkWindowState();
 
-    // Listen for window resize events
     const handleResize = () => {
-      checkWindowState();
+      void checkWindowState();
     };
 
     // Use Tauri's window events for more accurate state tracking
@@ -53,7 +57,6 @@ export const useWindowState = () => {
           },
         );
 
-        // Cleanup function
         return () => {
           unlistenResize();
           unlistenMaximize();
@@ -70,7 +73,7 @@ export const useWindowState = () => {
     };
 
     let cleanup: (() => void) | undefined;
-    setupWindowListeners().then((fn) => {
+    void setupWindowListeners().then((fn) => {
       cleanup = fn;
     });
 

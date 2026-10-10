@@ -3,15 +3,19 @@ export interface ImageInfo {
   filename: string;
   size: number;
   modified: number;
+  created: number;
   format: "jpeg" | "png" | "webp" | "gif";
 }
 
 export interface ImageData {
   path: string;
-  base64: string;
+  /** Renderable URL: a data: URL (thumbnails / legacy pipeline) or a spica-img protocol URL */
+  src: string;
   width: number;
   height: number;
   format: string;
+  /** Decoded tier behind this entry: display-resolution preview or full resolution. Undefined = full (legacy). */
+  tier?: "preview" | "full";
 }
 
 export interface ProgressiveImageData {
@@ -25,6 +29,14 @@ export interface ThumbnailWithDimensions {
   thumbnail_base64: string;
   original_width: number;
   original_height: number;
+  preview_available: boolean;
+}
+
+/** `get_startup_file` result: the file passed on the command line. */
+export interface StartupFile {
+  path: string;
+  /** Prepared by the Rust startup prefetch when it finished in time. */
+  thumbnail: { base64: string; width: number; height: number } | null;
 }
 
 export interface UIState {
@@ -34,8 +46,10 @@ export interface UIState {
   error: Error | null;
   suppressTransition: boolean;
   suppressTransitionTimeoutId: ReturnType<typeof setTimeout> | null;
-  thumbnailDisplayed?: boolean; // Whether current display is thumbnail (not full resolution)
-  isCheckingStartupFile: boolean; // Whether startup file check is in progress
+  thumbnailDisplayed?: boolean;
+  isCheckingStartupFile: boolean;
+  /** Bumped by each user zoom gesture; the zoom indicator shows on a change. */
+  zoomOperation: number;
 }
 
 export interface ImageViewState {
@@ -56,7 +70,6 @@ export interface AppState {
     path: string;
     images: ImageInfo[];
     imagesByPath: Map<string, ImageInfo>;
-    sortOrder: "name" | "date";
   };
 
   view: {
@@ -65,7 +78,7 @@ export interface AppState {
     panY: number;
     isFullscreen: boolean;
     isMaximized: boolean;
-    thumbnailOpacity: number;
+    windowed: boolean;
     imageLeft?: number;
     imageTop?: number;
     imageWidth?: number;
@@ -89,11 +102,21 @@ export interface AppState {
 
 export interface ViewState {
   zoom: number;
+  /**
+   * Pan offset in SCREEN px (applied after the scale), measured from the
+   * displayed element's own centre — docs/code-rationale.md#Z1.
+   */
   panX: number;
   panY: number;
   isFullscreen: boolean;
   isMaximized: boolean;
-  thumbnailOpacity: number;
+  /**
+   * True after the viewer shrank the window to the image (outside click):
+   * the image is laid out over the whole client area with the thumbnail bar
+   * over its bottom. Cleared on maximize/fullscreen; a manual restore does
+   * not set it, so the default layout never depends on async window state.
+   */
+  windowed: boolean;
   imageLeft?: number;
   imageTop?: number;
   imageWidth?: number;
@@ -103,7 +126,6 @@ export interface ViewState {
 export interface FolderState {
   path: string;
   images: ImageInfo[];
-  sortOrder: "name" | "date";
 }
 
 export interface CurrentImageState {

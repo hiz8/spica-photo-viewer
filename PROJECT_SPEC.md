@@ -9,7 +9,7 @@
 ### Supported Platforms
 
 - Windows 10/11 (primary target)
-- MSI installer with file association for image formats
+- NSIS installer (per-user) with file association for image formats
 
 ### Supported Image Formats
 
@@ -46,7 +46,7 @@
 - **Build Tools**:
   - Vite for frontend bundling
   - Tauri CLI for building and packaging
-  - WiX Toolset for MSI installer creation
+  - NSIS (downloaded by the Tauri CLI) for installer creation
 
 ### Project Structure
 
@@ -97,7 +97,9 @@ spica-photo-viewer/
 
   - Default: Fullscreen when opened via file
   - Minimal size when opened standalone
-  - No minimum size restrictions
+  - No minimum size restrictions (the 544px figure under Mouse Controls is the size chosen on entering windowed mode, not a limit on manual resizing)
+  - Windowed mode sized to the image after clicking outside it (see Mouse Controls)
+  - Title bar: `{filename} - Spica Photo Viewer` (extension included, like Picasa Photo Viewer), `Spica Photo Viewer` alone while no image is open. Set from the very first frame when launched with a file, then kept in sync with the current image by `useWindowTitle`
 
 - **Image Display Area** (90% of window):
 
@@ -105,19 +107,31 @@ spica-photo-viewer/
   - Black background
   - Maintains aspect ratio
 
-- **Thumbnail Bar** (10% of window, bottom):
+- **Thumbnail Bar** (bottom, 80px, over the image area; auto-hides like Picasa Photo Viewer — see `docs/superpowers/specs/2026-09-23-thumbnail-bar-auto-hide-design.md`):
 
-  - Height: ~40px (30px thumbnails + padding)
-  - 50% opacity when not hovered (mouse not over image or thumbnails)
-  - 100% opacity on hover
+  - Height: 80px (30px thumbnails, then the filename line)
+  - Hidden (opacity 0) when inactive; shows and hides with a 500ms fade (none with reduced motion)
+  - Shown by hovering it, or by a quick downward mouse flick (≥150px at ≥800px/s); slow movement never shows it however far it goes, and a short flick does not either
+  - Stays shown while hovered, keyboard-focused, or while the mouse keeps moving down at ≥150px/s; hides 2000ms after that stops, or at once on a quick upward flick (≥150px at ≥800px/s)
+  - Movement with a mouse button held (panning) is ignored
+  - Shown at startup and on folder change, then hides after 2000ms
+  - While hidden, thumbnail clicks and the mouse wheel are ignored (hovering still shows the bar)
+  - Showing or hiding never moves the image: maximized and fullscreen layouts reserve the bar's band either way
   - Current image always centered
   - Empty space for first/last images to maintain center position
+  - Thumbnails not generated yet are blank (no icon, no background) like Picasa Photo Viewer; the slot keeps its size so layout, centering and the click target are unchanged. Only failed thumbnails show an error placeholder
 
 - **Image Info Overlay** (top of thumbnail bar):
 
   - Format: `{filename} ({width} × {height})`
   - Small, unobtrusive font
-  - Same opacity behavior as thumbnail bar
+  - Part of the thumbnail bar: shown and hidden with it
+
+- **Zoom Indicator** (centre of the window, like Picasa Photo Viewer):
+
+  - Format: `{zoom}%`, white text on gray (`#65666c`)
+  - Hidden (opacity 0) until the user zooms: mouse wheel, ↑/↓, Ctrl+0 or double-click, including one that stays pinned at the 10%/2000% limit. The fit on image load, navigation or window resize never shows it
+  - Fades in over 100ms; 600ms after the last zoom it fades out over 400ms (no fades with reduced motion)
 
 - **Drag & Drop Overlay** (when no image is loaded):
   - Visible only in standalone startup mode
@@ -144,6 +158,11 @@ spica-photo-viewer/
 - **Mouse wheel on image**: Zoom (cursor-based)
 - **Drag on zoomed image**: Pan
 - **Double-click image**: Reset zoom/fit to window
+- **Click outside the image** (maximized, not fullscreen): Leave maximized mode with the window sized to the displayed image, like Picasa Photo Viewer
+  - Client area = image size × current zoom, so a zoomed-in image yields a window larger than the screen
+  - The image stays exactly where it was on screen (DPI-aware, title bar accounted for); no clamping to the screen — Windows re-aligns an off-screen top edge when a resize border is clicked
+  - Minimum client width 544px; below it the window keeps the image's aspect ratio (2000×1000 → 544×272, 1000×2000 → 544×1088) and the image stays centered at its current zoom
+  - In this windowed mode the image is laid out over the whole client area, and the auto-hiding thumbnail bar shows over its bottom; maximizing or fullscreen restores the normal layout
 - **Drag & Drop image file**: Open dropped image and switch to its folder
 
 ### Image Loading Strategy
@@ -183,11 +202,15 @@ spica-photo-viewer/
 
 To ensure seamless image switching experience comparable to Picasa Photo Viewer:
 
-**Display Priority (3 levels)**
+**Display Priority (3 levels, updated 2026-08-22 for the preview tier — design spec 2026-08-21 §6.4)**
 
-1. **Cached full-resolution image** (0ms) - Display instantly if image is preloaded in cache
-2. **Thumbnail fallback** (0ms) - Display thumbnail immediately if full image not cached but thumbnail exists
-3. **Loading state** - Show loading indicator if neither cached image nor thumbnail is available
+1. **Cached decoded bitmap** (0ms, `<canvas>`) - Display instantly from a retained decoded bitmap: either a display-resolution preview (kept for every image in the visible thumbnail-bar range) or a full-resolution decode (kept for the current image only, from a cold load or a zoom upgrade)
+2. **Thumbnail placeholder, then the display-resolution preview** (~tens of ms) - If nothing is decoded yet but a thumbnail exists, show the thumbnail immediately, then replace it with the display-resolution preview fetched from disk (a `/preview/<box>/` read plus a screen-box decode, not the full-resolution original)
+3. **Loading state, then full-resolution load** - Show a loading indicator when neither a decoded bitmap nor a thumbnail is available yet (no thumbnail cached, or a GIF where the two-phase path is skipped to preserve animation), then load the full-resolution image directly
+
+**Zoom**
+
+- Zooming past the displayed preview's own pixel density (its decoded bitmap width ÷ the natural width) schedules a full-resolution decode in the background; fit-to-window never crosses this threshold, so a preview stays until the user actually zooms in past what it can render sharply
 
 **Cached Image Display (0ms)**
 
@@ -369,7 +392,6 @@ interface AppState {
     panX: number; // Pan offset X
     panY: number; // Pan offset Y
     isFullscreen: boolean;
-    thumbnailOpacity: number; // 0.5 or 1.0
   };
 
   // Cache state
@@ -501,9 +523,11 @@ npm run tauri build
 
 ### Installer Creation
 
-- Use Tauri's WiX integration
+- Use Tauri's NSIS integration (`bundle.targets` is `["nsis"]`; the WiX/MSI target is not supported)
 - Configure file associations for .jpg, .jpeg, .png, .webp, .gif
-- Set registry entries for default image viewer
+- Register per-user ProgIDs (`SpicaPhotoViewer.*`) and point each extension key at them (the previous value is kept in `<ProgID>_backup` and restored on uninstall). This does not change the user's default app (`UserChoice`) and does not register in Windows Settings' "Default apps" list (`RegisteredApplications` / `Capabilities`)
+- Give Explorer a dedicated file-type icon via `installerHooks`, separate from the app icon
+  (see `docs/superpowers/specs/2026-09-12-file-type-icon-design.md`)
 
 ## Performance Targets
 
@@ -515,7 +539,7 @@ npm run tauri build
 
 ## Development Guidelines
 
-1. **Code Style**: Use Biome for linting and formatting consistency (frontend code: TypeScript/React)
+1. **Code Style**: Use oxlint (lint) and oxfmt (format) for consistency (frontend code: TypeScript/React)
 2. **Commits**: Conventional commits for clear history
 3. **Documentation**: JSDoc for public APIs
 4. **Error Handling**: Never crash, always graceful degradation
@@ -528,6 +552,26 @@ npm run tauri build
 - [React + TypeScript Best Practices](https://react-typescript-cheatsheet.netlify.app/)
 - [Image Processing in Rust](https://github.com/image-rs/image)
 - [Picasa Photo Viewer UI Reference](https://www.google.com/photos/about/)
+
+## Troubleshooting
+
+### Spica opens behind another window right after launch / clicking it does not bring it to front
+
+Run the following **while the symptom is on screen** and paste the output into an issue. The script is read-only: it never activates, moves or sends input to any window.
+
+    powershell -ExecutionPolicy Bypass -File scripts\diagnose-foreground.ps1 -Seconds 10
+
+What to look at: `foreground.proc` (the process that owns the foreground window), `foreground.gui_flags` (0x4 / 0x8 / 0x10 mean the foreground thread is in menu mode), `foreground.gui_capture` (non-zero means that thread holds the mouse capture), `spica[].pump_ms` (main-thread responsiveness), `spica[].gui_active` and `spica[].above` (windows above Spica in z-order while `is_foreground` is true). The decision table that maps these observations to causes is in `docs/superpowers/specs/2026-09-20-explorer-launch-foreground-checklist.md`.
+
+The case seen in the field so far is "Spica **is** the foreground window but the launching Explorer window sits above it in z-order" (a click does nothing because the window is already active). Its trigger, a first show by `SW_MAXIMIZE`, is avoided by creating the window restored on the maximized rect (`docs/code-rationale.md` W5), and Spica still corrects the state itself right after launch if it happens (W3); with `SPICA_PERF_FILE` set, that launch shows `z_above` in the `window_created` line and a `z_raise` line in the log.
+
+### A dark-gray flash right before the first image after launch
+
+Before the page's first paint the WebView2 shows Chromium's about:blank, which the Windows dark theme paints #121212 over the window's black. Spica hides the WebView2 right after its creation until the page has loaded (`docs/code-rationale.md` W6; best effort, since the hide is dispatched after wry has already shown the WebView2). A launch with `SPICA_PERF_FILE` set logs `webview_hidden` and `webview_shown` (`by` is `page_load_finished`, or `fallback` when the page never loaded and the 10 s safety net showed it); both record that the call was dispatched, not that WebView2 applied it. To time such frames, sample the screen during a launch (with the display on):
+
+    powershell -ExecutionPolicy Bypass -File scripts\startup-frames.ps1 -File <image> [-Exe <spica-photo-viewer.exe>] [-Runs 10]
+
+It prints, per launch, how long each colour stayed at two sample points, the median gap between samples (a flash shorter than that can slip between two samples, so judge the total over all runs) and the time spent within a small tolerance of #121212 (0 ms expected on every run).
 
 ---
 
@@ -549,7 +593,7 @@ All four implementation phases have been completed successfully:
 ### Key Achievements
 
 - **Supported Formats**: JPEG, PNG, WebP, GIF (with animation)
-- **Windows Integration**: MSI installer with file association
+- **Windows Integration**: NSIS installer with file association
 - **User Interface**: Thumbnail navigation, fullscreen mode, keyboard shortcuts
 - **Performance**: Memory management, caching system, responsive UI
 - **Error Handling**: Graceful degradation for all error scenarios
@@ -559,14 +603,14 @@ All four implementation phases have been completed successfully:
 - **Frontend**: React 19 + TypeScript + Zustand
 - **Backend**: Tauri v2.1 + Rust
 - **Build System**: Vite + Tauri CLI
-- **Installer**: WiX Toolset (MSI)
+- **Installer**: NSIS
 
 ### Known Limitations
 
-1. **Large Image Performance**: 2000px+ images load slower due to base64 encoding
+1. ~~**Large Image Performance**: 2000px+ images load slower due to base64 encoding~~ — Resolved: images are served as raw bytes over the custom `spica-img` protocol (see docs/PERFORMANCE_AUTONOMY_PLAN.md §8 for measured results)
 2. **Console Warnings**: Passive event listener warnings (no functional impact)
 3. **Drag & Drop**: Disabled due to browser security limitations (file dialog alternative provided)
 
 ### Production Status
 
-The application is production-ready and fully functional. Installation via MSI installer enables double-click opening of image files and complete integration with Windows Explorer.
+The application is production-ready and fully functional. Installation via the NSIS installer enables double-click opening of image files and complete integration with Windows Explorer.

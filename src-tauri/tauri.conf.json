@@ -14,7 +14,9 @@
       {
         "title": "Spica Photo Viewer",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "create": false,
+        "backgroundColor": "#000000"
       }
     ],
     "security": {
@@ -30,6 +32,7 @@
             "core:default",
             "core:window:allow-set-fullscreen",
             "core:window:allow-is-fullscreen",
+            "core:window:allow-set-title",
             "core:window:allow-close",
             "dialog:allow-open",
             "dialog:default"
@@ -40,13 +43,51 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "jpg",
+          "jpeg"
+        ],
+        "name": "SpicaPhotoViewer.jpeg",
+        "description": "JPEG Image"
+      },
+      {
+        "ext": [
+          "png"
+        ],
+        "name": "SpicaPhotoViewer.png",
+        "description": "PNG Image"
+      },
+      {
+        "ext": [
+          "webp"
+        ],
+        "name": "SpicaPhotoViewer.webp",
+        "description": "WebP Image"
+      },
+      {
+        "ext": [
+          "gif"
+        ],
+        "name": "SpicaPhotoViewer.gif",
+        "description": "GIF Image"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      }
+    }
   }
 }

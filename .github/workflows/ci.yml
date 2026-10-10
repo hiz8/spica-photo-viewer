@@ -7,7 +7,6 @@ on:
       - '*.md'
       - 'LICENSE'
       - '.gitignore'
-      - 'scripts/**'
       - 'public/**'
   pull_request:
     branches: [main]
@@ -19,12 +18,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24.21.0
 
       - name: Install dependencies
         run: |
@@ -48,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -57,11 +56,23 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # This action installs the minimal profile, which ships neither
+          # rustfmt nor clippy.
+          components: rustfmt, clippy
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      - name: Format check
+        run: cargo fmt --check
+        working-directory: src-tauri
+
+      - name: Lint check
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
 
       - name: Run backend tests
         run: cargo test --lib

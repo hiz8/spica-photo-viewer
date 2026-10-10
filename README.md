@@ -1,5 +1,7 @@
 # Spica Photo Viewer
 
+<p align="center"><img src="public/spica-orbit.svg" width="200" height="200" alt="Spica Photo Viewer logo"></p>
+
 A lightweight, fast image viewer application for Windows, inspired by Picasa Photo Viewer. Built with Tauri and React, it provides a seamless image browsing experience with thumbnail navigation and smooth zoom/pan capabilities.
 
 ## Features
@@ -10,13 +12,13 @@ A lightweight, fast image viewer application for Windows, inspired by Picasa Pho
 - **Keyboard Shortcuts**: Full keyboard navigation support
 - **Fullscreen Mode**: F11 toggle for immersive viewing
 - **File Association**: Double-click image files to open directly
-- **Windows Integration**: MSI installer with file type associations
+- **Windows Integration**: NSIS installer (per-user, no admin rights) with file type associations
 
 ## Installation
 
 ### For Users
 
-1. Download the latest MSI installer from [Releases](https://github.com/hiz8/spica-photo-viewer/releasess)
+1. Download the latest installer (`Spica Photo Viewer_<version>_x64-setup.exe`) from [Releases](https://github.com/hiz8/spica-photo-viewer/releasess)
 2. Run the installer and follow the setup wizard
 3. Double-click any supported image file to open with Spica Photo Viewer
 
@@ -52,7 +54,7 @@ A lightweight, fast image viewer application for Windows, inspired by Picasa Pho
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v20.19+ or v22.12+)
+- [Node.js](https://nodejs.org/) (v24.21+)
 - [Rust](https://rust-lang.org/)
 - [Tauri Prerequisites](https://tauri.app/)
 
@@ -96,7 +98,7 @@ cargo test commands::cache::tests
 
 ### Linting and Formatting
 
-The project uses [Biome](https://biomejs.dev/) for linting and formatting frontend code (TypeScript/React):
+The project uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) for linting and [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) for formatting frontend code (TypeScript/React):
 
 ```bash
 # Check for lint issues
@@ -123,7 +125,7 @@ If you are new to Rust or Tauri, start with [`docs/onboarding/README.md`](docs/o
 npm run tauri build
 ```
 
-The MSI installer will be generated in `src-tauri/target/release/bundle/msi/`.
+The NSIS installer (`*_x64-setup.exe`) will be generated in `src-tauri/target/release/bundle/nsis/`.
 
 ### Version Management
 
@@ -169,7 +171,7 @@ spica-photo-viewer/
 - **Frontend**: React 19 + TypeScript + Zustand
 - **Backend**: Tauri v2.1 + Rust
 - **Build Tools**: Vite + Tauri CLI
-- **Installer**: WiX Toolset (MSI)
+- **Installer**: NSIS (via the Tauri bundler)
 
 ## Contributing
 

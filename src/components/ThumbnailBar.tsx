@@ -1,8 +1,16 @@
 import type React from "react";
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { useEffect, useRef, useCallback, useMemo, memo } from "react";
+
+import {
+  THUMBNAIL_ITEM_PITCH_PX,
+  THUMBNAIL_RENDER_MARGIN,
+} from "../constants/memory";
+import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
+import { useThumbnailBarVisibility } from "../hooks/useThumbnailBarVisibility";
 import { useAppStore } from "../store";
 import type { ImageInfo } from "../types";
-import { THUMBNAIL_SCROLL_DEBOUNCE_MS } from "../constants/timing";
+import { isPerfEnabled, perfMark } from "../utils/perf";
+import { visibleThumbnailRadius } from "../utils/preloadWindow";
 
 interface ThumbnailItemProps {
   image: ImageInfo;
@@ -17,22 +25,39 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
     const isError = thumbnailData === "error";
     const hasData = thumbnailData && !isError;
 
+    // A thumbnail that has not been generated yet renders as a blank slot
+    // (no icon, no background) like Picasa Photo Viewer; the <button> keeps
+    // its size so layout, centering and the click target are unchanged.
+    let content: React.ReactNode = null;
+    if (hasData) {
+      content = (
+        <img
+          src={`data:image/jpeg;base64,${thumbnailData}`}
+          alt={image.filename}
+          className="thumbnail-image"
+        />
+      );
+    } else if (isError) {
+      content = <div className="thumbnail-placeholder">❌</div>;
+    }
+
+    const className = [
+      "thumbnail-item",
+      isActive && "active",
+      isError && "error",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     return (
       <button
         type="button"
-        className={`thumbnail-item ${isActive ? "active" : ""}`}
+        className={className}
         onClick={() => onClick(index)}
         title={image.filename}
+        data-index={index}
       >
-        {hasData ? (
-          <img
-            src={`data:image/jpeg;base64,${thumbnailData}`}
-            alt={image.filename}
-            className="thumbnail-image"
-          />
-        ) : (
-          <div className="thumbnail-placeholder">{isError ? "❌" : "⏳"}</div>
-        )}
+        {content}
       </button>
     );
   },
@@ -41,10 +66,12 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = memo(
 const ThumbnailBar: React.FC = () => {
   const { folder, currentImage, cache, navigateToImage } = useAppStore();
   const containerRef = useRef<HTMLDivElement>(null);
-  const thumbnailBarRef = useRef<HTMLDivElement>(null);
-  const [isHovered, setIsHovered] = useState(false);
+  const thumbnailBarRef = useRef<HTMLElement>(null);
+  const { shown, barProps } = useThumbnailBarVisibility(
+    folder.path,
+    thumbnailBarRef,
+  );
 
-  // Get thumbnail data from cache
   const getThumbnailData = useCallback(
     (imagePath: string): string | null => {
       const thumbnail = cache.thumbnails.get(imagePath);
@@ -61,18 +88,18 @@ const ThumbnailBar: React.FC = () => {
 
   const handleThumbnailClick = useCallback(
     (index: number) => {
-      if (folder.images[index]) {
+      if (shown && folder.images[index]) {
         navigateToImage(index);
       }
     },
-    [folder.images, navigateToImage],
+    [shown, folder.images, navigateToImage],
   );
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
+      if (!shown) return;
       if (e.deltaY > 0) {
-        // Scroll down = next image
         const nextIndex = Math.min(
           currentImage.index + 1,
           folder.images.length - 1,
@@ -81,14 +108,13 @@ const ThumbnailBar: React.FC = () => {
           navigateToImage(nextIndex);
         }
       } else {
-        // Scroll up = previous image
         const prevIndex = Math.max(currentImage.index - 1, 0);
         if (prevIndex !== currentImage.index) {
           navigateToImage(prevIndex);
         }
       }
     },
-    [currentImage.index, folder.images.length, navigateToImage],
+    [shown, currentImage.index, folder.images.length, navigateToImage],
   );
 
   const scrollToActiveItem = useCallback(() => {
@@ -102,7 +128,6 @@ const ThumbnailBar: React.FC = () => {
         const itemLeft = activeItem.offsetLeft;
         const itemWidth = activeItem.offsetWidth;
 
-        // Calculate center position
         const scrollLeft = itemLeft - containerWidth / 2 + itemWidth / 2;
         container.scrollTo({
           left: scrollLeft,
@@ -120,6 +145,23 @@ const ThumbnailBar: React.FC = () => {
 
     return () => clearTimeout(timeoutId);
   }, [scrollToActiveItem]);
+
+  // Perf instrumentation: first commit of the bar with items, and the frame
+  // that actually paints it.
+  const imageCount = folder.images.length;
+  useEffect(() => {
+    if (!imageCount || !isPerfEnabled()) return;
+    perfMark("thumbbar:committed", { n: imageCount });
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) perfMark("thumbbar:painted", { n: imageCount });
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageCount]);
 
   useEffect(() => {
     const thumbnailBar = thumbnailBarRef.current;
@@ -142,12 +184,14 @@ const ThumbnailBar: React.FC = () => {
     }
     const image = folder.images[currentImage.index];
 
-    // Show dimensions if full image is loaded
     if (currentImage.data?.width && currentImage.data.height) {
       return `${image.filename} (${currentImage.data.width} × ${currentImage.data.height})`;
     }
 
-    // Show filename only while loading or preview
+    // currentImage.data is null only in the brief window right after
+    // navigation, before any tier has painted; the thumbnail placeholder and
+    // preview tiers both already carry width/height, so this branch is not
+    // reached once either one has loaded.
     return image.filename;
   }, [currentImage.path, currentImage.index, currentImage.data, folder.images]);
 
@@ -155,26 +199,54 @@ const ThumbnailBar: React.FC = () => {
     return null;
   }
 
+  // Only the thumbnails that can be on screen (plus a margin) are in the
+  // DOM: a 2000-image folder otherwise costs ~90ms to mount and ~10ms of
+  // re-render per arriving thumbnail. The omitted items on each side are
+  // replaced by one spacer of exactly their total pitch, so offsetLeft,
+  // centering and scrolling behave as if every item were rendered.
+  const count = folder.images.length;
+  const radius =
+    visibleThumbnailRadius(window.innerWidth) + THUMBNAIL_RENDER_MARGIN;
+  const center = Math.max(0, currentImage.index);
+  const start = Math.max(0, center - radius);
+  const end = Math.min(count - 1, center + radius);
+
   return (
     <nav
       ref={thumbnailBarRef}
       aria-label="Thumbnail navigation"
-      className={`thumbnail-bar ${isHovered ? "hovered" : ""}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      className={shown ? "thumbnail-bar shown" : "thumbnail-bar"}
+      {...barProps}
       onWheel={handleWheel}
     >
       <div className="thumbnail-container" ref={containerRef}>
-        {folder.images.map((image, index) => (
-          <ThumbnailItem
-            key={image.path}
-            image={image}
-            index={index}
-            isActive={index === currentImage.index}
-            onClick={handleThumbnailClick}
-            thumbnailData={getThumbnailData(image.path)}
+        {start > 0 && (
+          <div
+            className="thumbnail-spacer"
+            aria-hidden="true"
+            style={{ width: start * THUMBNAIL_ITEM_PITCH_PX }}
           />
-        ))}
+        )}
+        {folder.images.slice(start, end + 1).map((image, offset) => {
+          const index = start + offset;
+          return (
+            <ThumbnailItem
+              key={image.path}
+              image={image}
+              index={index}
+              isActive={index === currentImage.index}
+              onClick={handleThumbnailClick}
+              thumbnailData={getThumbnailData(image.path)}
+            />
+          );
+        })}
+        {end < count - 1 && (
+          <div
+            className="thumbnail-spacer"
+            aria-hidden="true"
+            style={{ width: (count - 1 - end) * THUMBNAIL_ITEM_PITCH_PX }}
+          />
+        )}
       </div>
 
       {imageInfo && <div className="image-info">{imageInfo}</div>}

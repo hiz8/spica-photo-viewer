@@ -1,20 +1,17 @@
-import type React from "react";
 import {
   render,
   type RenderOptions,
   type RenderResult,
   act,
 } from "@testing-library/react";
+import type React from "react";
 import { vi } from "vitest";
+
 import type { ImageData, ImageInfo } from "../types";
 
-// Test utilities for common test scenarios
-
-// Sample test data
 export const mockImageData: ImageData = {
   path: "/test/image.jpg",
-  base64:
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  src: "data:jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
   width: 800,
   height: 600,
   format: "jpeg",
@@ -24,7 +21,8 @@ export const mockImageInfo: ImageInfo = {
   path: "/test/image.jpg",
   filename: "image.jpg",
   size: 1024,
-  modified: Date.now(),
+  modified: Math.floor(Date.now() / 1000),
+  created: Math.floor(Date.now() / 1000),
   format: "jpeg",
 };
 
@@ -33,26 +31,28 @@ export const mockImageList: ImageInfo[] = [
     path: "/test/image1.jpg",
     filename: "image1.jpg",
     size: 1024,
-    modified: Date.now() - 3000,
+    modified: Math.floor(Date.now() / 1000) - 3,
+    created: Math.floor(Date.now() / 1000) - 3,
     format: "jpeg",
   },
   {
     path: "/test/image2.png",
     filename: "image2.png",
     size: 2048,
-    modified: Date.now() - 2000,
+    modified: Math.floor(Date.now() / 1000) - 2,
+    created: Math.floor(Date.now() / 1000) - 2,
     format: "png",
   },
   {
     path: "/test/image3.gif",
     filename: "image3.gif",
     size: 512,
-    modified: Date.now() - 1000,
+    modified: Math.floor(Date.now() / 1000) - 1,
+    created: Math.floor(Date.now() / 1000) - 1,
     format: "gif",
   },
 ];
 
-// Custom render function that can include providers
 export const renderWithProviders = (
   ui: React.ReactElement,
   options?: Omit<RenderOptions, "wrapper">,
@@ -60,7 +60,6 @@ export const renderWithProviders = (
   return render(ui, options);
 };
 
-// Async render helper that wraps components in act()
 export const renderAsync = async (
   ui: React.ReactElement,
   options?: Omit<RenderOptions, "wrapper">,
@@ -72,7 +71,6 @@ export const renderAsync = async (
   return result;
 };
 
-// Store mock factory
 export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   currentImage: {
     path: "",
@@ -84,7 +82,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     path: "",
     images: [],
     imagesByPath: new Map(),
-    sortOrder: "name" as const,
   },
   view: {
     zoom: 100,
@@ -92,7 +89,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     panY: 0,
     isFullscreen: false,
     isMaximized: false,
-    thumbnailOpacity: 0.5,
+    windowed: false,
   },
   cache: {
     thumbnails: new Map<
@@ -117,8 +114,8 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
     suppressTransitionTimeoutId: null,
     thumbnailDisplayed: false,
     isCheckingStartupFile: true,
+    zoomOperation: 0,
   },
-  // Mock functions
   setCurrentImage: vi.fn(),
   setImageData: vi.fn(),
   setImageError: vi.fn(),
@@ -128,7 +125,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   setPan: vi.fn(),
   setFullscreen: vi.fn(),
   setMaximized: vi.fn(),
-  setThumbnailOpacity: vi.fn(),
   setLoading: vi.fn(),
   setDragOver: vi.fn(),
   setShowAbout: vi.fn(),
@@ -146,8 +142,7 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   removePreloadedImage: vi.fn(),
   removePreloadedImages: vi.fn(),
   setCachedThumbnail: vi.fn(),
-  removeCachedThumbnail: vi.fn(),
-  removeCachedThumbnails: vi.fn(),
+  setCachedThumbnails: vi.fn(),
   updateImageDimensions: vi.fn(),
   resizeToImage: vi.fn(),
   openFileDialog: vi.fn(),
@@ -157,7 +152,6 @@ export const createMockStore = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-// Wait for async operations with act wrapper
 export const waitForAsync = async (callback: () => void | Promise<void>) => {
   await act(async () => {
     if (typeof callback === "function") {
@@ -166,9 +160,7 @@ export const waitForAsync = async (callback: () => void | Promise<void>) => {
   });
 };
 
-// Standardized async test patterns
 export const asyncTestPatterns = {
-  // Render component with async operations
   renderWithAsyncOps: async (
     ui: React.ReactElement,
     options?: Omit<RenderOptions, "wrapper">,
@@ -180,7 +172,6 @@ export const asyncTestPatterns = {
     return result;
   },
 
-  // Wait for component to settle after async operations
   waitForComponentToSettle: async (callback?: () => void | Promise<void>) => {
     await act(async () => {
       if (callback) {
@@ -191,14 +182,12 @@ export const asyncTestPatterns = {
     });
   },
 
-  // Execute async action and wait for completion
   executeAsyncAction: async (action: () => void | Promise<void>) => {
     await act(async () => {
       await action();
     });
   },
 
-  // Wait for expectations with act wrapper
   waitForExpectations: async (expectations: () => void | Promise<void>) => {
     await act(async () => {
       await vi.waitFor(async () => {
@@ -208,7 +197,6 @@ export const asyncTestPatterns = {
   },
 };
 
-// Mock window resize helper
 export const mockWindowResize = (width: number, height: number) => {
   Object.defineProperty(window, "innerWidth", {
     writable: true,
@@ -223,7 +211,6 @@ export const mockWindowResize = (width: number, height: number) => {
   window.dispatchEvent(new Event("resize"));
 };
 
-// Mock mouse event helpers
 export const createMouseEvent = (
   type: string,
   clientX: number = 0,
@@ -239,7 +226,6 @@ export const createMouseEvent = (
   });
 };
 
-// Mock wheel event helper
 export const createWheelEvent = (
   deltaY: number,
   clientX: number = 0,
@@ -254,7 +240,6 @@ export const createWheelEvent = (
   });
 };
 
-// Mock keyboard event helper
 export const createKeyboardEvent = (
   key: string,
   ctrlKey: boolean = false,

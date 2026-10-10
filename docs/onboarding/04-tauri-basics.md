@@ -32,7 +32,7 @@ Tauri v2 アプリは大きく 4 つの要素でできています。
 
 ## `tauri.conf.json` の主要セクション
 
-`src-tauri/tauri.conf.json:1-52` を上から順に読み解きます。
+`src-tauri/tauri.conf.json:1-92` を上から順に読み解きます。
 
 ### `productName` / `version` / `identifier` (3-5 行目)
 
@@ -42,7 +42,7 @@ Tauri v2 アプリは大きく 4 つの要素でできています。
 "identifier": "com.hirof.spica-photo-viewer"
 ```
 
-`identifier` は逆ドメイン形式で書きます。MSI インストーラやファイル関連付け時のレジストリキーに使われる、アプリのユニーク ID です。
+`identifier` は逆ドメイン形式で書きます。アプリのユニーク ID で、アプリデータのフォルダ名 (`%APPDATA%\com.hirof.spica-photo-viewer` など) や、インストーラがショートカットに設定する AppUserModelID に使われます。ファイル関連付けのレジストリキー (ProgID) には使われず、`bundle.fileAssociations` の `name` が使われます。
 
 ### `build` (6-11 行目)
 
@@ -91,9 +91,9 @@ Tauri v2 アプリは大きく 4 つの要素でできています。
 ]
 ```
 
-### `bundle` (41-51 行目)
+### `bundle` (43-91 行目)
 
-`tauri build` で出力するインストーラの設定。`targets: "all"` は対応する OS 全部 (Windows なら MSI、macOS なら DMG、Linux なら AppImage 等) を出すという意味です。
+`tauri build` で出力するインストーラの設定。`targets: ["nsis"]` で Windows 向けの NSIS インストーラ (`*-setup.exe`) だけを出します。MSI を出さないのは、MSI にはインストーラフックが効かないため (`docs/superpowers/specs/2026-09-12-file-type-icon-design.md` の F9)。`fileAssociations` はファイル関連付け (拡張子ごとの ProgID)、`windows.nsis.installerHooks` はインストーラに差し込む NSIS スクリプト (`src-tauri/installer-hooks.nsh`) です。
 
 ---
 
@@ -215,32 +215,28 @@ const images = await invoke<ImageInfo[]>("get_folder_images", {
 | --- | --- |
 | `path: String` | `{ path: "..." }` |
 | `size: Option<u32>` | `{ size: 30 }` または `{ size: null }` |
-| `image_width: u32` | `{ imageWidth: 100 }` ← **snake_case の引数名に対応する camelCase で渡せる** |
+| `client_left: f64` | `{ clientLeft: 790 }` ← **snake_case の引数名に対応する camelCase で渡せる** |
 
-`commands/window.rs:42-47` の `resize_window_to_image` がよい例です:
+`commands/window.rs` の `resize_window_to_image` がよい例です:
 
 ```rust
 pub async fn resize_window_to_image(
     app_handle: AppHandle,
-    image_width: u32,
-    image_height: u32,
-    zoom_percent: f64,
-    image_screen_center_x: f64,
-    image_screen_center_y: f64,
-    _disable_animation: Option<bool>,
+    client_left: f64,
+    client_top: f64,
+    client_width: f64,
+    client_height: f64,
 ) -> Result<(), String> {
 ```
 
-これをフロントから呼ぶときは `src/store/index.ts:749-756`:
+これをフロントから呼ぶときは `src/store/index.ts` の `resizeToImage`:
 
 ```typescript
 await invoke("resize_window_to_image", {
-  imageWidth: width,
-  imageHeight: height,
-  zoomPercent: currentZoom,
-  imageScreenCenterX: imageScreenCenterX,
-  imageScreenCenterY: imageScreenCenterY,
-  disableAnimation: true,
+  clientLeft: box.left,
+  clientTop: box.top,
+  clientWidth: box.width,
+  clientHeight: box.height,
 });
 ```
 
@@ -274,10 +270,11 @@ pub async fn get_window_position(app_handle: AppHandle) -> Result<WindowPosition
 
 `WebviewWindow` には以下のようなメソッドが生えています。
 
-- `is_maximized()`、`is_fullscreen()` (`commands/window.rs:25-31`)
-- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`commands/window.rs:76-100`)
-- `maximize()`、`unmaximize()` (`commands/window.rs:124`、`commands/window.rs:73`)
-- `primary_monitor()` (画面サイズ取得、`commands/window.rs:85`)
+- `is_maximized()`、`is_fullscreen()` (`get_window_state`)
+- `scale_factor()`、`inner_position()`、`outer_position()`、`inner_size()` (`resize_window_to_image`: CSS px → 物理 px の変換と復元結果の検証)
+- `set_size(PhysicalSize)`、`set_position(PhysicalPosition)` (`restore_onto` の補正パス)
+- `maximize()`、`unmaximize()` (`maximize_window`、`restore_onto`)
+- `hwnd()` (Windows 専用。`native` モジュールで `SetWindowPlacement` / `DwmSetWindowAttribute` に渡す)
 
 詳細は Tauri 公式ドキュメントを参照: https://docs.rs/tauri/latest/tauri/window/struct.WebviewWindow.html
 
@@ -460,15 +457,14 @@ const unlistenUnmaximize = await window.listen("tauri://unmaximize", () => {
    // Rust 側 snake_case → JS 側で camelCase が要求される例
    // (resize_window_to_image は要件を満たすときだけ動くので、ここではあえてエラーを起こす)
    await invoke("resize_window_to_image", {
-     imageWidth: 100,
-     imageHeight: 100,
-     zoomPercent: 100,
-     imageScreenCenterX: 500,
-     imageScreenCenterY: 500,
+     clientLeft: 500,
+     clientTop: 300,
+     clientWidth: 800,
+     clientHeight: 600,
    });
    ```
 
-最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs:57-59`)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
+最後の `resize_window_to_image` は、ウィンドウが最大化されていない場合 `Err("Window is not maximized")` を返すはずです (`commands/window.rs` の `resize_window_to_image` 冒頭)。Promise の reject として `try/catch` で捕まえるか、コンソールに赤いエラーが出ます。
 
 これにより:
 
