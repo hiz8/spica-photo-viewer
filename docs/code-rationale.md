@@ -420,12 +420,15 @@ perf.log と 15ms ウォッチャー `scripts/zwatch.ps1` の結果が全ブロ�
 
 実装:
 - `.maximized(true)` を使わない。`.build()` の間だけ、スレッドローカルの
-  `WH_CALLWNDPROCRET` フックを仕掛ける。フックは、このスレッドで作られる最初の「キャプション
+  `WH_CALLWNDPROC` フックを仕掛ける。フックは、このスレッドで作られる最初の「キャプション
   付き・非子」ウインドウ（＝メインウインドウ。WebView2 の窓は子ウインドウで、tao のイベント用の
   窓は `.build()` より前に作られている）の `WM_CREATE` で、`SetWindowPos` を 1 回呼ぶ。移す先は、
   その窓が置かれたモニター（`MonitorFromWindow`）で最大化したときの外枠の矩形。フックは
-  `WM_CREATE` をウインドウプロシージャの後、`CreateWindowEx` が戻る前に受け取るので、tao はまだ
-  窓を表示していない。
+  `WM_CREATE` をウインドウプロシージャの**前**に受け取るので、tao はまだ窓を表示していない。
+  tao 0.36 以降は、`WM_CREATE` のハンドラー（`InitData::on_create`）の中で窓を表示する
+  （tao#1231）。そのため、ウインドウプロシージャの後に呼ばれる `WH_CALLWNDPROCRET` では、
+  既定の 800×600 で表示された窓を後から動かすことになる（tao 0.35 までは表示が
+  `CreateWindowEx` から戻った後だったので、`WH_CALLWNDPROCRET` でも間に合っていた）。
 - 最初の表示は `SW_SHOW` になる。そのときのクライアント領域は、最大化時と同じ位置・大きさ。
 - `.build()` の後（`window_created` のトレースの後）に `maximize()` する。この時点で矩形はもう
   同じなので、見た目で変わるのはキャプションボタンの絵柄だけになる。フロントの
@@ -450,7 +453,8 @@ perf.log と 15ms ウォッチャー `scripts/zwatch.ps1` の結果が全ブロ�
   - 非表示で生成し、WebView2 の初期化後に最大化で表示する。窓が出るのが ~0.47 秒遅れるうえ、
     最初の表示は `SW_MAXIMIZE` のままになる。
 
-トレース: `first_show_rect`（`ok` / `rect` / `err`）と `startup_maximize`（`ok` / `err`）を
+トレース: `first_show_rect`（`ok` / `visible` / `rect` / `err`。`visible` が true なら、フックが
+tao の最初の表示に間に合っていない）と `startup_maximize`（`ok` / `err`）を
 それぞれ 1 行ずつ出す。`window_created` の `z_above` は最大化の前に読む。持ち上げが再発した
 ときに、最初の表示が残した状態のまま観測できるようにするため。
 

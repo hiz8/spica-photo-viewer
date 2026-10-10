@@ -243,10 +243,10 @@ mod native {
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowPlacement,
         GetWindowRect, IsIconic, IsWindowVisible, SetWindowPlacement, SetWindowPos,
-        SetWindowsHookExW, SystemParametersInfoW, UnhookWindowsHookEx, CWPRETSTRUCT, GWL_EXSTYLE,
+        SetWindowsHookExW, SystemParametersInfoW, UnhookWindowsHookEx, CWPSTRUCT, GWL_EXSTYLE,
         GWL_STYLE, GW_HWNDNEXT, GW_OWNER, HC_ACTION, HHOOK, HWND_TOP, SPI_GETWORKAREA,
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-        WH_CALLWNDPROCRET, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CREATE, WS_CAPTION,
+        WH_CALLWNDPROC, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CREATE, WS_CAPTION,
         WS_CHILD, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_MAXIMIZE,
     };
 
@@ -438,23 +438,27 @@ mod native {
         Ok(rect)
     }
 
-    /// WH_CALLWNDPROCRET sees WM_CREATE after the window procedure ran and
-    /// before CreateWindowEx returns, so tao has not shown the window yet.
+    /// WH_CALLWNDPROC sees WM_CREATE before the window procedure: tao (>= 0.36)
+    /// shows the window inside its WM_CREATE handler, so a hook after it
+    /// (WH_CALLWNDPROCRET) would move an already visible window (W5).
     unsafe extern "system" fn first_show_hook(
         code: i32,
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
         if code == HC_ACTION as i32 && !FIRST_SHOW_PLACED.load(Ordering::Relaxed) {
-            let msg = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
+            let msg = unsafe { &*(lparam.0 as *const CWPSTRUCT) };
             if msg.message == WM_CREATE && is_captioned_top_level(msg.hwnd) {
                 FIRST_SHOW_PLACED.store(true, Ordering::Relaxed);
+                // true means the default 800x600 was already on screen: the
+                // hook no longer runs ahead of tao's first show.
+                let visible = unsafe { IsWindowVisible(msg.hwnd) }.as_bool();
                 let extra = match place_on_maximized_rect(msg.hwnd) {
                     Ok(r) => format!(
-                        r#","ok":true,"rect":[{},{},{},{}]"#,
-                        r.left, r.top, r.right, r.bottom
+                        r#","ok":true,"visible":{},"rect":[{},{},{},{}]"#,
+                        visible, r.left, r.top, r.right, r.bottom
                     ),
-                    Err(e) => format!(r#","ok":false,"err":{:?}"#, e),
+                    Err(e) => format!(r#","ok":false,"visible":{},"err":{:?}"#, visible, e),
                 };
                 crate::utils::perf::phase("first_show_rect", &extra);
             }
@@ -466,7 +470,7 @@ mod native {
         FIRST_SHOW_PLACED.store(false, Ordering::Relaxed);
         let hook = unsafe {
             SetWindowsHookExW(
-                WH_CALLWNDPROCRET,
+                WH_CALLWNDPROC,
                 Some(first_show_hook),
                 None,
                 GetCurrentThreadId(),
