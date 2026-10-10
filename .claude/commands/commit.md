@@ -26,6 +26,7 @@ Create a git commit with an auto-generated Conventional Commits message.
 3. Stage relevant files using `git add` with specific file names (avoid `git add -A` or `git add .`)
 
 4. Create the commit using a HEREDOC for the message:
+
    ```
    git commit -m "$(cat <<'EOF'
    type(scope): description
