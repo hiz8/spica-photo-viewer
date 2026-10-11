@@ -65,7 +65,7 @@
     // CSS の副作用 import と jest-dom のマッチャ登録は、値を持たないのが正しい形。
     "import/no-unassigned-import": [
       "error",
-      { "allow": ["**/*.css", "@testing-library/jest-dom"] }
+      { "allow": ["**/*.css", "@testing-library/jest-dom/vitest"] }
     ],
     // チェーン末尾の then() は副作用専用で、戻り値を受け取る呼び出し側がいない。
     "promise/always-return": ["error", { "ignoreLastCallback": true }]

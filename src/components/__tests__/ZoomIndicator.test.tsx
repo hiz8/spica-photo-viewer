@@ -1,6 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import "@testing-library/jest-dom";
 
 import { ZOOM_INDICATOR_HIDE_DELAY_MS as DELAY } from "../../constants/timing";
 import ZoomIndicator from "../ZoomIndicator";

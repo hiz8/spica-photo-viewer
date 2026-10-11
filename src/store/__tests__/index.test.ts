@@ -1123,9 +1123,9 @@ describe("AppStore", () => {
         folder: { ...state.folder, path: "/old" },
         cache: {
           ...state.cache,
-          thumbnails: new Map([
+          thumbnails: new Map<string, typeof seeded | "error">([
             ["/old/a.jpg", seeded],
-            ["/old/b.jpg", "error" as const],
+            ["/old/b.jpg", "error"],
             // App.tsx seeds the startup file's thumbnail before the folder
             // is opened (I1); a folder switch must not throw it away.
             ["/test/image2.png", seeded],
