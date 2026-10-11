@@ -41,11 +41,19 @@ export const viewportMatches = (
     SIZE_TOLERANCE_PX;
 
 /**
- * Resolves one animation frame after the viewport first matches `target`:
- * the resize event and the re-layout it triggers run before that frame's
- * rAF callbacks, so the frame that observes the size also paints the new
- * layout, and the following frame means it has been committed.
+ * Frames to let pass after the viewport first matches `target`. The resize
+ * event and the re-layout it triggers run before that frame's rAF callbacks,
+ * so the frame that observes the size also lays out the new content. One
+ * more frame only proves that layout was committed: Chromium lets the main
+ * thread run a frame ahead of the compositor, and a maximize re-rasterizes
+ * the image at the new size, so the committed frame can still be in raster
+ * when the next rAF fires (seen as the old windowed frame at the top-left
+ * once the cover was gone). The compositor cannot fall two frames behind, so
+ * the second extra frame means it was drawn.
  */
+const SETTLE_FRAMES = 2;
+
+/** Resolves `SETTLE_FRAMES` animation frames after the viewport first matches `target`. */
 const waitForLayout = (
   target: WindowTransition,
   isLive: () => boolean,
@@ -59,6 +67,13 @@ const waitForLayout = (
       resolve(matched);
     };
     const timer = setTimeout(() => finish(false), LAYOUT_TIMEOUT_MS);
+    const settle = (framesLeft: number) => {
+      if (framesLeft === 0) {
+        finish(true);
+      } else {
+        requestAnimationFrame(() => settle(framesLeft - 1));
+      }
+    };
     const tick = () => {
       if (settled || !isLive()) return;
       if (
@@ -69,7 +84,7 @@ const waitForLayout = (
           target,
         )
       ) {
-        requestAnimationFrame(() => finish(true));
+        settle(SETTLE_FRAMES);
       } else {
         requestAnimationFrame(tick);
       }

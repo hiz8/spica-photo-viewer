@@ -105,12 +105,14 @@ describe("useWindowTransition", () => {
     act(() => onTransition?.({ payload }));
   };
 
-  it("ends the transition one frame after the viewport reached the new size", async () => {
+  it("ends the transition two frames after the viewport reached the new size", async () => {
     await begin(restore);
     runFrame();
     expect(mockInvoke).not.toHaveBeenCalled();
     setViewport(660, 1273);
     runFrame();
+    runFrame();
+    await flush();
     expect(mockInvoke).not.toHaveBeenCalled();
     runFrame();
     await flush();
