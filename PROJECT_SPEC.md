@@ -163,6 +163,7 @@ spica-photo-viewer/
   - The image stays exactly where it was on screen (DPI-aware, title bar accounted for); no clamping to the screen — Windows re-aligns an off-screen top edge when a resize border is clicked
   - Minimum client width 544px; below it the window keeps the image's aspect ratio (2000×1000 → 544×272, 1000×2000 → 544×1088) and the image stays centered at its current zoom
   - In this windowed mode the image is laid out over the whole client area, and the auto-hiding thumbnail bar shows over its bottom; maximizing or fullscreen restores the normal layout
+  - Neither this shrink nor a later maximize/restore shows a stale frame: the pixels already on screen are held over the client area until the WebView2 has painted the new layout, and the DWM maximize/restore animation is off for these transitions (docs/code-rationale.md#W7)
 - **Drag & Drop image file**: Open dropped image and switch to its folder
 
 ### Image Loading Strategy

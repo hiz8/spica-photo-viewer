@@ -224,7 +224,7 @@ pub(crate) fn centered_restored_rect(
 }
 
 #[cfg(windows)]
-mod native {
+pub(crate) mod native {
     use super::{FrameInsets, Rect, ZWindow};
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -327,7 +327,7 @@ mod native {
         .map_err(|e| format!("Failed to raise the window: {}", e))
     }
 
-    pub(super) fn hwnd_of(window: &tauri::WebviewWindow) -> Result<HWND, String> {
+    pub(crate) fn hwnd_of(window: &tauri::WebviewWindow) -> Result<HWND, String> {
         // tauri hands out the HWND of its own `windows` crate version; both
         // versions wrap the same raw pointer.
         let raw = window
@@ -339,7 +339,7 @@ mod native {
     /// The DWM restore animation scales the last composited frame from the
     /// maximized rect to the restored one, which visibly shrinks and moves the
     /// image; disabling it makes the restore land in one frame.
-    pub(super) fn set_transitions_disabled(hwnd: HWND, disabled: bool) -> Result<(), String> {
+    pub(crate) fn set_transitions_disabled(hwnd: HWND, disabled: bool) -> Result<(), String> {
         let value = BOOL(i32::from(disabled));
         unsafe {
             DwmSetWindowAttribute(
@@ -354,7 +354,7 @@ mod native {
 
     /// Frame of the *restored* window: WS_MAXIMIZE is cleared from the current
     /// style because the maximized frame is laid out differently.
-    pub(super) fn frame_insets(hwnd: HWND, dpi: u32) -> Result<FrameInsets, String> {
+    pub(crate) fn frame_insets(hwnd: HWND, dpi: u32) -> Result<FrameInsets, String> {
         let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32 & !WS_MAXIMIZE.0;
         let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
         let mut rect = RECT::default();
@@ -660,6 +660,13 @@ impl Drop for FirstShowPlacement {
 /// The page load and the fallback thread race to show the WebView2; the
 /// loser must not repeat the show (W6).
 static WEBVIEW_REVEALED: AtomicBool = AtomicBool::new(false);
+
+/// False until the page's first paint is on screen; the startup maximize
+/// (W5) and anything before the reveal have no pixels worth holding (W7).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn webview_revealed() -> bool {
+    WEBVIEW_REVEALED.load(Ordering::SeqCst)
+}
 
 /// A page load that never finishes (dev server down, navigation error) must
 /// not leave the WebView2 hidden for good, so it is shown anyway after this
