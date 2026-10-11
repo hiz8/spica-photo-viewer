@@ -377,34 +377,39 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
     Ok(strip_verbatim_prefix(&absolute_path.to_string_lossy()))
 }
 
-/// Calling `SHOpenWithDialog` here instead of spawning
-/// `rundll32 shell32.dll,OpenAs_RunDLL` is what makes the chosen app show a
-/// network-share image promptly: measured on the same NAS file, rundll32 took
-/// ~15 s between the pick and the image while the in-process call took ~0.2 s
-/// (#372). It also removes the command-line quoting that forced the 8.3 short
-/// path. The call blocks until the dialog closes, so it gets its own STA thread
-/// rather than the Tauri command thread.
+/// The dialog is opened the way Explorer's "Choose another app" opens it: the
+/// `openas` context-menu verb on the shell item. Measured on the same
+/// network-share file (#372), the other routes made the chosen app wait
+/// between the pick and the image: `rundll32 shell32.dll,OpenAs_RunDLL` ~15 s
+/// for every app, and an in-process `SHOpenWithDialog(OAIF_EXEC)` ~0.2 s for
+/// packaged apps (Photos) but still ~15 s for Win32 apps (Picasa, Firefox),
+/// while Explorer's dialog is instant for all of them. Going through the item
+/// also removes the command-line quoting that forced the 8.3 short path.
+/// The call needs a COM apartment, so it gets its own STA thread rather than
+/// the Tauri command thread.
 #[cfg(all(target_os = "windows", not(test)))]
 fn show_open_with_dialog(path: String) {
-    use windows::core::PCWSTR;
+    use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::ERROR_CANCELLED;
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Shell::{
-        SHOpenWithDialog, OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OPENASINFO,
-    };
+    use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW};
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
     let wide: Vec<u16> = path.encode_utf16().chain(Some(0)).collect();
-    let info = OPENASINFO {
-        pcszFile: PCWSTR(wide.as_ptr()),
-        pcszClass: PCWSTR::null(),
-        oaifInFlags: OAIF_EXEC | OAIF_ALLOW_REGISTRATION,
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_INVOKEIDLIST,
+        lpVerb: w!("openas"),
+        lpFile: PCWSTR(wide.as_ptr()),
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
     };
 
     let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-    if let Err(e) = unsafe { SHOpenWithDialog(None, &info) } {
+    if let Err(e) = unsafe { ShellExecuteExW(&mut info) } {
         // Closing the dialog without a pick is not worth a log line.
         if e.code() != ERROR_CANCELLED.to_hresult() {
-            eprintln!("SHOpenWithDialog failed: {e}");
+            eprintln!("ShellExecuteEx(openas) failed: {e}");
         }
     }
     if hr.is_ok() {
