@@ -15,9 +15,6 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-#[cfg(target_os = "windows")]
-const MAX_PATH_EXTENDED: usize = 32768;
-
 #[derive(Debug, Serialize, Clone)]
 pub struct ImageInfo {
     pub path: String,
@@ -346,10 +343,10 @@ pub async fn generate_thumbnail_with_dimensions(
     .map_err(|e| format!("thumbnail task failed: {e}"))?
 }
 
-/// `canonicalize` returns verbatim paths, which rundll32 does not take. A
-/// network path comes back as `\\?\UNC\server\share`, so dropping only the
-/// `\\?\` would leave the relative `UNC\server\share`, resolved against the
-/// working directory (the Desktop on an Explorer launch).
+/// `canonicalize` returns verbatim paths, which the shell's parsing name
+/// handling does not take. A network path comes back as `\\?\UNC\server\share`,
+/// so dropping only the `\\?\` would leave the relative `UNC\server\share`,
+/// resolved against the working directory (the Desktop on an Explorer launch).
 #[cfg(target_os = "windows")]
 fn strip_verbatim_prefix(path: &str) -> String {
     if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
@@ -361,14 +358,8 @@ fn strip_verbatim_prefix(path: &str) -> String {
     }
 }
 
-/// Short-path (8.3) conversion avoids rundll32.exe command-line escaping
-/// issues with special characters (parentheses, spaces, Japanese characters,
-/// etc.) in file names.
 #[cfg(target_os = "windows")]
 fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
-    use windows::core::PCWSTR;
-    use windows::Win32::Storage::FileSystem::GetShortPathNameW;
-
     let file_path = Path::new(path);
 
     if !file_path.exists() {
@@ -383,30 +374,41 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         .canonicalize()
         .map_err(|e| format!("Failed to get absolute path: {}", e))?;
 
-    let path_str = strip_verbatim_prefix(&absolute_path.to_string_lossy());
+    Ok(strip_verbatim_prefix(&absolute_path.to_string_lossy()))
+}
 
-    let path_wide: Vec<u16> = path_str.encode_utf16().chain(Some(0)).collect();
-    let mut short_path_buf: Vec<u16> = vec![0; MAX_PATH_EXTENDED];
+/// Calling `SHOpenWithDialog` here instead of spawning
+/// `rundll32 shell32.dll,OpenAs_RunDLL` is what makes the chosen app show a
+/// network-share image promptly: measured on the same NAS file, rundll32 took
+/// ~15 s between the pick and the image while the in-process call took ~0.2 s
+/// (#372). It also removes the command-line quoting that forced the 8.3 short
+/// path. The call blocks until the dialog closes, so it gets its own STA thread
+/// rather than the Tauri command thread.
+#[cfg(all(target_os = "windows", not(test)))]
+fn show_open_with_dialog(path: String) {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::ERROR_CANCELLED;
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{
+        SHOpenWithDialog, OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OPENASINFO,
+    };
 
-    unsafe {
-        use windows::Win32::Foundation::GetLastError;
+    let wide: Vec<u16> = path.encode_utf16().chain(Some(0)).collect();
+    let info = OPENASINFO {
+        pcszFile: PCWSTR(wide.as_ptr()),
+        pcszClass: PCWSTR::null(),
+        oaifInFlags: OAIF_EXEC | OAIF_ALLOW_REGISTRATION,
+    };
 
-        let result = GetShortPathNameW(PCWSTR(path_wide.as_ptr()), Some(&mut short_path_buf));
-
-        if result == 0 {
-            // Known failure codes: ERROR_PATH_NOT_FOUND (3), ERROR_ACCESS_DENIED
-            // (5), ERROR_INVALID_NAME (123). Fall back to the original path so
-            // Open With still works when short-path conversion isn't available.
-            let error = GetLastError();
-            eprintln!(
-                "GetShortPathNameW failed with error code {:?}, falling back to original path",
-                error
-            );
-            Ok(path_str)
-        } else {
-            let short_path = String::from_utf16_lossy(&short_path_buf[..result as usize]);
-            Ok(short_path)
+    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if let Err(e) = unsafe { SHOpenWithDialog(None, &info) } {
+        // Closing the dialog without a pick is not worth a log line.
+        if e.code() != ERROR_CANCELLED.to_hresult() {
+            eprintln!("SHOpenWithDialog failed: {e}");
         }
+    }
+    if hr.is_ok() {
+        unsafe { CoUninitialize() };
     }
 }
 
@@ -416,17 +418,9 @@ pub fn open_with_dialog(path: String) -> Result<(), String> {
     {
         let _prepared_path = prepare_path_for_open_with(&path)?;
 
-        // Skip actual dialog spawn during tests to avoid UI interaction
+        // Skip the actual dialog during tests to avoid UI interaction
         #[cfg(not(test))]
-        {
-            use std::process::Command;
-
-            Command::new("rundll32.exe")
-                .arg("shell32.dll,OpenAs_RunDLL")
-                .arg(&_prepared_path)
-                .spawn()
-                .map_err(|e| format!("Failed to spawn rundll32.exe: {}", e))?;
-        }
+        std::thread::spawn(move || show_open_with_dialog(_prepared_path));
 
         Ok(())
     }
@@ -1112,6 +1106,21 @@ mod tests {
             strip_verbatim_prefix(r"\\server\share\a.jpg"),
             r"\\server\share\a.jpg"
         );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn prepare_path_for_open_with_keeps_the_original_file_name() {
+        let temp_dir = create_temp_dir();
+        let image_path = create_test_jpeg(temp_dir.path(), "test (Custom).jpg");
+
+        let prepared = prepare_path_for_open_with(&image_path.to_string_lossy()).unwrap();
+
+        assert!(
+            prepared.ends_with(r"\test (Custom).jpg"),
+            "expected the long name, got {prepared}"
+        );
+        assert!(!prepared.starts_with(r"\\?\"), "got {prepared}");
     }
 
     #[test]
