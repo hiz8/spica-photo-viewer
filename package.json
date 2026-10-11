@@ -58,7 +58,7 @@
     "@wdio/spec-reporter": "^9.31.2",
     "@wdio/tauri-service": "^1.5.0",
     "jsdom": "^30.1.2",
-    "oxfmt": "0.68.0",
+    "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "oxlint-tsgolint": "7.0.2003",
     "sharp": "^0.35.5",
