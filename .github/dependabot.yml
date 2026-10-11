@@ -7,6 +7,11 @@ updates:
       interval: "weekly"
       day: "saturday"
     open-pull-requests-limit: 10
+    ignore:
+      # @wdio/tauri-service が WebdriverIO 10 に対応するまで保留（webdriverio/desktop-mobile#297）。
+      # 現行の 1.x は peer 依存が webdriverio ^9 で、v10 では Tauri の全セッションが before() で失敗する。
+      - dependency-name: "@wdio/*"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
     commit-message:
