@@ -18,10 +18,12 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 
+import { useAppStore } from "../../store";
 import {
   LAYOUT_TIMEOUT_MS,
   useWindowTransition,
   viewportMatches,
+  type WindowTransition,
 } from "../useWindowTransition";
 
 const mockInvoke = vi.mocked(invoke);
@@ -80,6 +82,7 @@ describe("useWindowTransition", () => {
       return frames.length;
     });
     setViewport(2560, 1369);
+    useAppStore.getState().setMaximized(true);
   });
 
   afterEach(() => {
@@ -87,11 +90,14 @@ describe("useWindowTransition", () => {
     vi.unstubAllGlobals();
   });
 
-  const begin = async (payload: {
-    id: number;
-    width: number;
-    height: number;
-  }) => {
+  const restore: WindowTransition = {
+    id: 7,
+    width: 660,
+    height: 1273,
+    maximized: false,
+  };
+
+  const begin = async (payload: WindowTransition) => {
     renderHook(() => useWindowTransition());
     await flush();
     const onTransition = listeners.get("window-transition");
@@ -100,23 +106,27 @@ describe("useWindowTransition", () => {
   };
 
   it("ends the transition one frame after the viewport reached the new size", async () => {
-    await begin({ id: 7, width: 660, height: 1273 });
-    // Still the old size: keep waiting.
+    await begin(restore);
     runFrame();
     expect(mockInvoke).not.toHaveBeenCalled();
-    // The resize landed; this frame paints the new layout...
     setViewport(660, 1273);
     runFrame();
     expect(mockInvoke).not.toHaveBeenCalled();
-    // ...and the next frame means it has been committed.
     runFrame();
     await flush();
     expect(mockInvoke).toHaveBeenCalledWith("end_window_transition", { id: 7 });
     expect(mockInvoke).toHaveBeenCalledTimes(1);
   });
 
+  it("applies the new maximized state before the resize lands", async () => {
+    await begin(restore);
+    expect(useAppStore.getState().view.isMaximized).toBe(false);
+    await begin({ ...restore, id: 10, maximized: true });
+    expect(useAppStore.getState().view.isMaximized).toBe(true);
+  });
+
   it("ends the transition at the timeout when the size never arrives", async () => {
-    await begin({ id: 8, width: 660, height: 1273 });
+    await begin({ ...restore, id: 8 });
     runFrame();
     act(() => {
       vi.advanceTimersByTime(LAYOUT_TIMEOUT_MS);
@@ -135,7 +145,7 @@ describe("useWindowTransition", () => {
     const { unmount } = renderHook(() => useWindowTransition());
     await flush();
     const onTransition = listeners.get("window-transition");
-    act(() => onTransition?.({ payload: { id: 9, width: 660, height: 1273 } }));
+    act(() => onTransition?.({ payload: { ...restore, id: 9 } }));
     unmount();
     setViewport(660, 1273);
     runFrame();

@@ -6,6 +6,10 @@
 //! frame for the new size arrives one frame later, anchored at the new client
 //! origin: without the cover that stale frame shows the image displaced (W7).
 
+// The geometry helpers only have callers in `native` and in the tests; the
+// Linux CI build (no `native`, no tests) must not fail its clippy gate on them.
+#![cfg_attr(not(windows), allow(dead_code, unused_imports))]
+
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -27,7 +31,6 @@ pub(crate) enum Transition {
 }
 
 impl Transition {
-    #[cfg_attr(not(windows), allow(dead_code))]
     fn label(self) -> &'static str {
         match self {
             Transition::Maximize => "maximize",
@@ -124,6 +127,10 @@ struct TransitionPayload {
     /// reach it before signalling.
     width: u32,
     height: u32,
+    /// Tauri 2 has no maximize event, so the store learns the new state from
+    /// a `get_window_state` round trip after the resize; told here instead, the
+    /// frontend lays out for the right area in the same frame as the resize.
+    maximized: bool,
 }
 
 /// Installs the cover on the main window. No-op off Windows.
@@ -179,11 +186,12 @@ mod native {
     use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
-        GetWindowRect, IsWindowVisible, RegisterClassExW, ShowWindow, UpdateLayeredWindow,
-        CS_HREDRAW, CS_VREDRAW, GWL_STYLE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOWNOACTIVATE,
-        ULW_OPAQUE, WINDOWPOS, WM_NCDESTROY, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
-        WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-        WS_MAXIMIZE, WS_MINIMIZE, WS_POPUP,
+        GetWindowRect, IsWindowVisible, KillTimer, RegisterClassExW, SetTimer, SetWindowPos,
+        ShowWindow, UpdateLayeredWindow, CS_HREDRAW, CS_VREDRAW, GWL_STYLE, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, ULW_OPAQUE, WINDOWPOS,
+        WM_NCDESTROY, WM_TIMER, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WNDCLASSEXW,
+        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_MAXIMIZE,
+        WS_MINIMIZE, WS_POPUP,
     };
 
     const SUBCLASS_ID: usize = 0x5753_3700; // 'WS7\0'
@@ -192,6 +200,10 @@ mod native {
 
     thread_local! {
         /// Main-thread only: the cover window and the transition it is holding.
+        /// Borrows are kept short and never span a Win32 call that could
+        /// re-enter `subclass_proc` (showing/hiding the owned popup may
+        /// message the owner); a nested borrow would panic inside an
+        /// `extern "system"` frame and abort the process.
         static COVER: RefCell<Option<Cover>> = const { RefCell::new(None) };
     }
 
@@ -224,7 +236,19 @@ mod native {
                 unsafe { CreateDIBSection(None, &info, DIB_RGB_COLORS, &mut bits, None, 0) }
                     .map_err(|e| format!("CreateDIBSection: {}", e))?;
             let dc = unsafe { CreateCompatibleDC(None) };
-            unsafe { SelectObject(dc, bitmap.into()) };
+            if dc.is_invalid() {
+                unsafe {
+                    let _ = DeleteObject(bitmap.into());
+                }
+                return Err("CreateCompatibleDC failed".to_string());
+            }
+            if unsafe { SelectObject(dc, bitmap.into()) }.is_invalid() {
+                unsafe {
+                    let _ = DeleteDC(dc);
+                    let _ = DeleteObject(bitmap.into());
+                }
+                return Err("SelectObject failed".to_string());
+            }
             Ok(Dib {
                 dc,
                 bitmap,
@@ -284,12 +308,14 @@ mod native {
     struct Holding {
         id: u32,
         kind: Transition,
-        /// Screen px the cover currently occupies (= predicted new client).
+        /// Screen px the cover currently occupies.
         cover: Rect,
-        /// Old client pixels kept for recomposing if the prediction was off.
+        /// Old client pixels, kept for recomposing when the window's rect
+        /// keeps changing under the cover.
         snapshot: Option<(Rect, Dib)>,
-        /// Set once `WM_WINDOWPOSCHANGED` measured the real client rect.
-        placed: bool,
+        /// Size last sent to the frontend; `None` until the first
+        /// `WM_WINDOWPOSCHANGED` measured the real client rect.
+        announced: Option<(u32, u32)>,
     }
 
     struct Cover {
@@ -298,6 +324,10 @@ mod native {
         /// Show state at the last `WM_WINDOWPOSCHANGED`.
         prev: ShowState,
         holding: Option<Holding>,
+    }
+
+    fn with_cover<R>(f: impl FnOnce(&mut Cover) -> R) -> Option<R> {
+        COVER.with(|c| c.borrow_mut().as_mut().map(f))
     }
 
     fn show_state(hwnd: HWND) -> ShowState {
@@ -351,14 +381,26 @@ mod native {
         })
     }
 
-    /// The layered popup never paints: `UpdateLayeredWindow` hands it a
-    /// finished bitmap, so the default procedure is all it needs.
+    fn size_of(rect: Rect) -> (u32, u32) {
+        (
+            (rect.right - rect.left).max(0) as u32,
+            (rect.bottom - rect.top).max(0) as u32,
+        )
+    }
+
+    /// The layered popup never paints (`UpdateLayeredWindow` hands it a
+    /// finished bitmap); it only runs the fallback timer, whose id is the
+    /// transition's.
     unsafe extern "system" fn cover_proc(
         hwnd: HWND,
         msg: u32,
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        if msg == WM_TIMER {
+            end(wparam.0 as u32, "fallback");
+            return LRESULT(0);
+        }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 
@@ -447,11 +489,10 @@ mod native {
             WM_WINDOWPOSCHANGED => on_pos_changed(hwnd),
             WM_NCDESTROY => {
                 let _ = unsafe { RemoveWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID) };
-                COVER.with(|c| {
-                    if let Some(cover) = c.borrow_mut().take() {
-                        let _ = unsafe { DestroyWindow(cover.hwnd) };
-                    }
-                });
+                let cover = COVER.with(|c| c.borrow_mut().take());
+                if let Some(cover) = cover {
+                    let _ = unsafe { DestroyWindow(cover.hwnd) };
+                }
             }
             _ => {}
         }
@@ -467,12 +508,9 @@ mod native {
         {
             return;
         }
-        let kind = COVER.with(|c| {
-            c.borrow()
-                .as_ref()
-                .and_then(|cover| transition_between(cover.prev, show_state(hwnd)))
-        });
-        let Some(kind) = kind else {
+        let Some(kind) =
+            with_cover(|cover| transition_between(cover.prev, show_state(hwnd))).flatten()
+        else {
             return;
         };
         let started = Instant::now();
@@ -520,6 +558,13 @@ mod native {
     }
 
     fn begin(hwnd: HWND, kind: Transition, pos: &WINDOWPOS) -> Result<Begun, String> {
+        // A transition still covered is superseded; its picture may still be
+        // in the frame the snapshot copies, which is harmless because a cover
+        // only ever shows pixels that are right for its rect.
+        let previous = ACTIVE_ID.load(Ordering::SeqCst);
+        if previous != 0 {
+            end(previous, "replaced");
+        }
         let old_client = client_rect_on_screen(hwnd)?;
         let frame = win::frame_insets(hwnd, unsafe { GetDpiForWindow(hwnd) })?;
         let new_client = match kind {
@@ -547,32 +592,31 @@ mod native {
         };
         let capture_ms = ms_since(capture_started);
         let snapshot_rect = snapshot.as_ref().map(|(rect, _)| *rect);
+        let cover_hwnd = with_cover(|cover| cover.hwnd).ok_or("cover not installed")?;
+        // Best effort, like W1's: a failure costs the animation, not the cover.
+        let _ = win::set_transitions_disabled(hwnd, true);
+        let present_started = Instant::now();
+        present(cover_hwnd, new_client, snapshot.as_ref())?;
+        let present_ms = ms_since(present_started);
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let present_ms = COVER.with(|c| -> Result<f64, String> {
-            let mut guard = c.borrow_mut();
-            let cover = guard.as_mut().ok_or("cover not installed")?;
-            let present_started = Instant::now();
-            present(cover.hwnd, new_client, snapshot.as_ref())?;
+        with_cover(|cover| {
             cover.holding = Some(Holding {
                 id,
                 kind,
                 cover: new_client,
                 snapshot,
-                placed: false,
+                announced: None,
             });
-            Ok(ms_since(present_started))
-        })?;
-        win::set_transitions_disabled(hwnd, true)?;
+        });
         ACTIVE_ID.store(id, Ordering::SeqCst);
-        if let Some(window) = WINDOW.get() {
-            let window = window.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(END_FALLBACK);
-                if ACTIVE_ID.load(Ordering::SeqCst) == id {
-                    let _ = window.run_on_main_thread(move || end(id, "fallback"));
-                }
-            });
-        }
+        unsafe {
+            SetTimer(
+                Some(cover_hwnd),
+                id as usize,
+                END_FALLBACK.as_millis() as u32,
+                None,
+            )
+        };
         Ok(Begun {
             id,
             cover: new_client,
@@ -617,30 +661,65 @@ mod native {
         Ok(())
     }
 
-    /// After the rect changed (and before WM_SIZE lets wry resize the
-    /// WebView2): fit the cover to the real client rect if the prediction
-    /// was off, and tell the frontend what size to wait for.
+    /// After each rect change while a cover is up (and before WM_SIZE lets
+    /// wry resize the WebView2): keep the cover on the real client rect and
+    /// tell the frontend what size to wait for. The rect can change more
+    /// than once under one cover: W1 corrects size/position after the
+    /// restore, and dragging a maximized caption restores under the cursor
+    /// and keeps moving.
     fn on_pos_changed(hwnd: HWND) {
         let now = show_state(hwnd);
-        let payload = COVER.with(|c| -> Option<(TransitionPayload, Result<bool, String>)> {
-            let mut guard = c.borrow_mut();
-            let cover = guard.as_mut()?;
+        let Some(Some((id, cover_hwnd, held, snapshot))) = with_cover(|cover| {
             cover.prev = now;
-            let holding = cover.holding.as_mut().filter(|h| !h.placed)?;
-            holding.placed = true;
-            let actual = match client_rect_on_screen(hwnd) {
-                Ok(rect) => rect,
-                Err(e) => return Some((payload_for(holding), Err(e))),
-            };
-            let refit = if actual != holding.cover {
-                holding.cover = actual;
-                present(cover.hwnd, actual, holding.snapshot.as_ref()).map(|()| true)
-            } else {
-                Ok(false)
-            };
-            Some((payload_for(holding), refit))
-        });
-        let Some((payload, refit)) = payload else {
+            let holding = cover.holding.as_mut()?;
+            Some((
+                holding.id,
+                cover.hwnd,
+                holding.cover,
+                // Taken out for the duration of the Win32 calls below.
+                holding.snapshot.take(),
+            ))
+        }) else {
+            return;
+        };
+        let actual = client_rect_on_screen(hwnd);
+        let placed = *actual.as_ref().unwrap_or(&held);
+        let refit = match actual {
+            Ok(actual) if actual == held => Ok(false),
+            Ok(actual) if size_of(actual) == size_of(held) => unsafe {
+                SetWindowPos(
+                    cover_hwnd,
+                    None,
+                    actual.left,
+                    actual.top,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                )
+            }
+            .map(|()| true)
+            .map_err(|e| format!("SetWindowPos: {}", e)),
+            Ok(actual) => present(cover_hwnd, actual, snapshot.as_ref()).map(|()| true),
+            Err(e) => Err(e),
+        };
+        let payload = with_cover(|cover| {
+            let holding = cover.holding.as_mut().filter(|h| h.id == id)?;
+            holding.snapshot = snapshot;
+            holding.cover = placed;
+            let size = size_of(placed);
+            if holding.announced == Some(size) {
+                return None;
+            }
+            holding.announced = Some(size);
+            Some(TransitionPayload {
+                id,
+                width: size.0,
+                height: size.1,
+                maximized: now.maximized,
+            })
+        })
+        .flatten();
+        let Some(payload) = payload else {
             return;
         };
         if let Some(window) = WINDOW.get() {
@@ -659,14 +738,6 @@ mod native {
         );
     }
 
-    fn payload_for(holding: &Holding) -> TransitionPayload {
-        TransitionPayload {
-            id: holding.id,
-            width: (holding.cover.right - holding.cover.left).max(0) as u32,
-            height: (holding.cover.bottom - holding.cover.top).max(0) as u32,
-        }
-    }
-
     /// Hides the cover of transition `id`; a stale id (a newer transition
     /// replaced the cover, or it already ended) does nothing.
     pub(super) fn end(id: u32, by: &str) {
@@ -676,13 +747,16 @@ mod native {
         {
             return;
         }
-        let kind = COVER.with(|c| {
-            let mut guard = c.borrow_mut();
-            let cover = guard.as_mut()?;
-            let _ = unsafe { ShowWindow(cover.hwnd, SW_HIDE) };
-            let _ = win::set_transitions_disabled(cover.main, false);
-            cover.holding.take().map(|h| h.kind)
-        });
+        let Some((cover_hwnd, main, kind)) =
+            with_cover(|cover| (cover.hwnd, cover.main, cover.holding.take().map(|h| h.kind)))
+        else {
+            return;
+        };
+        unsafe {
+            let _ = KillTimer(Some(cover_hwnd), id as usize);
+            let _ = ShowWindow(cover_hwnd, SW_HIDE);
+        }
+        let _ = win::set_transitions_disabled(main, false);
         crate::utils::perf::phase(
             "transition_end",
             &format!(

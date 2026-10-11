@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect } from "react";
 
+import { useAppStore } from "../store";
 import { perfMark } from "../utils/perf";
 
 /** Payload of the Rust `window-transition` event: the new client size in physical px. */
@@ -10,6 +11,12 @@ export interface WindowTransition {
   id: number;
   width: number;
   height: number;
+  /**
+   * Tauri 2 has no maximize event; without this the store learns the state
+   * from a get_window_state round trip after the resize, and the image laid
+   * out for the wrong area jumps once more after the cover is gone.
+   */
+  maximized: boolean;
 }
 
 /** DPI scaling rounds the CSS viewport to within a pixel of the physical client. */
@@ -81,6 +88,7 @@ export const useWindowTransition = () => {
 
     const onTransition = async (payload: WindowTransition) => {
       const started = performance.now();
+      useAppStore.getState().setMaximized(payload.maximized);
       const matched = await waitForLayout(payload, isLive);
       if (!live) return;
       perfMark("window:transition_painted", {
