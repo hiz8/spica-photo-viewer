@@ -622,9 +622,12 @@ Issue #371（2026-10-11）。画像外クリックのウインドウ化（W1）�
   e2e 7 spec green。
 - スナップショット取得のコスト（PC ロック中の値。DWM が合成を止めている状態なので参考値）:
   画面 `BitBlt` 800×600 で中央値 17ms（最大 27ms、別の試行で 185ms の外れ値）、2560×1369 で
-  54ms（最大 622ms）。`PrintWindow(WRY_WEBVIEW, PW_RENDERFULLCONTENT)` は同じ DIB へ 16ms / 33ms
-  で外れ値なし。解錠後に再計測し、画面 `BitBlt` の外れ値が実環境でも出るなら `PrintWindow` に
-  切り替える（DC の原点移動で部分描画できるか、画素の一致を目視で要確認）。
+  54ms（最大 622ms）。本番経路の `capture_ms` でも 800×600 で 15〜26ms の中に 150〜197ms が
+  5 回中 2 回。`PrintWindow(WRY_WEBVIEW, PW_RENDERFULLCONTENT)` は同じ DIB へ 16ms / 33ms で
+  外れ値なし。`PrintWindow` はロック中でも実画素を返し（子窓全体で非黒 22% ＝画像の面積比）、
+  カバー窓や他アプリの窓は含まないが、DC の `SetViewportOrgEx` を無視して常に (0,0) から描くので
+  部分取得はできず、子窓全体（最大化時 2560×1369 で 33ms）を描いてから切り出すことになる。
+  解錠後に再計測し、画面 `BitBlt` の外れ値が実環境でも出るなら `PrintWindow` に切り替える。
 - **画面での A/B（stale フレームの計数）は未実施**: 作業中この PC がロックされており、DXGI 複製は
   `E_ACCESSDENIED`、GDI も全面 #000000 を返す。プローブ（GDI 帯域サンプリング + 最終フレームとの
   diff）は用意済みで、解錠後に main ビルドと本ビルドで取る。
