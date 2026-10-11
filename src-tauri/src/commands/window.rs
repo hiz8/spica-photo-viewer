@@ -663,6 +663,7 @@ static WEBVIEW_REVEALED: AtomicBool = AtomicBool::new(false);
 
 /// False until the page's first paint is on screen; the startup maximize
 /// (W5) and anything before the reveal have no pixels worth holding (W7).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn webview_revealed() -> bool {
     WEBVIEW_REVEALED.load(Ordering::SeqCst)
 }
