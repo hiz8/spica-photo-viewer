@@ -346,6 +346,21 @@ pub async fn generate_thumbnail_with_dimensions(
     .map_err(|e| format!("thumbnail task failed: {e}"))?
 }
 
+/// `canonicalize` returns verbatim paths, which rundll32 does not take. A
+/// network path comes back as `\\?\UNC\server\share`, so dropping only the
+/// `\\?\` would leave the relative `UNC\server\share`, resolved against the
+/// working directory (the Desktop on an Explorer launch).
+#[cfg(target_os = "windows")]
+fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{}", rest)
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        path.to_string()
+    }
+}
+
 /// Short-path (8.3) conversion avoids rundll32.exe command-line escaping
 /// issues with special characters (parentheses, spaces, Japanese characters,
 /// etc.) in file names.
@@ -368,10 +383,7 @@ fn prepare_path_for_open_with(path: &str) -> Result<String, String> {
         .canonicalize()
         .map_err(|e| format!("Failed to get absolute path: {}", e))?;
 
-    let mut path_str = absolute_path.to_string_lossy().to_string();
-    if path_str.starts_with(r"\\?\") {
-        path_str = path_str[4..].to_string();
-    }
+    let path_str = strip_verbatim_prefix(&absolute_path.to_string_lossy());
 
     let path_wide: Vec<u16> = path_str.encode_utf16().chain(Some(0)).collect();
     let mut short_path_buf: Vec<u16> = vec![0; MAX_PATH_EXTENDED];
@@ -1069,6 +1081,37 @@ mod tests {
             assert!(result.is_err());
             assert!(result.unwrap_err().contains("only supported on Windows"));
         }
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn strip_verbatim_prefix_keeps_unc_paths_absolute() {
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\UNC\server\share\photos\a.jpg"),
+            r"\\server\share\photos\a.jpg"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn strip_verbatim_prefix_drops_the_prefix_of_drive_paths() {
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\C:\photos\a.jpg"),
+            r"C:\photos\a.jpg"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn strip_verbatim_prefix_leaves_plain_paths_alone() {
+        assert_eq!(
+            strip_verbatim_prefix(r"C:\photos\a.jpg"),
+            r"C:\photos\a.jpg"
+        );
+        assert_eq!(
+            strip_verbatim_prefix(r"\\server\share\a.jpg"),
+            r"\\server\share\a.jpg"
+        );
     }
 
     #[test]
