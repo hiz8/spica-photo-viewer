@@ -1,6 +1,5 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import "@testing-library/jest-dom";
 
 import {
   THUMBNAIL_BAR_HIDE_DELAY_MS,

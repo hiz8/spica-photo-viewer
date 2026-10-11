@@ -1,6 +1,5 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import "@testing-library/jest-dom";
 
 import { FULL_UPGRADE_DEBOUNCE_MS } from "../../constants/memory";
 import { IMAGE_LOAD_DEBOUNCE_MS } from "../../constants/timing";
