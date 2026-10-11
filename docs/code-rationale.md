@@ -528,3 +528,87 @@ tao の最初の表示に間に合っていない）と `startup_maximize`（`ok
 参照元: `src-tauri/src/commands/window.rs`（`hide_webview_until_loaded` / `reveal_webview` /
 `WEBVIEW_REVEAL_FALLBACK` / `WEBVIEW_REVEALED`）、`src-tauri/src/lib.rs`（`setup`、`on_page_load`）、
 `scripts/startup-frames.ps1`
+
+## W7
+
+**最大化⇄復元の遷移中、クライアント領域に出ている画素をカバー窓で保持し、WebView2 が新しいレイアウトを描くまで見せ続ける**
+
+Issue #371（2026-10-11）。画像外クリックのウインドウ化（W1）では、窓の枠が目標の位置・大きさに
+なった直後の 1 フレーム、内容が最大化時のレイアウトのまま描かれ、画像が右下へ（最大化時の画像位置
+(L, T) の分だけ）ずれて右端・下端が切れて見える。タイトルバーなどから最大化し直すときは、DWM の
+最大化アニメーションが直前のフレーム（ウインドウ表示のレイアウト）を拡大してクロスフェードするため、
+古い画像配置がゴーストとして透ける。Tauri 2.12 更新（#369）より前から再現する。
+
+仕組み:
+- 窓のジオメトリ変更（`SetWindowPos` / `ShowWindow`）は DWM が次の vblank で合成するが、WebView2
+  （Chromium、別プロセス）が新しいサイズで描いたフレームが届くのはその 1 フレーム後になる。その間
+  DWM は Chromium の最後のフレーム（旧レイアウト）を**新しいクライアント原点に左上基準で貼り付け**、
+  新しいクライアント矩形で切り出して見せる。旧レイアウトの画像は旧クライアント座標 (L, T) に
+  あるので、新クライアントの原点（＝画像の左上になるはずの点）から (L, T) ずれて見える。
+- 「内容の座標系の変化」（フロントの再レイアウト）と「窓の原点の変化」は別プロセスで非同期に起きる
+  ので、順序の入れ替えや分割では消えない。内容を先に動かせば最大化中の画面で画像が左上へ跳び、
+  窓を先に動かせば今の症状になる。WebView2 の子 HWND（wry の `WRY_WEBVIEW`）を一時的にずらして
+  見かけを保つ案も、最後に原点と内容の相対位置を変える瞬間に同じ 1 フレームが出る。消せるのは
+  「その 1 フレームの間、正しい画素を別の面に出しておく」ことだけで、Picasa のように描画が
+  窓と同じプロセスで同期していれば起きない種類の問題。
+
+実装（`src-tauri/src/commands/window_transition.rs`、`src/hooks/useWindowTransition.ts`）:
+- メインウインドウを `SetWindowSubclass` でサブクラス化し（wry の親窓サブクラスより後に入れるので
+  先に呼ばれる）、`WM_WINDOWPOSCHANGING` で最大化⇄復元の遷移を検出する。この時点で `GWL_STYLE` の
+  `WS_MAXIMIZE` は**新しい**状態、`GetWindowRect` は**旧**矩形、`WINDOWPOS` は新矩形（ただし最大化
+  では `WM_GETMINMAXINFO` で作業領域に切り詰められる前の仮値＝モニタ全体 + 枠）。いずれも素の
+  Win32 窓で 2026-10-11 に実測（`ShowWindow(SW_MAXIMIZE/SW_RESTORE)`、`WM_SYSCOMMAND`、
+  `SetWindowPlacement` のどの経路でも同じ）。最小化（`WS_MINIMIZE`）が絡む遷移は除外する: 最小化で
+  `WS_MAXIMIZE` が落ち、タスクバーからの復元で再び立つが、保持すべき画素が画面に無い。WebView2 を
+  表示する前（W6 の `WEBVIEW_REVEALED` が偽。起動時の最大化 W5 を含む）は何もしない。
+- 新しいクライアント矩形を予測する。復元は `WINDOWPOS` の外枠から復元時の枠（`frame_insets`）を
+  引く。最大化は作業領域から求める: `top = work.top + (frame.top − frame.bottom)`、左右下は作業領域
+  と一致（最大化時は枠が作業領域の外にはみ出す W5 の帰結。100% で作業領域 (0,0,2560,1392) →
+  クライアント (0,23,2560,1392) を実測）。
+- 新旧クライアント矩形の交差部分を `BitBlt` で**画面**（`GetDC(NULL)`）から取る。DWM が最後に合成
+  した画素＝ユーザーが今見ているものなので、フロントの描画結果を Rust 側で再現する必要が無く、
+  サブピクセル差も出ない。これを黒地の 32bpp トップダウン DIB に置き、`WS_EX_LAYERED |
+  WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` の `WS_POPUP`（メインウインドウが
+  owner）に `UpdateLayeredWindow` で載せ、`SW_SHOWNOACTIVATE` で新クライアント矩形の位置に出す。
+  復元ではカバー＝画像そのもの（画素が一致するので表示は見えない）、最大化では黒地に旧クライアントの
+  内容が旧位置のまま残り、Chromium が描いた時点で画像が中央へ移る 2 段の遷移になる。owner 付き
+  なので常にメインの上、`WS_EX_TRANSPARENT` で表示中のクリックはページへ通る。DWM の表示/非表示
+  アニメーションはカバーに `DWMWA_TRANSITIONS_FORCEDISABLED` を立てて止める。
+- `WM_WINDOWPOSCHANGING` の処理はジオメトリ変更そのものを遅らせるので、処理中に古いフレームが
+  露出することはない。コスト（`BitBlt` の数 ms）は `transition_begin` の `ms` に記録する。
+- `WM_WINDOWPOSCHANGED`（矩形確定後、`WM_SIZE` で wry が WebView2 をリサイズする前）で実際の
+  クライアント矩形を測り、予測と違えばカバーを合わせ直し（`refit`）、フロントへ `window-transition`
+  イベント（`id` と新クライアントの物理 px）を送る。
+- 併せてメインウインドウの DWM 遷移を止め、終了時に戻す。最大化のアニメーションは旧フレームを
+  拡大するのでカバーと両立しない。W1 の `resize_window_to_image` も同じ属性を前後で操作するが、
+  属性はアニメーションの開始時点にしか読まれないので干渉しない。
+- フロント（`useWindowTransition`）は、イベントの寸法に `innerWidth/innerHeight × devicePixelRatio`
+  が一致した rAF の**次の** rAF で `end_window_transition` を呼ぶ。resize イベントとそれによる
+  再レイアウト（zustand → `useSyncExternalStore` の同期フラッシュ）は同じフレームの rAF コール
+  バックより前に走るので、寸法を観測したフレームの描画に新レイアウトが含まれ、次のフレームが始まった
+  時点でそれはコミット済み。300ms（`LAYOUT_TIMEOUT_MS`）で諦めて呼ぶ（非表示ページなど）。
+- Rust は `end` でカバーを隠し、DWM 遷移を戻す。保険として 250ms（`END_FALLBACK`）のフォール
+  バック。短めなのは、カバーが静止画で、復元では画像と画素一致（早すぎても今までの 1 フレームに
+  戻るだけ）、遅すぎるとその間のナビゲーションが隠れるため。id の一致しない `end` は無視する
+  （新しい遷移がカバーを引き継いだ後に、古い遷移のフロント合図やフォールバックが届く場合）。
+
+**採らない案**:
+- WebView2 を `hide`/`show` で挟む（W6 の流用、Issue の案）: 隠れている間は窓の黒いブラシが出る
+  ので、復元では画像が 1〜2 フレーム消える＝症状の置き換え。さらに `SetIsVisible(false)` は
+  Chromium にページの非表示を伝えるので rAF が止まる可能性があり、「描けた」合図が取れない。
+- ジオメトリ変更の前に目標レイアウトでフロントを描く（Issue の案）: 最大化中の画面で画像が左上へ
+  跳ぶのが見える。
+- カバーをメイン窓の子 HWND（GDI）にする: WebView2 の内容は DComp のビジュアルで、トップレベル窓の
+  GDI リダイレクト面より上に合成されるため兄弟の子窓では覆えない（WinForms で WebView2 の上に
+  コントロールを置けないのと同じ）。owner 付きトップレベルなら z 順で確実に上。
+- `WM_SYSCOMMAND` だけで検出する: Win+↑ やスナップは `WM_SYSCOMMAND` を経ないことがある。
+  `WM_WINDOWPOSCHANGING` はどの経路でも必ず通る。
+
+トレース: `transition_cover`（導入、`ok`/`err`）、`transition_begin`（`ok`/`ms`/`id`/`kind`/
+`cover`/`snapshot`/`err`）、`transition_placed`（`id`/`width`/`height`/`refit`）、`transition_end`
+（`id`/`by`: `frontend` | `fallback`/`kind`）。フロントは `window:transition_painted`（`id`/
+`matched`/`ms`）。
+
+参照元: `src-tauri/src/commands/window_transition.rs`、`src-tauri/src/commands/window.rs`
+（`webview_revealed` / `native::frame_insets` / `native::set_transitions_disabled`）、
+`src-tauri/src/lib.rs`（`setup`）、`src/hooks/useWindowTransition.ts`、`src/App.tsx`

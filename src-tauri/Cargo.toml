@@ -57,6 +57,7 @@ windows = { version = "0.62", features = [
   "Win32_UI_HiDpi",                 # AdjustWindowRectExForDpi: restored frame size for the placement rect (W1) / GetDpiForWindow (W5)
   "Win32_Graphics_Gdi",             # MonitorFromWindow / GetMonitorInfoW: work area the window is born on (W5)
   "Win32_System_Threading",         # GetCurrentThreadId: thread-local creation hook (W5)
+  "Win32_System_LibraryLoader",     # GetModuleHandleW: window class of the transition cover (W7)
 ] }
 
 [dev-dependencies]

@@ -18,6 +18,7 @@ use commands::file::{
 use commands::window::{
     get_window_position, get_window_state, maximize_window, resize_window_to_image,
 };
+use commands::window_transition::end_window_transition;
 use std::sync::atomic::AtomicU32;
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -90,6 +91,9 @@ pub fn run() {
             // about:blank) at the end of it, and the hide has to land before
             // Chromium presents a frame (W6).
             commands::window::hide_webview_until_loaded(&window);
+            // Subclass order matters: after wry's, so it sees WM_SIZE's
+            // siblings first (W7).
+            commands::window_transition::install(&window);
             let created_at = Instant::now();
             let _ = WINDOW_CREATED_AT.set(created_at);
             let fg = commands::window::foreground_state(&window);
@@ -230,7 +234,8 @@ pub fn run() {
             get_window_state,
             get_window_position,
             resize_window_to_image,
-            maximize_window
+            maximize_window,
+            end_window_transition
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

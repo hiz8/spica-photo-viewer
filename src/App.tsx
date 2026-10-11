@@ -11,6 +11,7 @@ import { useCacheManager } from "./hooks/useCacheManager";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useWindowState } from "./hooks/useWindowState";
 import { useWindowTitle } from "./hooks/useWindowTitle";
+import { useWindowTransition } from "./hooks/useWindowTransition";
 import { useAppStore } from "./store";
 import type { StartupFile } from "./types";
 import { perfMark } from "./utils/perf";
@@ -31,6 +32,7 @@ const App: React.FC = () => {
   useCacheManager();
   useWindowState();
   useWindowTitle();
+  useWindowTransition();
 
   // Check for startup file (from file association)
   useEffect(() => {
